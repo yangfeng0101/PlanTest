@@ -23,9 +23,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     API Key: X-API-Key header
     Bearer Token: Authorization: Bearer <token>
+
+    For JWT-based auth, Bearer tokens are validated as JWT access tokens.
     """
 
-    # Paths that don't require authentication
+    # Paths that don't require authentication (exact matches)
     PUBLIC_PATHS = {
         "/",
         "/health",
@@ -34,10 +36,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/openapi.json",
     }
 
+    # Path prefixes that don't require authentication
+    PUBLIC_PREFIXES = [
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/refresh",
+    ]
+
     async def dispatch(self, request: Request, call_next):
         # Skip auth for public paths
         if request.url.path in self.PUBLIC_PATHS:
             return await call_next(request)
+
+        # Skip auth for public prefixes
+        for prefix in self.PUBLIC_PREFIXES:
+            if request.url.path.startswith(prefix):
+                return await call_next(request)
 
         # Skip auth if disabled
         if not settings.API_KEY_ENABLED:
@@ -71,12 +85,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Invalid API key"},
                 )
 
-        # Validate Bearer token if provided
+        # Validate Bearer token if provided (JWT validation)
         elif bearer_token:
-            # For now, Bearer token is the same as API key
-            # In production, this would validate JWT or other tokens
-            if bearer_token != settings.API_KEY:
-                logger.warning(f"Invalid Bearer token attempt from {request.client.host if request.client else 'unknown'}")
+            # Try to validate as JWT token
+            try:
+                from app.services.jwt_service import jwt_service
+                payload = jwt_service.validate_access_token(bearer_token)
+                if not payload:
+                    logger.warning(f"Invalid JWT token attempt from {request.client.host if request.client else 'unknown'}")
+                    return JSONResponse(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        content={"detail": "Invalid or expired Bearer token"},
+                    )
+                # Token is valid, proceed with request
+            except Exception as e:
+                logger.warning(f"JWT validation error: {e}")
                 return JSONResponse(
                     status_code=status.HTTP_403_FORBIDDEN,
                     content={"detail": "Invalid Bearer token"},
