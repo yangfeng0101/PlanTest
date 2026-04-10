@@ -41,3 +41,13 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 默认值: http://localhost:3000,http://localhost:5173
   - 生产环境需要设置 CORS_ORIGINS 为实际域名
 ---
+
+## 2026-04-10 19:25 - FIX-SEC-004
+- 设备命令接口添加认证和授权
+- 文件变更:
+  - services/device-svc/app/routes/devices.py
+- **Learnings for future iterations:**
+  - device-svc 通过调用 test-svc 验证 JWT token
+  - 已有 require_role() 函数可用于角色检查
+  - 操作日志使用 logger.info/warning 记录
+---

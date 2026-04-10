@@ -58,7 +58,7 @@
       "id": "FIX-SEC-004",
       "title": "设备命令接口添加认证和授权",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "命令执行接口添加 JWT 认证",
         "只有 admin 角色可以执行命令",
