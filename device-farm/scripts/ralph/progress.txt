@@ -228,3 +228,55 @@ Files changed:
 - Device type detection: iOS UDID is 40 hex chars, Android serial varies
 
 ---
+
+## 2026-04-10 - HARMONY-001
+
+- Created harmony_service.py with HarmonyDeviceService class
+- Implemented discover_devices() using HDC (HarmonyOS Device Connector)
+- Implemented get_device_info(serial) via HDC shell commands
+- Implemented install_app(serial, hap_path) for HAP package installation
+- Implemented bonus methods: uninstall_app, start_app, stop_app, get_screenshot, list_apps, get_device_logs, shell
+- Added HDC_PATH configuration setting to config.py
+
+Files changed:
+- services/device-svc/app/services/harmony_service.py (new)
+- services/device-svc/app/config.py (modified - added HDC_PATH)
+- services/device-svc/CLAUDE.md (modified - added HarmonyOS documentation)
+
+**Learnings for future iterations:**
+- HDC (HarmonyOS Device Connector) is similar to ADB but with different command syntax
+- Device identification uses serial number (same as Android)
+- HAP files are HarmonyOS Ability Packages (equivalent to APK)
+- App management uses `bm` (Bundle Manager) and `aa` (Ability Manager) tools
+- Properties are accessed via `param get` or `getprop` (fallback to Android-style)
+- Screenshot uses `snapshot_display` command, not `screencap`
+- OS version is `ro.build.version.harmonyos` (fallback to SDK level)
+- The async subprocess execution pattern from ADBService works for HDC too
+
+---
+
+## 2026-04-10 - HARMONY-002
+
+- Created harmony package with HarmonyMirror struct for HarmonyOS screen mirroring
+- Implemented Start() using HOScrpy (if available) or HDC snapshot_display for screenshots
+- Implemented Stop() to stop mirroring and clean up resources
+- Created input.go with InputManager for touch/swipe/key input injection
+- Integrated HarmonyOS support into ScreenManager with device type detection
+- Added startHarmonySession and streamHarmonyVideo methods
+- Updated main.go to initialize HarmonyOS config
+
+Files changed:
+- services/screen-svc/internal/harmony/mirror.go (new)
+- services/screen-svc/internal/harmony/input.go (new)
+- services/screen-svc/internal/handler/manager.go (modified - added HarmonyOS support)
+- services/screen-svc/cmd/main.go (modified - added harmony config)
+
+**Learnings for future iterations:**
+- HarmonyOS uses HDC (HarmonyOS Device Connector) similar to ADB for Android
+- HOScrpy is the HarmonyOS equivalent of scrcpy but may not be widely available
+- Screenshot fallback uses `hdc shell snapshot_display` command
+- HarmonyOS input commands use `hdc shell input tap/swipe/keyevent` similar to Android
+- Device type detection relies on device service to identify HarmonyOS vs Android devices
+- HarmonyOS devices use serial numbers like Android (not UDID like iOS)
+
+---

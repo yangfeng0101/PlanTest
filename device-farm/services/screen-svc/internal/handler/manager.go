@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 
+	"screen-svc/internal/harmony"
 	"screen-svc/internal/ios"
 	"screen-svc/internal/scrcpy"
 	webrtcmgr "screen-svc/internal/webrtc"
@@ -19,8 +20,9 @@ import (
 type DeviceType string
 
 const (
-	DeviceTypeAndroid DeviceType = "android"
-	DeviceTypeIOS     DeviceType = "ios"
+	DeviceTypeAndroid  DeviceType = "android"
+	DeviceTypeIOS      DeviceType = "ios"
+	DeviceTypeHarmony  DeviceType = "harmony"
 )
 
 // ScreenSession represents an active screen mirroring session
@@ -29,6 +31,7 @@ type ScreenSession struct {
 	DeviceType    DeviceType
 	Scrcpy        *scrcpy.Process
 	IOSMirror     *ios.IOSMirror
+	HarmonyMirror *harmony.HarmonyMirror
 	WebRTC        *webrtcmgr.Manager
 	Clients       map[*websocket.Conn]bool
 	ScreenWidth   int
@@ -46,26 +49,32 @@ type ScreenManager struct {
 	mu           sync.RWMutex
 	config       *scrcpy.Config
 	iosConfig    *ios.Config
+	harmonyConfig *harmony.Config
 	iceServers   []webrtcmgr.ICEServer
 	logger       *logrus.Logger
 }
 
 // NewScreenManager creates a new screen manager
-func NewScreenManager(config *scrcpy.Config, iosConfig *ios.Config, iceServers []webrtcmgr.ICEServer) *ScreenManager {
+func NewScreenManager(config *scrcpy.Config, iosConfig *ios.Config, harmonyConfig *harmony.Config, iceServers []webrtcmgr.ICEServer) *ScreenManager {
 	if iosConfig == nil {
 		iosConfig = ios.DefaultConfig()
 	}
+	if harmonyConfig == nil {
+		harmonyConfig = harmony.DefaultConfig()
+	}
 	return &ScreenManager{
-		sessions:   make(map[string]*ScreenSession),
-		config:     config,
-		iosConfig:  iosConfig,
-		iceServers: iceServers,
-		logger:     logrus.New(),
+		sessions:      make(map[string]*ScreenSession),
+		config:        config,
+		iosConfig:     iosConfig,
+		harmonyConfig: harmonyConfig,
+		iceServers:    iceServers,
+		logger:        logrus.New(),
 	}
 }
 
 // detectDeviceType determines device type from device ID
 // iOS devices have UDID format (40 hex chars), Android uses serial numbers
+// HarmonyOS devices also use serial numbers but may have specific prefixes
 func detectDeviceType(deviceID string) DeviceType {
 	// iOS UDID is typically 40 hex characters
 	// Android serial numbers vary in length and format
@@ -85,6 +94,13 @@ func detectDeviceType(deviceID string) DeviceType {
 	if strings.HasPrefix(strings.ToLower(deviceID), "000080") {
 		return DeviceTypeIOS
 	}
+
+	// HarmonyOS device serials often start with specific patterns
+	// Common HarmonyOS device prefixes: "HUAWEI", "HONOR", or local serial patterns
+	// For now, we'll need to rely on device service to identify HarmonyOS devices
+	// Default to Android if not identified as iOS
+	// Note: The device service should explicitly set the device type when starting a session
+
 	return DeviceTypeAndroid
 }
 
@@ -112,6 +128,8 @@ func (m *ScreenManager) StartSessionWithType(deviceID string, deviceType DeviceT
 	switch deviceType {
 	case DeviceTypeIOS:
 		session, err = m.startIOSSession(ctx, cancel, deviceID)
+	case DeviceTypeHarmony:
+		session, err = m.startHarmonySession(ctx, cancel, deviceID)
 	default:
 		session, err = m.startAndroidSession(ctx, cancel, deviceID)
 	}
@@ -207,6 +225,48 @@ func (m *ScreenManager) startIOSSession(ctx context.Context, cancel context.Canc
 	return session, nil
 }
 
+// startHarmonySession starts a screen session for a HarmonyOS device
+func (m *ScreenManager) startHarmonySession(ctx context.Context, cancel context.CancelFunc, deviceID string) (*ScreenSession, error) {
+	// Create HarmonyOS mirror
+	harmonyMirror := harmony.NewHarmonyMirror(deviceID, m.harmonyConfig,
+		harmony.WithLogger(m.logger),
+	)
+
+	if err := harmonyMirror.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start HarmonyOS mirror: %w", err)
+	}
+
+	// Get screen dimensions (may be detected on first frame)
+	width, height := harmonyMirror.GetScreenSize()
+	if width == 0 || height == 0 {
+		width, height = 1080, 2340 // Default HarmonyOS device resolution
+	}
+
+	// Create WebRTC manager
+	webrtcManager := webrtcmgr.NewManager(
+		webrtcmgr.WithICEServers(m.iceServers),
+		webrtcmgr.WithICEPortRange(40000, 50000),
+	)
+
+	session := &ScreenSession{
+		DeviceID:   deviceID,
+		DeviceType: DeviceTypeHarmony,
+		HarmonyMirror: harmonyMirror,
+		WebRTC:     webrtcManager,
+		Clients:    make(map[*websocket.Conn]bool),
+		ScreenWidth:  width,
+		ScreenHeight: height,
+		CreatedAt:  "now",
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+
+	// Start video stream goroutine for HarmonyOS
+	go m.streamHarmonyVideo(ctx, session)
+
+	return session, nil
+}
+
 // StopSession stops a screen session
 func (m *ScreenManager) StopSession(deviceID string) error {
 	m.mu.Lock()
@@ -226,6 +286,10 @@ func (m *ScreenManager) StopSession(deviceID string) error {
 	if session.DeviceType == DeviceTypeIOS && session.IOSMirror != nil {
 		if err := session.IOSMirror.Stop(); err != nil {
 			m.logger.Warnf("Error stopping iOS mirror: %v", err)
+		}
+	} else if session.DeviceType == DeviceTypeHarmony && session.HarmonyMirror != nil {
+		if err := session.HarmonyMirror.Stop(); err != nil {
+			m.logger.Warnf("Error stopping HarmonyOS mirror: %v", err)
 		}
 	} else if session.Scrcpy != nil {
 		if err := session.Scrcpy.Stop(); err != nil {
@@ -329,6 +393,8 @@ func (m *ScreenManager) HandleControlMessage(deviceID string, data []byte) {
 	switch session.DeviceType {
 	case DeviceTypeIOS:
 		m.handleIOSControlMessage(session, msgType, msg)
+	case DeviceTypeHarmony:
+		m.handleHarmonyControlMessage(session, msgType, msg)
 	default:
 		m.handleAndroidControlMessage(session, msgType, msg)
 	}
@@ -400,6 +466,53 @@ func (m *ScreenManager) handleIOSControlMessage(session *ScreenSession, msgType 
 	case "home":
 		if err := session.IOSMirror.SendHome(); err != nil {
 			m.logger.Warnf("Failed to send iOS home: %v", err)
+		}
+	}
+}
+
+// handleHarmonyControlMessage handles control messages for HarmonyOS devices
+func (m *ScreenManager) handleHarmonyControlMessage(session *ScreenSession, msgType string, msg map[string]interface{}) {
+	if session.HarmonyMirror == nil {
+		m.logger.Warnf("HarmonyOS mirror not initialized for %s", session.DeviceID)
+		return
+	}
+
+	// Create input manager for this device
+	inputMgr := harmony.NewInputManager(
+		session.DeviceID,
+		"hdc", // Default HDC path
+		session.ScreenWidth,
+		session.ScreenHeight,
+	)
+
+	switch msgType {
+	case "touch":
+		xVal, ok := msg["x"].(float64)
+		if !ok {
+			return
+		}
+		yVal, ok := msg["y"].(float64)
+		if !ok {
+			return
+		}
+		if err := inputMgr.Tap(int(xVal), int(yVal)); err != nil {
+			m.logger.Warnf("Failed to send HarmonyOS touch: %v", err)
+		}
+	case "swipe":
+		x1Val, _ := msg["x1"].(float64)
+		y1Val, _ := msg["y1"].(float64)
+		x2Val, _ := msg["x2"].(float64)
+		y2Val, _ := msg["y2"].(float64)
+		if err := inputMgr.Swipe(int(x1Val), int(y1Val), int(x2Val), int(y2Val)); err != nil {
+			m.logger.Warnf("Failed to send HarmonyOS swipe: %v", err)
+		}
+	case "home":
+		if err := inputMgr.PressHome(); err != nil {
+			m.logger.Warnf("Failed to send HarmonyOS home: %v", err)
+		}
+	case "back":
+		if err := inputMgr.PressBack(); err != nil {
+			m.logger.Warnf("Failed to send HarmonyOS back: %v", err)
 		}
 	}
 }
@@ -755,6 +868,62 @@ func (m *ScreenManager) streamIOSVideo(ctx context.Context, session *ScreenSessi
 			// Log progress periodically
 			if frameCount%100 == 0 {
 				m.logger.Debugf("iOS Device %s: streamed %d frames", session.DeviceID, frameCount)
+			}
+		}
+	}
+}
+
+// streamHarmonyVideo handles video streaming for HarmonyOS devices
+// HarmonyOS uses PNG screenshots via HDC snapshot_display
+func (m *ScreenManager) streamHarmonyVideo(ctx context.Context, session *ScreenSession) {
+	buf := make([]byte, 65536)
+	frameCount := 0
+
+	m.logger.Infof("Starting HarmonyOS video stream for device %s", session.DeviceID)
+
+	for {
+		select {
+		case <-ctx.Done():
+			m.logger.Infof("HarmonyOS video stream stopped for %s", session.DeviceID)
+			return
+		default:
+			if session.HarmonyMirror == nil {
+				m.logger.Warnf("HarmonyOS mirror not initialized")
+				return
+			}
+
+			n, err := session.HarmonyMirror.Read(buf)
+			if err != nil {
+				m.logger.Debugf("HarmonyOS frame read: %v", err)
+				continue
+			}
+
+			if n == 0 {
+				continue
+			}
+
+			// Forward to WebRTC
+			// Note: HarmonyOS sends PNG frames, not H.264
+			// For MVP, we send raw frames - ideally should convert to H.264
+			if err := session.WebRTC.SendVideo(buf[:n]); err != nil {
+				m.logger.Warnf("Failed to send HarmonyOS video for %s: %v", session.DeviceID, err)
+			}
+
+			frameCount++
+
+			// Update screen size if detected
+			if session.ScreenWidth == 0 || session.ScreenHeight == 0 {
+				w, h := session.HarmonyMirror.GetScreenSize()
+				if w > 0 && h > 0 {
+					session.ScreenWidth = w
+					session.ScreenHeight = h
+					m.logger.Infof("Updated HarmonyOS screen size: %dx%d", w, h)
+				}
+			}
+
+			// Log progress periodically
+			if frameCount%100 == 0 {
+				m.logger.Debugf("HarmonyOS Device %s: streamed %d frames", session.DeviceID, frameCount)
 			}
 		}
 	}
