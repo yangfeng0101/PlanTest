@@ -1,6 +1,6 @@
 # Device Service
 
-Device management service for Android (ADB) and iOS (pymobiledevice3) devices.
+Device management service for Android (ADB), iOS (pymobiledevice3), and HarmonyOS (HDC) devices.
 
 ## Service Structure
 
@@ -10,6 +10,7 @@ services/device-svc/
 │   ├── services/
 │   │   ├── adb_service.py      # Android device management
 │   │   ├── ios_service.py      # iOS device management
+│   │   ├── harmony_service.py  # HarmonyOS device management
 │   │   └── device_service.py   # Unified device service
 │   ├── routes/
 │   │   └── devices.py          # API endpoints
@@ -60,3 +61,41 @@ Uses ADB (Android Debug Bridge) for device communication.
 - Device identification uses serial number
 - ADB must be in PATH or configured via `ADB_PATH` setting
 - Async subprocess execution pattern for all ADB commands
+
+## HarmonyOS Device Service
+
+Uses HDC (HarmonyOS Device Connector) for device communication.
+
+### Key Points
+
+- Device identification uses serial number (similar to Android)
+- HDC must be in PATH or configured via `HDC_PATH` setting
+- Async subprocess execution pattern for all HDC commands
+- HAP files are HarmonyOS Ability Packages (equivalent to APK)
+- App management uses `bm` (Bundle Manager) and `aa` (Ability Manager) tools
+
+### Common Commands
+
+```bash
+# List connected devices
+hdc list targets
+
+# Get device info
+hdc -t <serial> shell getprop ro.product.model
+
+# Install HAP
+hdc -t <serial> install /path/to/app.hap
+
+# Start app
+hdc -t <serial> shell aa start -a <ability> -b <bundle>
+
+# Take screenshot
+hdc -t <serial> shell snapshot_display -f /data/local/tmp/screenshot.png
+```
+
+### Device Info Properties
+
+HarmonyOS uses `param get` or `getprop` for device properties:
+- `const.display.resolution` - Screen resolution
+- `const.display.density` - Screen density
+- `ro.build.version.harmonyos` - HarmonyOS version

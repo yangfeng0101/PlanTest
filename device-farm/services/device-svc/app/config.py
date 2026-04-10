@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     ADB_SERVER_HOST: str = "localhost"
     ADB_SERVER_PORT: int = 5037
 
+    # HDC config (HarmonyOS Device Connector)
+    HDC_PATH: str = "hdc"
+
     # Device scan interval (seconds)
     DEVICE_SCAN_INTERVAL: int = 30
 
