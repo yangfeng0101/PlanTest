@@ -1,0 +1,117 @@
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-background {
+  width: 100%;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.login-card-wrapper {
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-card {
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  padding: 40px 32px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-icon {
+  font-size: 48px;
+  color: #1890ff;
+  margin-bottom: 16px;
+}
+
+.login-title {
+  margin: 0 !important;
+  color: #1a1a2e;
+  font-weight: 600;
+}
+
+.login-subtitle {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+.login-button {
+  height: 48px;
+  font-size: 16px;
+  font-weight: 500;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  margin-top: 8px;
+}
+
+.login-button:hover {
+  background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+}
+
+.login-footer {
+  text-align: center;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.login-hint {
+  font-size: 12px;
+}
+
+/* Form styling */
+.login-card .ant-form-item {
+  margin-bottom: 20px;
+}
+
+.login-card .ant-input-affix-wrapper {
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border: 1px solid transparent;
+  transition: all 0.3s;
+}
+
+.login-card .ant-input-affix-wrapper:hover,
+.login-card .ant-input-affix-wrapper:focus,
+.login-card .ant-input-affix-wrapper-focused {
+  background: #fff;
+  border-color: #1890ff;
+}
+
+.login-card .ant-input {
+  background: transparent;
+}
+
+.login-card .ant-input-prefix {
+  color: #999;
+  margin-right: 12px;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .login-card {
+    padding: 32px 24px;
+  }
+
+  .login-icon {
+    font-size: 40px;
+  }
+}
