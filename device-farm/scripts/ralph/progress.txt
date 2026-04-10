@@ -111,3 +111,27 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - One-time tasks use apply_async with eta parameter
   - Timezone defaults to Asia/Shanghai for local time execution
 ---
+
+## 2026-04-10 20:00 - SCHEDULE-002
+- Created comprehensive schedule management API with full CRUD operations
+- Implemented POST /api/v1/schedules - create schedule (crontab/interval/onetime)
+- Implemented GET /api/v1/schedules - list schedules with pagination and filters
+- Implemented GET /api/v1/schedules/{id} - get schedule by ID
+- Implemented PUT /api/v1/schedules/{id} - update schedule configuration
+- Implemented DELETE /api/v1/schedules/{id} - delete schedule
+- Implemented POST /api/v1/schedules/{id}/enable - enable/disable schedule
+- Created ScheduleDB SQLAlchemy model with all schedule type fields
+- Created Pydantic models: Schedule, ScheduleCreate, ScheduleUpdate, ScheduleListResponse
+- Integrated with Celery Beat scheduler functions from scheduler.py
+- Files changed:
+  - services/test-svc/app/models/schedule.py (new)
+  - services/test-svc/app/api/schedules.py (new)
+  - services/test-svc/app/models/__init__.py (updated)
+  - services/test-svc/app/api/__init__.py (updated)
+  - services/test-svc/app/main.py (updated)
+- **Learnings for future iterations:**
+  - Schedule models use separate config classes (CrontabConfig, IntervalConfig, OneTimeConfig) for type-specific settings
+  - Schedule status uses ScheduleStatus enum (ENABLED, DISABLED, EXPIRED)
+  - Changes to schedule configuration require removing and re-adding to Celery Beat
+  - get_db dependency is in app.database, not app.models.database
+---

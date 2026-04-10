@@ -18,8 +18,22 @@ from app.models.models import (
     TaskListResponse,
     ErrorResponse,
 )
+from app.models.schedule import (
+    ScheduleType,
+    ScheduleStatus,
+    IntervalUnit,
+    Schedule,
+    ScheduleCreate,
+    ScheduleUpdate,
+    ScheduleListResponse,
+    ScheduleEnableRequest,
+    CrontabConfig,
+    IntervalConfig,
+    OneTimeConfig,
+)
 
 __all__ = [
+    # Script/Task models
     "ScriptType",
     "ScriptStatus",
     "TaskStatus",
@@ -37,4 +51,16 @@ __all__ = [
     "ScriptListResponse",
     "TaskListResponse",
     "ErrorResponse",
+    # Schedule models
+    "ScheduleType",
+    "ScheduleStatus",
+    "IntervalUnit",
+    "Schedule",
+    "ScheduleCreate",
+    "ScheduleUpdate",
+    "ScheduleListResponse",
+    "ScheduleEnableRequest",
+    "CrontabConfig",
+    "IntervalConfig",
+    "OneTimeConfig",
 ]

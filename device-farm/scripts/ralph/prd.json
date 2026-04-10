@@ -75,7 +75,7 @@
       "id": "SCHEDULE-002",
       "title": "定时任务管理 API",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "POST /api/v1/schedules - 创建定时任务",
         "GET /api/v1/schedules - 获取定时任务列表",

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import scripts, tasks
+from app.api import scripts, tasks, schedules
 from app.middleware.auth import AuthMiddleware
 
 # Create FastAPI application
@@ -37,6 +37,11 @@ app.include_router(
     tasks.router,
     prefix=f"{settings.API_PREFIX}/tasks",
     tags=["Tasks"]
+)
+app.include_router(
+    schedules.router,
+    prefix=f"{settings.API_PREFIX}/schedules",
+    tags=["Schedules"]
 )
 
 
