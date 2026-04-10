@@ -13,6 +13,7 @@ import {
   ScanOutlined,
   AimOutlined,
   ThunderboltOutlined,
+  UsergroupAddOutlined,
 } from '@ant-design/icons'
 import DevicesPage from './pages/devices'
 import DeviceDetailPage from './pages/devices/Detail'
@@ -25,13 +26,14 @@ import LoginPage from './pages/auth/Login'
 import OCRPage from './pages/ai/OCR'
 import LocatePage from './pages/ai/Locate'
 import GeneratePage from './pages/ai/Generate'
+import UsersPage from './pages/admin/Users'
 import AuthGuard from './components/AuthGuard'
-import { useAuthStore } from './stores/authStore'
+import { useAuthStore, hasPermission } from './stores/authStore'
 import './App.css'
 
 const { Sider, Content, Header } = Layout
 
-const menuItems = [
+const baseMenuItems = [
   {
     key: '/devices',
     icon: <MobileOutlined />,
@@ -79,6 +81,12 @@ const menuItems = [
       },
     ],
   },
+  {
+    key: '/admin/users',
+    icon: <UsergroupAddOutlined />,
+    label: '用户管理',
+    permission: 'user:read',
+  },
 ]
 
 // Main layout component with auth
@@ -86,6 +94,14 @@ function MainLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
+
+  // Filter menu items based on permissions
+  const menuItems = baseMenuItems.filter(item => {
+    if (item.permission) {
+      return hasPermission(user, item.permission)
+    }
+    return true
+  })
 
   const handleLogout = async () => {
     await logout()
@@ -166,6 +182,7 @@ function MainLayout() {
             <Route path="/ai/ocr" element={<OCRPage />} />
             <Route path="/ai/locate" element={<LocatePage />} />
             <Route path="/ai/generate" element={<GeneratePage />} />
+            <Route path="/admin/users" element={<UsersPage />} />
             <Route path="/" element={<Navigate to="/devices" replace />} />
           </Routes>
         </Content>
