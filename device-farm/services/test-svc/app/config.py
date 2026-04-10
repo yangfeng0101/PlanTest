@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "120"))  # 2 hours
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))  # 7 days
 
+    # CORS - comma-separated origins from environment
+    CORS_ORIGINS: list = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+        if origin.strip()
+    ]
+
     def validate_jwt_config(self) -> None:
         """Validate JWT configuration. Call at startup to ensure security."""
         if not self.JWT_SECRET_KEY:

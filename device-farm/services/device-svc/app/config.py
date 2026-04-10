@@ -38,8 +38,12 @@ class Settings(BaseSettings):
     # WebSocket config
     WS_HEARTBEAT_INTERVAL: int = 30
 
-    # CORS
-    CORS_ORIGINS: List[str] = ["*"]
+    # CORS - comma-separated origins from environment
+    CORS_ORIGINS: List[str] = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+        if origin.strip()
+    ]
 
     class Config:
         env_file = ".env"

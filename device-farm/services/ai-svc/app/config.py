@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # GPU Configuration
     CUDA_VISIBLE_DEVICES: str = os.getenv("CUDA_VISIBLE_DEVICES", "0")
 
+    # CORS - comma-separated origins from environment
+    CORS_ORIGINS: list = [
+        origin.strip()
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+        if origin.strip()
+    ]
+
     class Config:
         env_file = ".env"
         extra = "ignore"
