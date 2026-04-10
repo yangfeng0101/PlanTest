@@ -54,7 +54,7 @@
       "id": "DEF-013",
       "title": "FPS 计算修复",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "使用 WebRTC getStats() API 获取真实帧率",
         "从 inbound-rtp report 读取 framesPerSecond",

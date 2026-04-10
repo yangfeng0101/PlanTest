@@ -84,3 +84,21 @@ Files changed:
 - The ref pattern (useRef + useEffect to sync) avoids stale closures without triggering re-renders
 
 ---
+
+## 2026-04-10 - DEF-013
+
+- Verified FPS calculation already uses WebRTC getStats() API correctly
+- Reads framesPerSecond from inbound-rtp report (Chrome 78+)
+- Fallback uses framesDecoded delta calculation for browsers without framesPerSecond
+- No invalid byte-based estimation logic present
+
+Files changed:
+- None (already correctly implemented)
+
+**Learnings for future iterations:**
+- The DEFECTS.md described a byte-based FPS estimation `Math.round(bytesReceived / 10000)` but this was already fixed in the initial commit
+- Always verify current code state against defect descriptions before making changes
+- WebRTC getStats() provides framesPerSecond directly for modern browsers
+- Fallback using framesDecoded delta is a reliable alternative for older browsers
+
+---
