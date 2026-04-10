@@ -36,7 +36,7 @@
       "id": "FIX-HIGH-5",
       "title": "修复 Bearer Token 验证逻辑",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "auth.py Bearer Token 验证逻辑修复",
         "JWT Token 可以正常验证",

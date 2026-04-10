@@ -145,27 +145,24 @@ async def verify_api_key(api_key: Optional[str] = None) -> str:
     return api_key
 
 
-async def verify_bearer_token(credentials: Optional[HTTPAuthorizationCredentials] = None) -> str:
+async def verify_bearer_token(credentials: Optional[HTTPAuthorizationCredentials] = None) -> dict:
     """
     Dependency for verifying Bearer token in route handlers.
 
     Usage:
         @router.get("/protected")
-        async def protected_route(_: str = Depends(verify_bearer_token)):
+        async def protected_route(user: dict = Depends(verify_bearer_token)):
             ...
 
     Args:
         credentials: The Bearer credentials from Authorization header
 
     Returns:
-        The token if valid
+        The decoded token payload (user info)
 
     Raises:
         HTTPException: If authentication fails
     """
-    if not settings.API_KEY_ENABLED:
-        return ""
-
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -175,13 +172,25 @@ async def verify_bearer_token(credentials: Optional[HTTPAuthorizationCredentials
 
     token = credentials.credentials
 
-    # For now, token is validated against API_KEY
-    # In production, this would validate JWT
-    if token != settings.API_KEY:
+    # Validate JWT token
+    try:
+        from app.services.jwt_service import jwt_service
+        payload = jwt_service.validate_access_token(token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired Bearer token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return {
+            "sub": payload.sub,
+            "username": payload.username,
+            "role": payload.role,
+        }
+    except Exception as e:
+        logger.warning(f"JWT validation error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Bearer token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    return token
