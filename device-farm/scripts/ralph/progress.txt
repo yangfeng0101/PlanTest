@@ -188,3 +188,20 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Aggregation fetches task details from database for complete results
   - Report-svc calls test-svc API to get execution data for report generation
 ---
+
+## 2026-04-10 22:00 - PARALLEL-002
+- Verified result aggregator service in test-svc (already implemented)
+- Verified aggregator service in report-svc (already implemented)
+- Added parallel execution types to frontend/src/types/index.ts
+- Created ParallelProgress component for real-time execution progress display
+- Verified parallel execution page exists with result aggregation view
+- All typecheck passes
+- Files changed:
+  - frontend/src/types/index.ts (updated - added parallel types)
+  - frontend/src/components/ParallelProgress/index.tsx (new - real-time progress component)
+- **Learnings for future iterations:**
+  - Result aggregation uses in-memory storage (should migrate to database for persistence)
+  - Frontend uses polling (2s interval) to update parallel task progress
+  - Device logs are fetched via /api/v1/tasks/parallel/{id}/devices/{device_id}/logs
+  - Report summary includes status_breakdown and failed_device_details
+---
