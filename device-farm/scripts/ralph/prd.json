@@ -24,7 +24,7 @@
       "id": "DEF-011",
       "title": "Goroutine 泄漏修复",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Session 结构体添加 context.Context 和 cancel 函数",
         "StartSession 使用 context.WithCancel",
@@ -39,7 +39,7 @@
       "id": "DEF-012",
       "title": "WebRTC 播放器内存泄漏修复",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "useEffect 添加正确的依赖数组 [deviceId, wsUrl]",
         "清理 statsInterval 定时器",

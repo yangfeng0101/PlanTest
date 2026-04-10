@@ -47,3 +47,40 @@ Files changed:
 - Both middleware and dependency injection provide redundant protection
 
 ---
+
+## 2026-04-10 - DEF-011
+
+- Added context.Context to ScreenSession struct for proper goroutine lifecycle management
+- Goroutine leak fix already partially implemented: cancel function stored and streamVideo responds to context.Done()
+- StartSession uses context.WithCancel as expected
+- StopSession calls cancel() to terminate the streamVideo goroutine
+
+Files changed:
+- services/screen-svc/internal/handler/manager.go (added ctx field to struct)
+
+**Learnings for future iterations:**
+- Go context pattern: store both ctx and cancel in struct for goroutine lifecycle control
+- The select/case pattern with ctx.Done() is the idiomatic way to make goroutines cancellable
+- Always cancel context before cleaning up resources to stop dependent goroutines
+
+---
+## 2026-04-10 - DEF-012
+
+- Fixed useEffect dependency array to [deviceId, wsUrl] to prevent connection churn from callback function dependencies
+- Ensured statsInterval is properly cleared before creating new one and ref is reset to null in cleanup
+- Verified reconnectTimer is cleared in stopConnection and on successful connection
+- stopConnection is called via useEffect cleanup function on component unmount
+- Fixed pre-existing TypeScript errors (longPressDelay typo in TouchHandler, unused Switch import in screen page)
+
+Files changed:
+- frontend/src/components/WebrtcPlayer/index.tsx (memory leak fix)
+- frontend/src/components/TouchHandler/index.tsx (typo fix)
+- frontend/src/pages/screen/index.tsx (unused import fix)
+
+**Learnings for future iterations:**
+- React useEffect with callback functions in dependencies causes unnecessary re-runs; use refs to store callbacks instead
+- Always clear intervals/timeouts before creating new ones in useEffect to prevent multiple timers
+- TypeScript strict mode catches pre-existing issues that should be fixed for clean builds
+- The ref pattern (useRef + useEffect to sync) avoids stale closures without triggering re-renders
+
+---
