@@ -50,7 +50,7 @@
       "id": "FIX-HIGH-6",
       "title": "导出接口添加认证",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "export.py 添加认证保护",
         "未授权用户无法导出数据",

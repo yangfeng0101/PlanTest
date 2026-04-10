@@ -1,5 +1,5 @@
 # Export API Routes
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from fastapi.responses import Response
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -8,6 +8,7 @@ import json
 
 from app.services.export import export_service, ExportFormat
 from app.services.statistics import statistics_service
+from app.middleware.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ router = APIRouter()
 async def export_to_csv(
     data: List[Dict[str, Any]],
     filename: str = Query("export.csv", description="Output filename"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Export data to CSV format"""
     if not data:
@@ -39,6 +41,7 @@ async def export_to_excel(
     data: List[Dict[str, Any]],
     sheet_name: str = Query("Data", description="Sheet name"),
     filename: str = Query("export.xlsx", description="Output filename"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Export data to Excel format"""
     if not data:
@@ -60,6 +63,7 @@ async def export_to_pdf(
     title: str = Query("Report", description="Report title"),
     content: Dict[str, Any] = None,
     filename: str = Query("report.pdf", description="Output filename"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Export data to PDF format"""
     if not content:
@@ -80,6 +84,7 @@ async def export_to_pdf(
 async def export_statistics_csv(
     report_type: str = Query("daily", description="Report type: daily, weekly, monthly"),
     device_id: Optional[str] = Query(None, description="Filter by device ID"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Export statistics to CSV"""
     if report_type not in ["daily", "weekly", "monthly"]:
@@ -136,6 +141,7 @@ async def export_statistics_csv(
 async def export_statistics_excel(
     report_type: str = Query("daily", description="Report type: daily, weekly, monthly"),
     device_id: Optional[str] = Query(None, description="Filter by device ID"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Export statistics to Excel"""
     if report_type not in ["daily", "weekly", "monthly"]:
@@ -182,6 +188,7 @@ async def export_execution_logs_excel(
     logs: List[Dict[str, Any]],
     summary: Optional[Dict[str, Any]] = None,
     filename: str = Query("execution_logs.xlsx", description="Output filename"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Export execution logs to Excel with summary"""
     if not logs:
@@ -205,6 +212,7 @@ async def export_execution_logs_excel(
 async def export_test_report_pdf(
     report: Dict[str, Any],
     filename: str = Query("test_report.pdf", description="Output filename"),
+    current_user: dict = Depends(get_current_user),
 ):
     """Export test report to PDF"""
     if not report:
@@ -224,6 +232,7 @@ async def export_test_report_pdf(
 @router.post("/batch")
 async def batch_export(
     exports: List[Dict[str, Any]],
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Batch export multiple data sets
