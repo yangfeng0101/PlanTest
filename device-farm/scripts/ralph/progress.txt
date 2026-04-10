@@ -119,3 +119,32 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 菜单支持 children 属性实现子菜单
   - AI 服务 URL 应配置为环境变量
 ---
+
+## 2026-04-10 19:55 - FIX-FUNC-004
+- 前端添加用户管理页面
+- 文件变更:
+  - frontend/src/App.tsx (添加用户管理菜单和路由，菜单权限过滤)
+  - frontend/src/pages/admin/Users.tsx (新建，用户管理页面)
+- **Learnings for future iterations:**
+  - 后端用户 API 已存在于 services/test-svc/app/api/users.py
+  - API: GET/POST /api/v1/users, PATCH /api/v1/users/{id}, DELETE /api/v1/users/{id}
+  - 用户角色: admin/user/viewer
+  - 用户状态: active/inactive/suspended
+  - 菜单项支持 permission 属性进行权限过滤
+  - hasPermission 函数可用于检查权限，admin 拥有所有权限
+---
+
+## 2026-04-10 20:00 - FIX-FUNC-005
+- 前端添加告警配置页面
+- 文件变更:
+  - frontend/src/App.tsx (添加告警配置菜单和路由)
+  - frontend/src/pages/alerts/index.tsx (新建，告警配置页面)
+  - frontend/src/stores/authStore.ts (添加 alert 权限定义)
+- **Learnings for future iterations:**
+  - report-svc 运行在端口 8002，告警 API: /api/v1/alerts/*
+  - 告警规则 API: GET/POST /alerts/rules, PUT/DELETE /alerts/rules/{id}
+  - 告警实例 API: GET /alerts, POST /alerts/{id}/acknowledge, /alerts/{id}/resolve
+  - 告警历史 API: GET /alerts/history/all
+  - 页面使用 Tabs 组件分离规则、活动告警、历史三个视图
+  - Switch 组件可直接在 Table 列中实现启用/禁用切换
+---

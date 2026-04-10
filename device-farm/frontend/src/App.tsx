@@ -14,6 +14,7 @@ import {
   AimOutlined,
   ThunderboltOutlined,
   UsergroupAddOutlined,
+  AlertOutlined,
 } from '@ant-design/icons'
 import DevicesPage from './pages/devices'
 import DeviceDetailPage from './pages/devices/Detail'
@@ -27,6 +28,7 @@ import OCRPage from './pages/ai/OCR'
 import LocatePage from './pages/ai/Locate'
 import GeneratePage from './pages/ai/Generate'
 import UsersPage from './pages/admin/Users'
+import AlertsPage from './pages/alerts'
 import AuthGuard from './components/AuthGuard'
 import { useAuthStore, hasPermission } from './stores/authStore'
 import './App.css'
@@ -86,6 +88,12 @@ const baseMenuItems = [
     icon: <UsergroupAddOutlined />,
     label: '用户管理',
     permission: 'user:read',
+  },
+  {
+    key: '/alerts',
+    icon: <AlertOutlined />,
+    label: '告警配置',
+    permission: 'alert:read',
   },
 ]
 
@@ -183,6 +191,7 @@ function MainLayout() {
             <Route path="/ai/locate" element={<LocatePage />} />
             <Route path="/ai/generate" element={<GeneratePage />} />
             <Route path="/admin/users" element={<UsersPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/" element={<Navigate to="/devices" replace />} />
           </Routes>
         </Content>

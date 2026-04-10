@@ -321,6 +321,11 @@ export const hasPermission = (user: User | null, permission: string): boolean =>
     'user:read': ['admin'],
     'user:write': ['admin'],
     'user:delete': ['admin'],
+
+    // Alert management
+    'alert:read': ['admin', 'user', 'viewer'],
+    'alert:write': ['admin'],
+    'alert:delete': ['admin'],
   }
 
   const allowedRoles = permissionMap[permission] || []

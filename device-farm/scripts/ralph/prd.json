@@ -72,7 +72,7 @@
       "id": "FIX-FUNC-005",
       "title": "前端添加告警配置页面",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建告警规则列表页面",
         "支持创建/编辑/删除告警规则",
