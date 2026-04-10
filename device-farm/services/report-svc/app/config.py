@@ -47,6 +47,18 @@ class Settings(BaseSettings):
         if origin.strip()
     ]
 
+    # Notification settings
+    FEISHU_WEBHOOK_URL: Optional[str] = os.getenv("FEISHU_WEBHOOK_URL")
+    DINGTALK_WEBHOOK_URL: Optional[str] = os.getenv("DINGTALK_WEBHOOK_URL")
+
+    # SMTP settings for email notifications
+    SMTP_HOST: Optional[str] = os.getenv("SMTP_HOST")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: Optional[str] = os.getenv("SMTP_USER")
+    SMTP_PASSWORD: Optional[str] = os.getenv("SMTP_PASSWORD")
+    EMAIL_FROM: Optional[str] = os.getenv("EMAIL_FROM")
+    SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+
     class Config:
         env_file = ".env"
         extra = "ignore"

@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 from collections import defaultdict
 import uuid
 import logging
-import httpx
+import asyncio
 
 from app.models.alert import (
     AlertRule,
@@ -16,6 +16,11 @@ from app.models.alert import (
     AlertStatus,
     AlertSeverity,
     NotificationChannel,
+)
+from app.services.notification import (
+    notification_service,
+    NotificationMessage,
+    NotificationChannel as NotifyChannel,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,7 +119,7 @@ class AlertService:
             rules = [r for r in rules if r.enabled]
         return rules
 
-    def trigger_alert(
+    async def trigger_alert(
         self,
         rule_id: str,
         title: str,
@@ -165,7 +170,7 @@ class AlertService:
         )
 
         # Send notifications
-        self._send_notifications(alert, rule)
+        await self._send_notifications(alert, rule)
 
         logger.info(f"Triggered alert: {alert_id} - {title}")
         return alert
@@ -256,56 +261,21 @@ class AlertService:
         alert: Alert,
     ) -> bool:
         """Send notification to Feishu"""
-        try:
-            # Feishu card message format
-            card = {
-                "msg_type": "interactive",
-                "card": {
-                    "header": {
-                        "title": {
-                            "tag": "plain_text",
-                            "content": f"[{alert.severity.value.upper()}] {alert.title}"
-                        },
-                        "template": self._get_feishu_color(alert.severity)
-                    },
-                    "elements": [
-                        {
-                            "tag": "div",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": alert.message
-                            }
-                        },
-                        {
-                            "tag": "div",
-                            "fields": [
-                                {
-                                    "is_short": True,
-                                    "text": {
-                                        "tag": "lark_md",
-                                        "content": f"**类型**: {alert.alert_type.value}"
-                                    }
-                                },
-                                {
-                                    "is_short": True,
-                                    "text": {
-                                        "tag": "lark_md",
-                                        "content": f"**时间**: {alert.triggered_at.isoformat()}"
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
+        message = NotificationMessage(
+            title=alert.title,
+            content=alert.message,
+            severity=alert.severity.value,
+            details={
+                "类型": alert.alert_type.value,
+                "时间": alert.triggered_at.isoformat(),
+                **alert.details,
+            },
+        )
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(webhook_url, json=card, timeout=10)
-                return response.status_code == 200
-
-        except Exception as e:
-            logger.error(f"Failed to send Feishu notification: {e}")
-            return False
+        # Create a temporary service with the specific webhook
+        from app.services.notification import NotificationService
+        service = NotificationService(feishu_webhook=webhook_url)
+        return await service.send_feishu(message)
 
     async def send_dingtalk_notification(
         self,
@@ -313,61 +283,73 @@ class AlertService:
         alert: Alert,
     ) -> bool:
         """Send notification to DingTalk"""
-        try:
-            message = {
-                "msgtype": "markdown",
-                "markdown": {
-                    "title": f"[{alert.severity.value.upper()}] {alert.title}",
-                    "text": f"### {alert.title}\n\n"
-                            f"**严重程度**: {alert.severity.value}\n\n"
-                            f"**类型**: {alert.alert_type.value}\n\n"
-                            f"**详情**: {alert.message}\n\n"
-                            f"**时间**: {alert.triggered_at.isoformat()}"
-                }
-            }
+        message = NotificationMessage(
+            title=alert.title,
+            content=alert.message,
+            severity=alert.severity.value,
+            details={
+                "类型": alert.alert_type.value,
+                "时间": alert.triggered_at.isoformat(),
+                **alert.details,
+            },
+        )
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(webhook_url, json=message, timeout=10)
-                return response.status_code == 200
-
-        except Exception as e:
-            logger.error(f"Failed to send DingTalk notification: {e}")
-            return False
+        # Create a temporary service with the specific webhook
+        from app.services.notification import NotificationService
+        service = NotificationService(dingtalk_webhook=webhook_url)
+        return await service.send_dingtalk(message)
 
     async def send_email_notification(
         self,
         email: str,
         alert: Alert,
     ) -> bool:
-        """Send email notification (placeholder - requires SMTP config)"""
-        # In production, integrate with email service
-        logger.info(f"Email notification to {email}: {alert.title}")
-        return True
+        """Send email notification"""
+        message = NotificationMessage(
+            title=alert.title,
+            content=alert.message,
+            severity=alert.severity.value,
+            details={
+                "类型": alert.alert_type.value,
+                "时间": alert.triggered_at.isoformat(),
+                **alert.details,
+            },
+        )
 
-    def _send_notifications(
+        return await notification_service.send_email(message, [email])
+
+    async def _send_notifications(
         self,
         alert: Alert,
         rule: AlertRule,
     ) -> None:
         """Send notifications through configured channels"""
+        notification_tasks = []
+
         for channel in rule.channels:
             for recipient in rule.recipients:
                 if channel == NotificationChannel.FEISHU:
-                    # Send async (fire and forget in this context)
-                    import asyncio
-                    asyncio.create_task(
+                    notification_tasks.append(
                         self.send_feishu_notification(recipient, alert)
                     )
                 elif channel == NotificationChannel.DINGTALK:
-                    import asyncio
-                    asyncio.create_task(
+                    notification_tasks.append(
                         self.send_dingtalk_notification(recipient, alert)
                     )
                 elif channel == NotificationChannel.EMAIL:
-                    import asyncio
-                    asyncio.create_task(
+                    notification_tasks.append(
                         self.send_email_notification(recipient, alert)
                     )
+
+        # Execute all notifications in parallel
+        if notification_tasks:
+            results = await asyncio.gather(*notification_tasks, return_exceptions=True)
+
+            # Log results
+            success_count = sum(1 for r in results if r is True)
+            logger.info(
+                f"Sent {success_count}/{len(notification_tasks)} notifications for alert {alert.id}"
+            )
 
         alert.notifications_sent += 1
         alert.last_notification_at = datetime.utcnow()
@@ -395,16 +377,6 @@ class AlertService:
             details=details or {},
         )
         _alert_history.append(history)
-
-    def _get_feishu_color(self, severity: AlertSeverity) -> str:
-        """Get Feishu card color for severity"""
-        colors = {
-            AlertSeverity.INFO: "blue",
-            AlertSeverity.WARNING: "yellow",
-            AlertSeverity.ERROR: "red",
-            AlertSeverity.CRITICAL: "red",
-        }
-        return colors.get(severity, "blue")
 
 
 # Global instance

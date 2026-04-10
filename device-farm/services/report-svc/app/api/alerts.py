@@ -5,6 +5,11 @@ from datetime import datetime
 import logging
 
 from app.services.alert import alert_service
+from app.services.notification import (
+    notification_service,
+    NotificationLog,
+    NotificationChannel,
+)
 from app.models.alert import (
     AlertRule,
     Alert,
@@ -91,7 +96,7 @@ async def trigger_alert(
     task_id: Optional[str] = None,
 ):
     """Manually trigger an alert"""
-    alert = alert_service.trigger_alert(
+    alert = await alert_service.trigger_alert(
         rule_id=rule_id,
         title=title,
         message=message,
@@ -157,3 +162,19 @@ async def get_alert_history(
 ):
     """Get alert history"""
     return alert_service.get_history(alert_id=alert_id, limit=limit)
+
+
+# === Notification Logs ===
+
+@router.get("/notifications/logs", response_model=List[NotificationLog])
+async def get_notification_logs(
+    channel: Optional[NotificationChannel] = Query(None, description="Filter by channel"),
+    success_only: bool = Query(False, description="Only return successful notifications"),
+    limit: int = Query(100, ge=1, le=500, description="Max results"),
+):
+    """Get notification logs"""
+    return notification_service.get_logs(
+        channel=channel,
+        success_only=success_only,
+        limit=limit,
+    )
