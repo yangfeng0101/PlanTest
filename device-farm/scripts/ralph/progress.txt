@@ -19,3 +19,12 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 环境变量文档说明已添加到 IMPLEMENTATION.md
   - .env.example 应只包含占位符，不包含真实凭证
 ---
+
+## 2026-04-10 19:15 - FIX-SEC-002
+- DEBUG 模式默认关闭
+- 文件变更:
+  - services/device-svc/app/config.py (DEBUG 默认值从 True 改为 false)
+- **Learnings for future iterations:**
+  - test-svc, report-svc, ai-svc 已经正确使用环境变量控制 DEBUG
+  - 只有 device-svc 之前硬编码为 True
+---

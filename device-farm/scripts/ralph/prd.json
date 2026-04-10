@@ -23,7 +23,7 @@
       "id": "FIX-SEC-002",
       "title": "DEBUG 模式默认关闭",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "所有服务 DEBUG 默认为 false",
         "通过环境变量控制 DEBUG 模式",
