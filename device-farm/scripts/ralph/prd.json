@@ -289,7 +289,7 @@
       "id": "AI-002",
       "title": "AI 元素定位",
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "实现基于描述的元素定位",
         "支持自然语言查询（如点击登录按钮）",

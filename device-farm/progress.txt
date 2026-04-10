@@ -139,3 +139,21 @@
   - TextRegion dataclass contains text, confidence, bbox (4 corners), and center point
   - GPU support via AI_DEVICE setting (cpu or cuda)
 ---
+
+## 2026-04-10 - AI-002
+- Implemented AI element location service
+- Natural language query support (e.g., "点击登录按钮")
+- Element type detection: button, input, text, icon, link
+- Returns element coordinates with bounding box and center point
+- Confidence scoring based on OCR confidence and text similarity
+- Similar element matching API for finding related UI elements
+- **Files:**
+  - services/ai-svc/app/services/element_locator.py (new)
+  - services/ai-svc/app/api/locate.py (new)
+  - services/ai-svc/app/main.py (added locate router)
+- **Learnings for future iterations:**
+  - Element location uses OCR results combined with keyword matching
+  - ElementType enum defines supported element categories
+  - Text similarity calculated using character overlap and containment
+  - Clickable detection based on element type and keywords
+---
