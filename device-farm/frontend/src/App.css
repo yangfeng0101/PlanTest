@@ -1,0 +1,17 @@
+.logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ant-layout-content {
+  background: #fff;
+  border-radius: 8px;
+  margin: 24px;
+}

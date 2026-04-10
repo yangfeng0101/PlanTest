@@ -1,0 +1,1065 @@
+openapi: 3.0.3
+info:
+  title: Device Farm API
+  description: 设备农场管理平台 API 文档
+  version: 1.0.0
+  contact:
+    name: Device Farm Team
+    email: device-farm@example.com
+
+servers:
+  - url: http://localhost:80
+    description: 开发环境
+  - url: https://device-farm.example.com
+    description: 生产环境
+
+tags:
+  - name: devices
+    description: 设备管理
+  - name: screen
+    description: 投屏控制
+  - name: scripts
+    description: 脚本管理
+  - name: tasks
+    description: 测试任务
+  - name: reports
+    description: 测试报告
+
+paths:
+  # ==================== 设备管理 ====================
+  /api/v1/devices:
+    get:
+      tags:
+        - devices
+      summary: 获取设备列表
+      description: 获取所有设备列表，支持按状态、平台筛选
+      operationId: listDevices
+      parameters:
+        - name: status
+          in: query
+          description: 设备状态
+          schema:
+            type: string
+            enum: [online, offline, busy, maintenance]
+        - name: platform
+          in: query
+          description: 设备平台
+          schema:
+            type: string
+            enum: [android, ios]
+        - name: page
+          in: query
+          description: 页码
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          description: 每页数量
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceListResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags:
+        - devices
+      summary: 注册新设备
+      description: 注册一个新的测试设备
+      operationId: registerDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRegisterRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: 设备序列号已存在
+
+  /api/v1/devices/{deviceId}:
+    get:
+      tags:
+        - devices
+      summary: 获取设备详情
+      operationId: getDevice
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - devices
+      summary: 更新设备信息
+      operationId: updateDevice
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceUpdateRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - devices
+      summary: 删除设备
+      operationId: deleteDevice
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      responses:
+        '204':
+          description: 删除成功
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/devices/{deviceId}/acquire:
+    post:
+      tags:
+        - devices
+      summary: 占用设备
+      description: 占用设备用于测试，设备状态变为busy
+      operationId: acquireDevice
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  description: 用户ID
+                reason:
+                  type: string
+                  description: 占用原因
+      responses:
+        '200':
+          description: 占用成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '409':
+          description: 设备已被占用或不可用
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/devices/{deviceId}/release:
+    post:
+      tags:
+        - devices
+      summary: 释放设备
+      description: 释放设备，设备状态恢复为online
+      operationId: releaseDevice
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: 释放原因
+      responses:
+        '200':
+          description: 释放成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== 投屏控制 ====================
+  /api/v1/devices/{deviceId}/screen/session:
+    post:
+      tags:
+        - screen
+      summary: 创建投屏会话
+      description: 创建WebRTC投屏会话
+      operationId: createScreenSession
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScreenSessionRequest'
+      responses:
+        '200':
+          description: 会话创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScreenSessionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 设备已有活跃会话
+
+    get:
+      tags:
+        - screen
+      summary: 获取当前投屏会话
+      operationId: getScreenSession
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScreenSessionResponse'
+        '404':
+          description: 无活跃会话
+
+    delete:
+      tags:
+        - screen
+      summary: 关闭投屏会话
+      operationId: closeScreenSession
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      responses:
+        '204':
+          description: 会话已关闭
+        '404':
+          description: 无活跃会话
+
+  /api/v1/devices/{deviceId}/screen/input:
+    post:
+      tags:
+        - screen
+      summary: 发送输入事件
+      description: 发送触摸、按键等输入事件到设备
+      operationId: sendInputEvent
+      parameters:
+        - $ref: '#/components/parameters/deviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputEvent'
+      responses:
+        '200':
+          description: 事件已发送
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== 脚本管理 ====================
+  /api/v1/scripts:
+    get:
+      tags:
+        - scripts
+      summary: 获取脚本列表
+      operationId: listScripts
+      parameters:
+        - name: language
+          in: query
+          description: 脚本语言
+          schema:
+            type: string
+            enum: [python, javascript, appium, airtest]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScriptListResponse'
+
+    post:
+      tags:
+        - scripts
+      summary: 创建脚本
+      operationId: createScript
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptCreateRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScriptResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/scripts/{scriptId}:
+    get:
+      tags:
+        - scripts
+      summary: 获取脚本详情
+      operationId: getScript
+      parameters:
+        - $ref: '#/components/parameters/scriptId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScriptResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - scripts
+      summary: 更新脚本
+      operationId: updateScript
+      parameters:
+        - $ref: '#/components/parameters/scriptId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptUpdateRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScriptResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - scripts
+      summary: 删除脚本
+      operationId: deleteScript
+      parameters:
+        - $ref: '#/components/parameters/scriptId'
+      responses:
+        '204':
+          description: 删除成功
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==================== 测试任务 ====================
+  /api/v1/tasks:
+    get:
+      tags:
+        - tasks
+      summary: 获取任务列表
+      operationId: listTasks
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, completed, failed, cancelled]
+        - name: deviceId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+
+    post:
+      tags:
+        - tasks
+      summary: 创建测试任务
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreateRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: 设备不可用
+
+  /api/v1/tasks/{taskId}:
+    get:
+      tags:
+        - tasks
+      summary: 获取任务详情
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - tasks
+      summary: 取消任务
+      operationId: cancelTask
+      parameters:
+        - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: 任务已取消
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/tasks/{taskId}/run:
+    post:
+      tags:
+        - tasks
+      summary: 执行任务
+      operationId: runTask
+      parameters:
+        - $ref: '#/components/parameters/taskId'
+      responses:
+        '200':
+          description: 任务开始执行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 任务已在运行或设备不可用
+
+  # ==================== 测试报告 ====================
+  /api/v1/reports:
+    get:
+      tags:
+        - reports
+      summary: 获取报告列表
+      operationId: listReports
+      parameters:
+        - name: taskId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportListResponse'
+
+  /api/v1/reports/{reportId}:
+    get:
+      tags:
+        - reports
+      summary: 获取报告详情
+      operationId: getReport
+      parameters:
+        - $ref: '#/components/parameters/reportId'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+# ==================== 组件定义 ====================
+components:
+  parameters:
+    deviceId:
+      name: deviceId
+      in: path
+      required: true
+      description: 设备ID
+      schema:
+        type: string
+    scriptId:
+      name: scriptId
+      in: path
+      required: true
+      description: 脚本ID
+      schema:
+        type: string
+    taskId:
+      name: taskId
+      in: path
+      required: true
+      description: 任务ID
+      schema:
+        type: string
+    reportId:
+      name: reportId
+      in: path
+      required: true
+      description: 报告ID
+      schema:
+        type: string
+
+  schemas:
+    # 设备相关
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+        serial:
+          type: string
+        platform:
+          type: string
+          enum: [android, ios]
+        model:
+          type: string
+        brand:
+          type: string
+        osVersion:
+          type: string
+        screenWidth:
+          type: integer
+        screenHeight:
+          type: integer
+        status:
+          type: string
+          enum: [online, offline, busy, maintenance]
+        ownerId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DeviceRegisterRequest:
+      type: object
+      required:
+        - serial
+        - platform
+      properties:
+        serial:
+          type: string
+        platform:
+          type: string
+          enum: [android, ios]
+        model:
+          type: string
+        brand:
+          type: string
+        osVersion:
+          type: string
+        screenWidth:
+          type: integer
+        screenHeight:
+          type: integer
+
+    DeviceUpdateRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        brand:
+          type: string
+        osVersion:
+          type: string
+        status:
+          type: string
+          enum: [online, offline, busy, maintenance]
+
+    DeviceResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Device'
+
+    DeviceListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            total:
+              type: integer
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Device'
+
+    # 投屏相关
+    ScreenSessionRequest:
+      type: object
+      properties:
+        quality:
+          type: string
+          enum: [low, medium, high]
+          default: medium
+        fps:
+          type: integer
+          default: 30
+
+    ScreenSessionResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            sessionId:
+              type: string
+            deviceId:
+              type: string
+            webrtcOffer:
+              type: string
+            iceServers:
+              type: array
+              items:
+                type: object
+                properties:
+                  urls:
+                    type: array
+                    items:
+                      type: string
+                  username:
+                    type: string
+                  credential:
+                    type: string
+            startedAt:
+              type: string
+              format: date-time
+
+    InputEvent:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [touch, swipe, key, text]
+        x:
+          type: number
+          description: X坐标 (touch事件)
+        y:
+          type: number
+          description: Y坐标 (touch事件)
+        startX:
+          type: number
+          description: 起始X坐标 (swipe事件)
+        startY:
+          type: number
+          description: 起始Y坐标 (swipe事件)
+        endX:
+          type: number
+          description: 结束X坐标 (swipe事件)
+        endY:
+          type: number
+          description: 结束Y坐标 (swipe事件)
+        duration:
+          type: integer
+          description: 持续时间(ms)
+        keyCode:
+          type: integer
+          description: 键码 (key事件)
+        text:
+          type: string
+          description: 文本内容 (text事件)
+
+    # 脚本相关
+    Script:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        language:
+          type: string
+          enum: [python, javascript, appium, airtest]
+        content:
+          type: string
+        version:
+          type: integer
+        description:
+          type: string
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ScriptCreateRequest:
+      type: object
+      required:
+        - name
+        - language
+      properties:
+        name:
+          type: string
+        language:
+          type: string
+          enum: [python, javascript, appium, airtest]
+        content:
+          type: string
+        description:
+          type: string
+
+    ScriptUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        content:
+          type: string
+        description:
+          type: string
+
+    ScriptResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Script'
+
+    ScriptListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            total:
+              type: integer
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Script'
+
+    # 任务相关
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        scriptId:
+          type: string
+        deviceId:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        priority:
+          type: integer
+        params:
+          type: object
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    TaskCreateRequest:
+      type: object
+      required:
+        - name
+        - scriptId
+        - deviceId
+      properties:
+        name:
+          type: string
+        scriptId:
+          type: string
+        deviceId:
+          type: string
+        priority:
+          type: integer
+          default: 0
+        params:
+          type: object
+
+    TaskResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Task'
+
+    TaskListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            total:
+              type: integer
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Task'
+
+    # 报告相关
+    Report:
+      type: object
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        totalCases:
+          type: integer
+        passedCases:
+          type: integer
+        failedCases:
+          type: integer
+        skippedCases:
+          type: integer
+        duration:
+          type: integer
+          description: 执行时长(秒)
+        videoUrl:
+          type: string
+        logUrl:
+          type: string
+        reportUrl:
+          type: string
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CaseResult:
+      type: object
+      properties:
+        id:
+          type: string
+        reportId:
+          type: string
+        caseName:
+          type: string
+        status:
+          type: string
+          enum: [passed, failed, skipped]
+        duration:
+          type: integer
+          description: 执行时长(毫秒)
+        errorMessage:
+          type: string
+        stackTrace:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ReportDetailResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            report:
+              $ref: '#/components/schemas/Report'
+            caseResults:
+              type: array
+              items:
+                $ref: '#/components/schemas/CaseResult'
+
+    ReportListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            total:
+              type: integer
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Report'
+
+    # 错误响应
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: 服务器内部错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

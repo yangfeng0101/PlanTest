@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: device-farm-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-devicefarm}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-devicefarm123}
+      POSTGRES_DB: ${DB_NAME:-device_farm}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-devicefarm} -d ${DB_NAME:-device_farm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - device-farm-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: device-farm-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - device-farm-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: device-farm-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - device-farm-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: device-farm-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - mock-server
+    networks:
+      - device-farm-network
+
+  mock-server:
+    build:
+      context: ../mock
+      dockerfile: Dockerfile
+    container_name: device-farm-mock
+    ports:
+      - "3000:3000"
+    networks:
+      - device-farm-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  device-farm-network:
+    driver: bridge

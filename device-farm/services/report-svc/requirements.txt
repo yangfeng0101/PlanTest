@@ -1,0 +1,33 @@
+# Report Service - Device Farm
+# Dependencies for report generation and storage
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Storage
+minio==7.2.3
+
+# Utilities
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dateutil==2.8.2
+
+# Report Generation
+jinja2==3.1.3
+markdown==3.5.2
+weasyprint==60.2  # For PDF generation (optional)
+
+# HTTP Client
+httpx==0.26.0
+aiohttp==3.9.1
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3

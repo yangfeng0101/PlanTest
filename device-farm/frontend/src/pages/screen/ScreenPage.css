@@ -1,0 +1,59 @@
+.screen-page {
+  height: 100%;
+}
+
+.player-container {
+  height: 500px;
+  background: #000;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.player-container.active {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.player-placeholder {
+  text-align: center;
+  color: #999;
+}
+
+.player-placeholder p {
+  margin-top: 16px;
+  color: #666;
+}
+
+.player-placeholder .stream-info {
+  color: #999;
+  font-size: 12px;
+}
+
+.control-panel {
+  padding: 8px 0;
+}
+
+.control-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.gesture-panel,
+.quick-input {
+  padding: 8px 0;
+}
+
+.ant-card-body {
+  padding: 16px;
+}
+
+@media (max-width: 1200px) {
+  .player-container {
+    height: 400px;
+  }
+}

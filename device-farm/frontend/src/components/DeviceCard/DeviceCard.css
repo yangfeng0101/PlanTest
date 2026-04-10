@@ -1,0 +1,52 @@
+.device-card {
+  transition: all 0.3s;
+}
+
+.device-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.device-cover {
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
+}
+
+.device-icon {
+  font-size: 48px;
+}
+
+.status-tag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.device-info {
+  font-size: 12px;
+  color: #666;
+}
+
+.device-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.battery-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.battery-info span {
+  white-space: nowrap;
+}
+
+.device-tags {
+  margin-top: 8px;
+}
