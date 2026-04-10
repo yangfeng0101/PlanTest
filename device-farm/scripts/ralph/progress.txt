@@ -51,3 +51,14 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 已有 require_role() 函数可用于角色检查
   - 操作日志使用 logger.info/warning 记录
 ---
+
+## 2026-04-10 19:30 - FIX-SEC-005
+- 认证接口添加速率限制
+- 文件变更:
+  - services/test-svc/app/middleware/rate_limit.py (新建)
+  - services/test-svc/app/main.py (添加中间件)
+- **Learnings for future iterations:**
+  - 使用 Redis ZSET 实现滑动窗口限流
+  - Redis 不可用时自动降级到内存存储
+  - 返回标准 Rate Limit 响应头
+---

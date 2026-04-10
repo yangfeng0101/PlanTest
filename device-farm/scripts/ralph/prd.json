@@ -73,7 +73,7 @@
       "id": "FIX-SEC-005",
       "title": "认证接口添加速率限制",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "登录接口限制 5次/分钟",
         "注册接口限制 3次/分钟",
