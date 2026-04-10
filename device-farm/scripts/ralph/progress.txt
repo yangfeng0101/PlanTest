@@ -152,3 +152,26 @@ Files changed:
 - The pattern `useRef<number | null>(null)` with `window.setTimeout` and `clearTimeout` is idiomatic for React timers
 
 ---
+
+## 2026-04-10 - IOS-001
+
+- Created ios_service.py with IOSDeviceService class
+- Implemented discover_devices() using pymobiledevice3 usbmux list
+- Implemented get_device_info(udid) via lockdown info query
+- Implemented pair_device(udid) with support for handling user confirmation requirement
+- Added pymobiledevice3 dependency to requirements.txt
+- Bonus: Implemented unpair_device, get_pairing_status, list_apps, install_app, uninstall_app
+
+Files changed:
+- services/device-svc/app/services/ios_service.py (new)
+- services/device-svc/requirements.txt (modified - added pymobiledevice3)
+
+**Learnings for future iterations:**
+- pymobiledevice3 CLI is invoked via `python3 -m pymobiledevice3` with JSON output via `--json` flag
+- iOS device identification uses UDID (Unique Device Identifier) not serial number
+- Pairing may require user confirmation on the device screen (PasswordRequired/UserPairingRequired errors)
+- Device info is retrieved via lockdown service; battery and storage require separate domain queries
+- Screen resolution/size for iOS devices must be mapped from ProductType as lockdown doesn't expose display info directly
+- The ADBService pattern (async subprocess execution with stdout/stderr handling) works well for pymobiledevice3 too
+
+---

@@ -112,7 +112,7 @@
       "id": "IOS-001",
       "title": "iOS 设备服务实现",
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建 services/device-svc/app/services/ios_service.py",
         "实现 IOSDeviceService 类",
