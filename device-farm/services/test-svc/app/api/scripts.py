@@ -3,7 +3,7 @@ import os
 import json
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status, Depends
 from fastapi.responses import JSONResponse
 
 from app.models.models import (
@@ -14,6 +14,7 @@ from app.models.models import (
     ScriptStatus,
 )
 from app.config import settings
+from app.auth import verify_api_key
 
 router = APIRouter()
 
@@ -74,6 +75,7 @@ async def list_scripts(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[ScriptStatus] = None,
     search: Optional[str] = None,
+    _: str = Depends(verify_api_key),
 ):
     """List all scripts with pagination"""
     scripts = list(_scripts_db.values())
@@ -109,7 +111,10 @@ async def list_scripts(
 
 
 @router.post("", response_model=Script, status_code=status.HTTP_201_CREATED)
-async def create_script(script: ScriptCreate):
+async def create_script(
+    script: ScriptCreate,
+    _: str = Depends(verify_api_key),
+):
     """Create a new script"""
     new_script = Script(**script.model_dump())
 
@@ -124,7 +129,10 @@ async def create_script(script: ScriptCreate):
 
 
 @router.get("/{script_id}", response_model=Script)
-async def get_script(script_id: str):
+async def get_script(
+    script_id: str,
+    _: str = Depends(verify_api_key),
+):
     """Get script by ID"""
     if script_id not in _scripts_db:
         # Try to load from file
@@ -141,7 +149,11 @@ async def get_script(script_id: str):
 
 
 @router.put("/{script_id}", response_model=Script)
-async def update_script(script_id: str, script_update: ScriptUpdate):
+async def update_script(
+    script_id: str,
+    script_update: ScriptUpdate,
+    _: str = Depends(verify_api_key),
+):
     """Update an existing script"""
     if script_id not in _scripts_db:
         raise HTTPException(
@@ -165,7 +177,10 @@ async def update_script(script_id: str, script_update: ScriptUpdate):
 
 
 @router.delete("/{script_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_script(script_id: str):
+async def delete_script(
+    script_id: str,
+    _: str = Depends(verify_api_key),
+):
     """Delete a script"""
     if script_id not in _scripts_db:
         raise HTTPException(

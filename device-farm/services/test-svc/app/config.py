@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     # API Authentication
     API_KEY: str = os.getenv("API_KEY", "")
-    API_KEY_ENABLED: bool = os.getenv("API_KEY_ENABLED", "false").lower() == "true"
+    API_KEY_ENABLED: bool = os.getenv("API_KEY_ENABLED", "true").lower() == "true"
 
     class Config:
         env_file = ".env"
