@@ -2,6 +2,7 @@
 from app.services.storage import StorageService, storage_service
 from app.services.generator import ReportGenerator, report_generator
 from app.services.aggregator import AggregatorService, aggregator_service
+from app.services.alert import AlertService, alert_service
 
 __all__ = [
     "StorageService",
@@ -10,4 +11,6 @@ __all__ = [
     "report_generator",
     "AggregatorService",
     "aggregator_service",
+    "AlertService",
+    "alert_service",
 ]

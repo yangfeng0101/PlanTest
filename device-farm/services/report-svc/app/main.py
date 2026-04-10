@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import reports, statistics
+from app.api import reports, statistics, alerts
 
 # Create FastAPI application
 app = FastAPI(
@@ -33,6 +33,11 @@ app.include_router(
     statistics.router,
     prefix=f"{settings.API_PREFIX}/statistics",
     tags=["Statistics"]
+)
+app.include_router(
+    alerts.router,
+    prefix=f"{settings.API_PREFIX}/alerts",
+    tags=["Alerts"]
 )
 
 

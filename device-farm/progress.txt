@@ -66,15 +66,17 @@
 
 ## 2026-04-10 - STATS-002
 - Enhanced TrendChart component with histogram chart type for distribution visualization
-- Added response time distribution chart to the Trend page
-- Added navigation button from reports page to trend analysis page
-- Implemented data fetching for device usage trend, task count trend, and response time distribution
+- Added success_rate metric support to statistics service trend API
+- Added response time distribution API endpoint (/api/v1/statistics/response-time-distribution)
+- Updated Trend page to show success rate trend and response time distribution charts
 - **Files changed:**
+  - services/report-svc/app/services/statistics.py (added success_rate metric, response time distribution)
+  - services/report-svc/app/api/statistics.py (added response-time-distribution endpoint)
   - frontend/src/components/TrendChart/index.tsx (added histogram type)
-  - frontend/src/pages/reports/Trend.tsx (added response time distribution chart)
-  - frontend/src/pages/reports/index.tsx (added navigation to trend page)
+  - frontend/src/pages/reports/Trend.tsx (added success rate trend, response time distribution)
 - **Learnings for future iterations:**
   - TrendChart component supports 4 chart types: line, bar, area, histogram
   - The histogram type is useful for showing distributions (e.g., response time buckets)
-  - The trend page fetches data from /api/v1/statistics/trend endpoint with metric parameter
+  - Statistics trend API now supports 3 metrics: device_hours, task_count, success_rate
+  - Response time distribution returns bucketed data with label, count, and percentage
 ---

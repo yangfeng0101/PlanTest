@@ -13,6 +13,17 @@ from app.models.models import (
     ReportDownloadResponse,
     ErrorResponse,
 )
+from app.models.alert import (
+    AlertType,
+    AlertStatus,
+    AlertSeverity,
+    NotificationChannel,
+    AlertRule,
+    Alert,
+    AlertCreate,
+    AlertUpdate,
+    AlertHistory,
+)
 
 __all__ = [
     "ReportStatus",
@@ -27,4 +38,14 @@ __all__ = [
     "ReportListResponse",
     "ReportDownloadResponse",
     "ErrorResponse",
+    # Alert models
+    "AlertType",
+    "AlertStatus",
+    "AlertSeverity",
+    "NotificationChannel",
+    "AlertRule",
+    "Alert",
+    "AlertCreate",
+    "AlertUpdate",
+    "AlertHistory",
 ]
