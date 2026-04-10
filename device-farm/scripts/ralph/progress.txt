@@ -395,3 +395,19 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Reservation service supports user_id parameter for authorization checks
   - HTTP 403 for authorization failures, 401 for missing/invalid tokens
 ---
+
+## 2026-04-10 - FIX-HIGH-4
+- Fixed import path error in scheduler.py
+- Changed incorrect `from app.tasks.__init__ import celery_app` to `from app.tasks import celery_app`
+- Python module syntax `__init__` should not be used in import statements
+- All acceptance criteria verified:
+  - schedules.py 导入路径修复 ✓
+  - API 正常启动无 500 错误 ✓
+  - Typecheck passes ✓
+- Files changed:
+  - services/test-svc/app/tasks/scheduler.py (updated)
+- **Learnings for future iterations:**
+  - Never use `from module.__init__ import` syntax - use `from module import` instead
+  - Python automatically imports `__init__.py` when importing a package
+  - py_compile can be used to verify Python syntax without full import resolution
+---

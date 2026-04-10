@@ -22,7 +22,7 @@
       "id": "FIX-HIGH-4",
       "title": "修复导入路径错误",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "schedules.py 导入路径修复",
         "API 正常启动无 500 错误",

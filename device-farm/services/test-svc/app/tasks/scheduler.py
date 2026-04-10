@@ -13,7 +13,7 @@ from enum import Enum
 from celery.schedules import crontab, schedule
 from pydantic import BaseModel, Field, validator
 
-from app.tasks.__init__ import celery_app
+from app.tasks import celery_app
 from app.config import settings
 
 
