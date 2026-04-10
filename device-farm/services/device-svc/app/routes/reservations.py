@@ -10,6 +10,8 @@ from app.models.reservation_schemas import (
     ReservationResponse,
     ReservationListResponse,
     ReservationStatus,
+    ReservationRenewRequest,
+    QueuePositionResponse,
 )
 from app.services.reservation_service import reservation_service
 
@@ -107,3 +109,57 @@ async def cancel_reservation(reservation_id: str):
         return {"message": "Reservation cancelled", "reservation_id": reservation_id}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{reservation_id}/renew", response_model=ReservationResponse)
+async def renew_reservation(
+    reservation_id: str,
+    renew_request: ReservationRenewRequest = ReservationRenewRequest()
+):
+    """
+    Renew/extend an active reservation.
+
+    Maximum extension is 1 hour. Only active reservations can be renewed.
+    """
+    try:
+        reservation = await reservation_service.renew_reservation(
+            reservation_id,
+            extension_minutes=renew_request.extension_minutes
+        )
+        if not reservation:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+        return _reservation_to_response(reservation)
+    except ValueError as e:
+        if "conflicts" in str(e).lower():
+            raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{reservation_id}/queue-position", response_model=QueuePositionResponse)
+async def get_queue_position(reservation_id: str):
+    """
+    Get the queue position for a pending reservation.
+
+    Returns position 0 if reservation is not in queue (not pending or not found).
+    """
+    reservation = await reservation_service.get_reservation(reservation_id)
+    if not reservation:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+
+    position = await reservation_service.get_queue_position(
+        reservation.device_id,
+        reservation_id
+    )
+
+    # Get total in queue
+    all_pending = await reservation_service.get_reservations(
+        device_id=reservation.device_id,
+        status=ReservationStatus.PENDING
+    )
+
+    return QueuePositionResponse(
+        reservation_id=reservation_id,
+        device_id=reservation.device_id,
+        position=position,
+        total_in_queue=len(all_pending)
+    )

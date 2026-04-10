@@ -1,5 +1,5 @@
 # Reservation Service
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,9 @@ from app.models.reservation_schemas import (
 from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
+
+# Maximum extension duration in hours
+MAX_EXTENSION_HOURS = 1
 
 
 class ReservationService:
@@ -331,6 +334,128 @@ class ReservationService:
         else:
             async with AsyncSessionLocal() as session:
                 return await _update(session)
+
+    async def renew_reservation(
+        self,
+        reservation_id: str,
+        extension_minutes: int = 60,
+        user_id: Optional[str] = None,
+        db: Optional[AsyncSession] = None
+    ) -> Optional[DeviceReservation]:
+        """
+        Renew/extend a reservation.
+
+        Args:
+            reservation_id: ID of reservation to renew
+            extension_minutes: Extension duration in minutes (default 60, max 60)
+            user_id: Optional user ID for authorization check
+            db: Optional database session
+
+        Returns:
+            Updated reservation or None if not found
+
+        Raises:
+            ValueError: If renewal is not allowed or conflicts exist
+        """
+        # Cap extension at max allowed
+        extension_minutes = min(extension_minutes, MAX_EXTENSION_HOURS * 60)
+
+        async def _renew(session: AsyncSession):
+            result = await session.execute(
+                select(DeviceReservation).where(
+                    DeviceReservation.id == reservation_id
+                )
+            )
+            reservation = result.scalar_one_or_none()
+
+            if not reservation:
+                return None
+
+            # Check authorization if user_id provided
+            if user_id and reservation.user_id != user_id:
+                raise ValueError("Not authorized to renew this reservation")
+
+            # Can only renew active reservations
+            if reservation.status != ModelReservationStatus.ACTIVE:
+                raise ValueError(
+                    f"Cannot renew reservation with status {reservation.status}"
+                )
+
+            # Calculate new end time
+            new_end_time = reservation.end_time + timedelta(minutes=extension_minutes)
+
+            # Check for conflicts with the extended time
+            conflicts = await self._check_conflicts(
+                session,
+                reservation.device_id,
+                reservation.end_time,  # Start checking from current end time
+                new_end_time,
+                exclude_reservation_id=reservation_id
+            )
+
+            if conflicts:
+                raise ValueError(
+                    "Cannot extend reservation: conflicts with existing reservations"
+                )
+
+            # Extend the reservation
+            reservation.end_time = new_end_time
+            logger.info(
+                f"Extended reservation {reservation_id} by {extension_minutes} minutes"
+            )
+
+            await session.flush()
+            await session.refresh(reservation)
+            return reservation
+
+        if db:
+            return await _renew(db)
+        else:
+            async with AsyncSessionLocal() as session:
+                return await _renew(session)
+
+    async def get_queue_position(
+        self,
+        device_id: str,
+        reservation_id: str,
+        db: Optional[AsyncSession] = None
+    ) -> int:
+        """
+        Get the queue position for a pending reservation.
+
+        Args:
+            device_id: Device ID
+            reservation_id: Reservation ID
+            db: Optional database session
+
+        Returns:
+            Queue position (1-based), 0 if not in queue
+        """
+        async def _get_position(session: AsyncSession):
+            # Get all pending reservations for this device, ordered by start time
+            result = await session.execute(
+                select(DeviceReservation)
+                .where(
+                    and_(
+                        DeviceReservation.device_id == device_id,
+                        DeviceReservation.status == ModelReservationStatus.PENDING
+                    )
+                )
+                .order_by(DeviceReservation.start_time.asc())
+            )
+            reservations = list(result.scalars().all())
+
+            # Find position
+            for i, res in enumerate(reservations, 1):
+                if res.id == reservation_id:
+                    return i
+            return 0
+
+        if db:
+            return await _get_position(db)
+        else:
+            async with AsyncSessionLocal() as session:
+                return await _get_position(session)
 
 
 # Singleton instance

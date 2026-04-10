@@ -8,6 +8,7 @@ from app.config import settings
 from app.routes import devices_router, reservations_router
 from app.services import device_service
 from app.websocket import ws_manager
+from app.tasks import reservation_tasks
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +33,10 @@ async def lifespan(app: FastAPI):
     await ws_manager.start_device_updates()
     logger.info("WebSocket services started")
 
+    # Start reservation background tasks
+    await reservation_tasks.start()
+    logger.info("Reservation background tasks started")
+
     # Initial device scan
     await device_service.scan_devices()
 
@@ -41,6 +46,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Device Service...")
     await device_service.stop_scanning()
     await ws_manager.stop_heartbeat()
+    await reservation_tasks.stop()
 
 
 # Create FastAPI application

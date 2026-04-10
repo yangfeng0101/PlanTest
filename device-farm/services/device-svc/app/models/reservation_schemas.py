@@ -75,3 +75,21 @@ class ReservationConflictError(BaseModel):
     """Schema for reservation conflict error"""
     detail: str
     conflicts: List[ConflictDetail]
+
+
+class ReservationRenewRequest(BaseModel):
+    """Schema for renewing a reservation"""
+    extension_minutes: int = Field(
+        default=60,
+        ge=1,
+        le=60,
+        description="Extension duration in minutes (1-60, default 60)"
+    )
+
+
+class QueuePositionResponse(BaseModel):
+    """Schema for queue position response"""
+    reservation_id: str
+    device_id: str
+    position: int = Field(..., description="Queue position (1-based), 0 if not in queue")
+    total_in_queue: int = Field(..., description="Total reservations in queue")
