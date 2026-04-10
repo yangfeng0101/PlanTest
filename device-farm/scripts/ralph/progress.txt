@@ -224,3 +224,30 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - User model includes role-based access (admin, user, viewer)
   - UserStatus enum tracks active/inactive/suspended accounts
 ---
+
+## 2026-04-10 23:30 - AUTH-002
+- Registered auth router in main.py with /api/v1/auth prefix
+- Added auth_router to API __init__.py exports
+- Updated AuthMiddleware to validate JWT Bearer tokens
+- Added public path prefixes for register/login/refresh endpoints (no auth required)
+- Middleware now properly validates JWT access tokens for protected routes
+- All auth API endpoints verified:
+  - POST /api/v1/auth/register - User registration
+  - POST /api/v1/auth/login - User login with JWT tokens
+  - POST /api/v1/auth/refresh - Refresh access token
+  - POST /api/v1/auth/logout - Logout and invalidate token
+  - GET /api/v1/auth/me - Get current user info
+- Files changed:
+  - services/test-svc/app/main.py (updated - added auth router)
+  - services/test-svc/app/api/__init__.py (updated - exported auth_router)
+  - services/test-svc/app/middleware/auth.py (updated - JWT validation)
+  - services/test-svc/app/services/__init__.py (updated - exported JWT/password services)
+  - services/test-svc/app/services/password_service.py (new - bcrypt hashing)
+  - services/test-svc/requirements.txt (updated - added PyJWT, bcrypt)
+- **Learnings for future iterations:**
+  - AuthMiddleware uses PUBLIC_PREFIXES for paths that don't require authentication
+  - JWT validation happens in middleware before reaching route handlers
+  - Token blacklist is in-memory (should use Redis in production)
+  - Auth service handles user creation with duplicate username/email checks
+  - Login updates last_login_at timestamp
+---

@@ -145,7 +145,7 @@
       "id": "AUTH-002",
       "title": "用户认证 API",
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "POST /api/v1/auth/register - 用户注册",
         "POST /api/v1/auth/login - 用户登录",
