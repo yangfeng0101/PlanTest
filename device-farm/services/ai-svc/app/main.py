@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.ocr import router as ocr_router
 from app.api.locate import router as locate_router
+from app.api.generate import router as generate_router
 
 # Create FastAPI application
 app = FastAPI(
@@ -34,6 +35,11 @@ app.include_router(
     locate_router,
     prefix=f"{settings.API_PREFIX}/locate",
     tags=["Element Location"]
+)
+app.include_router(
+    generate_router,
+    prefix=f"{settings.API_PREFIX}/generate",
+    tags=["Test Generation"]
 )
 
 
