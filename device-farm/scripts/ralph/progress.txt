@@ -10,6 +10,8 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
 - Add indexes for foreign keys and frequently queried fields
 - Pydantic schemas are defined in separate *_schemas.py files for API request/response
 - Services use async session pattern with optional db parameter for transaction management
+- Background tasks use asyncio.create_task in FastAPI lifespan context manager
+- task-svc uses Celery for async task execution
 
 ---
 
@@ -46,4 +48,66 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Pydantic schemas are defined in separate *_schemas.py files for API request/response
   - Services use async session pattern with optional db parameter for transaction management
   - Conflict detection uses: start1 < end2 AND start2 < end1 for overlapping time ranges
+---
+
+## 2026-04-10 18:00 - RESERVATION-003
+- Created background tasks module for reservation management
+- Implemented auto-release for expired reservations (runs every 60 seconds)
+- Implemented auto-activate for pending reservations when start time reached
+- Implemented 5-minute reminder notification before reservation starts
+- Added renewal API with max 1-hour extension limit
+- Added queue position API for pending reservations
+- Files changed:
+  - services/device-svc/app/tasks/__init__.py (new)
+  - services/device-svc/app/tasks/reservation_tasks.py (new)
+  - services/device-svc/app/services/reservation_service.py (updated - added renew_reservation, get_queue_position)
+  - services/device-svc/app/models/reservation_schemas.py (updated - added ReservationRenewRequest, QueuePositionResponse)
+  - services/device-svc/app/routes/reservations.py (updated - added renew and queue-position endpoints)
+  - services/device-svc/app/main.py (updated - start/stop reservation_tasks in lifespan)
+- **Learnings for future iterations:**
+  - Background tasks use asyncio.create_task pattern in FastAPI lifespan
+  - Task scheduler runs every 60 seconds to check for expiring reservations
+  - Renewal extends end_time by timedelta(minutes=extension_minutes)
+  - Queue position is calculated by counting pending reservations ordered by start_time
+---
+
+## 2026-04-10 19:30 - SCHEDULE-001
+- Configured Celery Beat as task scheduler in test-svc
+- Added support for Cron expressions via crontab() function
+- Added support for interval execution (every N seconds/minutes/hours/days)
+- Added support for one-time scheduled tasks using apply_async with eta
+- Created ScheduleType enum (CRONTAB, INTERVAL, ONETIME)
+- Created Pydantic models for schedule configuration validation
+- Added helper functions: add_crontab_schedule, add_interval_schedule, add_onetime_schedule
+- Added schedule management functions: remove_schedule, get_schedule, list_schedules, enable_schedule, disable_schedule
+- Files changed:
+  - services/test-svc/app/config.py (updated - added CELERY_BEAT_* settings)
+  - services/test-svc/app/tasks/__init__.py (updated - added beat scheduler config)
+  - services/test-svc/app/tasks/scheduler.py (new - comprehensive scheduler module)
+- **Learnings for future iterations:**
+  - Celery Beat uses PersistentScheduler for schedule persistence across restarts
+  - Cron expressions use 5 fields: minute hour day_of_month month day_of_week
+  - One-time tasks use apply_async with eta parameter instead of beat schedule
+  - Schedule configuration is stored in celery_app.conf.beat_schedule dictionary
+---
+
+## 2026-04-10 19:00 - SCHEDULE-001
+- Created Celery Beat scheduler configuration module
+- Implemented support for Cron expressions (CrontabSchedule)
+- Implemented interval-based scheduling (IntervalSchedule with seconds/minutes/hours/days)
+- Implemented one-time scheduled tasks (OneTimeSchedule with eta)
+- Added helper functions: add_crontab_schedule, add_interval_schedule, add_onetime_schedule
+- Added schedule management: remove_schedule, get_schedule, list_schedules, enable_schedule, disable_schedule
+- Added default schedules for cleanup, expired reservation check, and daily report generation
+- Updated config.py with CELERY_TIMEZONE, CELERY_ENABLE_UTC, CELERY_BEAT_SCHEDULER settings
+- Files changed:
+  - services/test-svc/app/tasks/scheduler.py (new)
+  - services/test-svc/app/tasks/__init__.py (updated - added beat scheduler config)
+  - services/test-svc/app/config.py (updated - added timezone and beat settings)
+- **Learnings for future iterations:**
+  - Celery Beat uses PersistentScheduler for schedule persistence across restarts
+  - Cron expressions use crontab() from celery.schedules
+  - Interval schedules use schedule(run_every=timedelta(...))
+  - One-time tasks use apply_async with eta parameter
+  - Timezone defaults to Asia/Shanghai for local time execution
 ---
