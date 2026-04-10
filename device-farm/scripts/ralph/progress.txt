@@ -91,3 +91,15 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 查询参数 status 应使用 "online" 而非 "available"
   - 应使用 settings.DEVICE_SERVICE_URL 而非手动替换端口号
 ---
+
+## 2026-04-10 19:45 - FIX-FUNC-002
+- 预约通知服务集成
+- 文件变更:
+  - services/device-svc/app/services/notification_service.py (新建，支持飞书/钉钉/邮件)
+  - services/device-svc/app/tasks/reservation_tasks.py (集成通知服务)
+- **Learnings for future iterations:**
+  - notification_service.py 提供统一的通知发送接口
+  - 通过环境变量配置通知渠道: FEISHU_WEBHOOK_URL, DINGTALK_WEBHOOK_URL, SMTP_*
+  - 预约提醒默认在开始前5分钟发送
+  - 如果没有配置通知渠道，会降级到日志记录
+---

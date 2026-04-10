@@ -6,6 +6,11 @@ import logging
 
 from app.models.reservation import DeviceReservation, ReservationStatus
 from app.services.reservation_service import reservation_service
+from app.services.notification_service import (
+    notification_service,
+    NotificationChannel,
+    NotificationMessage,
+)
 from app.database import AsyncSessionLocal
 from sqlalchemy import select, and_
 
@@ -139,15 +144,48 @@ class ReservationTasks:
         reservations = list(result.scalars().all())
 
         for reservation in reservations:
-            # In production, this would send a notification (WebSocket, email, etc.)
-            logger.info(
-                f"Reminder: Reservation {reservation.id} for device {reservation.device_id} "
-                f"starts at {reservation.start_time.isoformat()}"
-            )
-            # TODO: Integrate with notification service (WebSocket, Feishu, Email)
+            # Send notification via notification service
+            try:
+                message = NotificationMessage(
+                    title="设备预约提醒",
+                    content=f"您预约的设备 {reservation.device_id} 将在 {self._reminder_minutes} 分钟后开始使用",
+                    severity="info",
+                    details={
+                        "设备ID": reservation.device_id,
+                        "开始时间": reservation.start_time.strftime("%Y-%m-%d %H:%M"),
+                        "结束时间": reservation.end_time.strftime("%Y-%m-%d %H:%M"),
+                        "用途": reservation.purpose or "未指定",
+                    }
+                )
+
+                # Send through available channels
+                # Default to Feishu if configured, otherwise DingTalk, otherwise email
+                channels = []
+                if notification_service.feishu_webhook:
+                    channels.append(NotificationChannel.FEISHU)
+                if notification_service.dingtalk_webhook:
+                    channels.append(NotificationChannel.DINGTALK)
+
+                if channels:
+                    await notification_service.send_notification(message, channels)
+                    logger.info(
+                        f"Sent reminder notification for reservation {reservation.id} "
+                        f"via {channels}"
+                    )
+                else:
+                    # Fallback to log if no notification channels configured
+                    logger.info(
+                        f"Reminder: Reservation {reservation.id} for device {reservation.device_id} "
+                        f"starts at {reservation.start_time.isoformat()} (no notification channels configured)"
+                    )
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to send reminder for reservation {reservation.id}: {e}"
+                )
 
         if reservations:
-            logger.info(f"Sent {len(reservations)} reservation reminders")
+            logger.info(f"Processed {len(reservations)} reservation reminders")
 
     @property
     def max_extension_hours(self) -> int:

@@ -21,7 +21,7 @@
       "id": "FIX-FUNC-002",
       "title": "预约通知服务集成",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "reservation_tasks.py 实现通知发送",
         "支持飞书/钉钉/邮件通知",
