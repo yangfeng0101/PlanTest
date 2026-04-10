@@ -200,7 +200,7 @@
       "id": "STATS-001",
       "title": "使用统计报表",
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "记录设备使用时长",
         "统计任务执行次数和成功率",

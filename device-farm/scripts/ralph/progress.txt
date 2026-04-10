@@ -304,3 +304,34 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Devices can be in multiple groups (many-to-many relationship)
   - GroupDetail extends DeviceGroup with device_count and online_count
 ---
+
+## 2026-04-10 17:45 - STATS-001
+- Verified StatisticsService implementation with:
+  - record_device_session() - Record device usage sessions
+  - record_task_execution() - Record task executions
+  - get_device_usage_stats() - Get device usage statistics
+  - get_task_execution_stats() - Get task execution statistics
+  - get_usage_trend() - Get usage trends over time
+  - generate_report() - Generate daily/weekly/monthly reports
+- Verified statistics API endpoints:
+  - GET /api/v1/statistics/usage/devices - Device usage stats
+  - GET /api/v1/statistics/usage/tasks - Task execution stats
+  - GET /api/v1/statistics/trend - Usage trends
+  - GET /api/v1/statistics/reports/{type} - Daily/weekly/monthly reports
+  - POST /api/v1/statistics/record/session - Record session
+  - POST /api/v1/statistics/record/task - Record task
+- All acceptance criteria verified:
+  - Device usage time recording ✓
+  - Task execution count and success rate ✓
+  - Daily/weekly/monthly report generation ✓
+  - Filter by device/user/time range ✓
+- Files verified:
+  - services/report-svc/app/services/statistics.py (existing)
+  - services/report-svc/app/api/statistics.py (existing)
+  - services/report-svc/app/main.py (includes statistics router)
+- **Learnings for future iterations:**
+  - Statistics uses in-memory storage (should migrate to database for persistence)
+  - TimeGranularity enum: HOURLY, DAILY, WEEKLY, MONTHLY
+  - StatisticsReport includes device_usage, task_stats, top_devices, top_users, usage_trend
+  - record_device_session and record_task_execution should be called by other services
+---
