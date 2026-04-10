@@ -58,6 +58,7 @@ app.include_router(
 async def validate_config():
     """Validate configuration at startup."""
     settings.validate_jwt_config()
+    settings.validate_api_key_config()
 
 
 @app.get("/health")

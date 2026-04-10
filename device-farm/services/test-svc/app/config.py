@@ -97,6 +97,14 @@ class Settings(BaseSettings):
                 "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
             )
 
+    def validate_api_key_config(self) -> None:
+        """Validate API Key configuration. Call at startup to ensure security."""
+        if self.API_KEY_ENABLED and not self.API_KEY:
+            raise ValueError(
+                "API_KEY_ENABLED is true but API_KEY is not set. "
+                "Either set API_KEY environment variable or set API_KEY_ENABLED=false."
+            )
+
     class Config:
         env_file = ".env"
         extra = "ignore"
