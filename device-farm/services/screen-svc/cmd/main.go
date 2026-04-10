@@ -7,6 +7,7 @@ import (
 
 	"screen-svc/internal/config"
 	"screen-svc/internal/handler"
+	"screen-svc/internal/ios"
 	"screen-svc/internal/scrcpy"
 )
 
@@ -43,7 +44,9 @@ func main() {
 	}
 
 	// Create screen manager with ICE servers
-	manager := handler.NewScreenManager(scrcpyConfig, iceServers)
+	// Use default iOS config for now
+	iosConfig := ios.DefaultConfig()
+	manager := handler.NewScreenManager(scrcpyConfig, iosConfig, iceServers)
 
 	// Create handler
 	h := handler.NewHandler(manager)

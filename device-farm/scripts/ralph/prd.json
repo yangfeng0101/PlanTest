@@ -147,7 +147,7 @@
       "id": "IOS-003",
       "title": "iOS 投屏适配",
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建 services/screen-svc/internal/ios/mirror.go",
         "实现 IOSMirror 结构体",
@@ -157,6 +157,7 @@
       ],
       "files": [
         "services/screen-svc/internal/ios/mirror.go",
+        "services/screen-svc/internal/ios/encoder.go",
         "services/screen-svc/internal/handler/manager.go"
       ]
     },

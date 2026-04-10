@@ -7,6 +7,8 @@
 - MinIO for object storage with async executor
 - Safe Python execution with restricted builtins
 - Safe JavaScript execution with Node.js VM sandbox
+- iOS device identification uses UDID (40 hex chars), Android uses serial numbers
+- iOS mirroring uses WDA HTTP API or idevicescreenshot (no scrcpy equivalent)
 
 ---
 
@@ -196,5 +198,33 @@ Files changed:
 - Multiple tap/swipe API endpoints exist in WDA - always implement fallbacks
 - httpx.AsyncClient is the async replacement for requests library
 - WDA can be started via xcodebuild test or ios-deploy --justlaunch
+
+---
+
+## 2026-04-10 - IOS-003
+
+- Created ios package with IOSMirror struct for iOS screen mirroring
+- Implemented Start() using WebDriverAgent HTTP API for screenshots (primary) or idevicescreenshot (fallback)
+- Implemented Stop() to cancel context and stop mirroring
+- Implemented frame streaming via Read() method that feeds WebRTC pipeline
+- Added VideoEncoder and MJPEGToH264Stream for PNG/MJPEG to H.264 conversion
+- Integrated iOS support into ScreenManager with device type detection
+- Added device-specific control message handling (iOS vs Android)
+- Updated main.go to initialize iOS config
+
+Files changed:
+- services/screen-svc/internal/ios/mirror.go (new)
+- services/screen-svc/internal/ios/encoder.go (new)
+- services/screen-svc/internal/handler/manager.go (modified - added iOS support)
+- services/screen-svc/cmd/main.go (modified - added iOS config)
+
+**Learnings for future iterations:**
+- iOS screen mirroring requires WebDriverAgent (WDA) or idevicescreenshot since there's no direct equivalent to Android's scrcpy
+- iOS devices are identified by UDID (40 hex characters) vs Android serial numbers
+- iOS frames are PNG/MJPEG format, not H.264 - need conversion for WebRTC
+- Screen size detection from PNG header bytes 16-23 (IHDR chunk)
+- WDA provides touch/swipe/home button control via HTTP REST API
+- iOS mirroring is inherently slower than Android (15 FPS default vs 30+ FPS for Android)
+- Device type detection: iOS UDID is 40 hex chars, Android serial varies
 
 ---
