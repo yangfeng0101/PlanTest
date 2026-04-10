@@ -33,6 +33,8 @@ class Settings(BaseSettings):
         "CELERY_RESULT_BACKEND",
         "redis://localhost:6379/2"
     )
+    CELERY_TIMEZONE: str = os.getenv("CELERY_TIMEZONE", "Asia/Shanghai")
+    CELERY_ENABLE_UTC: bool = os.getenv("CELERY_ENABLE_UTC", "false").lower() == "true"
 
     # MinIO
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
@@ -60,6 +62,14 @@ class Settings(BaseSettings):
     # API Authentication
     API_KEY: str = os.getenv("API_KEY", "")
     API_KEY_ENABLED: bool = os.getenv("API_KEY_ENABLED", "true").lower() == "true"
+
+    # Celery Beat Scheduler
+    CELERY_BEAT_SCHEDULE: dict = {}  # Dynamic schedules loaded from database
+    CELERY_BEAT_SCHEDULER: str = "celery.beat:PersistentScheduler"
+    CELERY_BEAT_SCHEDULE_FILENAME: str = os.getenv(
+        "CELERY_BEAT_SCHEDULE_FILENAME",
+        "/tmp/device-farm/celerybeat-schedule"
+    )
 
     class Config:
         env_file = ".env"
