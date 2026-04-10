@@ -217,7 +217,7 @@
       "id": "STATS-002",
       "title": "趋势分析图表",
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "前端实现趋势图表组件",
         "支持任务成功率趋势",

@@ -219,7 +219,7 @@ class StatisticsService:
 
     def get_usage_trend(
         self,
-        metric: str,  # "device_hours" or "task_count"
+        metric: str,  # "device_hours", "task_count", or "success_rate"
         granularity: TimeGranularity,
         start_time: datetime,
         end_time: datetime,
@@ -252,12 +252,22 @@ class StatisticsService:
                     for s in sessions if s["end_time"]
                 )
                 value = total_minutes / 60  # Convert to hours
-            else:  # task_count
+            elif metric == "task_count":
                 executions = [
                     e for e in _task_executions
                     if current <= e["executed_at"] < next_time
                 ]
                 value = len(executions)
+            elif metric == "success_rate":
+                executions = [
+                    e for e in _task_executions
+                    if current <= e["executed_at"] < next_time
+                ]
+                total = len(executions)
+                successful = sum(1 for e in executions if e["status"] == "success")
+                value = (successful / total * 100) if total > 0 else 0
+            else:
+                value = 0
 
             data_points.append(TimeSeriesPoint(
                 timestamp=current,
@@ -271,6 +281,43 @@ class StatisticsService:
             data=data_points,
             granularity=granularity,
         )
+
+    def get_response_time_distribution(
+        self,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get response time distribution for task executions"""
+        # Filter executions
+        executions = _task_executions
+        if start_time:
+            executions = [e for e in executions if e["executed_at"] >= start_time]
+        if end_time:
+            executions = [e for e in executions if e["executed_at"] <= end_time]
+
+        # Define time buckets (in seconds)
+        buckets = [
+            {"label": "0-5s", "min": 0, "max": 5},
+            {"label": "5-10s", "min": 5, "max": 10},
+            {"label": "10-30s", "min": 10, "max": 30},
+            {"label": "30-60s", "min": 30, "max": 60},
+            {"label": "60-120s", "min": 60, "max": 120},
+            {"label": ">120s", "min": 120, "max": float('inf')},
+        ]
+
+        distribution = []
+        for bucket in buckets:
+            count = sum(
+                1 for e in executions
+                if bucket["min"] <= e["duration_seconds"] < bucket["max"]
+            )
+            distribution.append({
+                "label": bucket["label"],
+                "count": count,
+                "percentage": round(count / len(executions) * 100, 2) if executions else 0,
+            })
+
+        return distribution
 
     def generate_report(
         self,

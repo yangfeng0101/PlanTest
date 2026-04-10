@@ -1,0 +1,49 @@
+.trend-page {
+  padding: 0;
+}
+
+.trend-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.trend-header h4 {
+  margin: 0;
+}
+
+.top-list-card {
+  height: 100%;
+}
+
+.top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.top-list-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.top-list-item .rank {
+  width: 30px;
+  font-weight: bold;
+  color: #1890ff;
+}
+
+.top-list-item .name {
+  flex: 1;
+  margin-left: 12px;
+  color: #333;
+}
+
+.top-list-item .value {
+  color: #666;
+  font-size: 13px;
+}

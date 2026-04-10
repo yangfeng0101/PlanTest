@@ -7,7 +7,9 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons'
+import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import type { Report } from '@/types'
 
@@ -15,6 +17,7 @@ const { RangePicker } = DatePicker
 const { Option } = Select
 
 export default function ReportsPage() {
+  const navigate = useNavigate()
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(false)
   const [detailVisible, setDetailVisible] = useState(false)
@@ -225,6 +228,13 @@ export default function ReportsPage() {
         title="测试报告"
         extra={
           <Space>
+            <Button
+              type="primary"
+              icon={<LineChartOutlined />}
+              onClick={() => navigate('/reports/trend')}
+            >
+              趋势分析
+            </Button>
             <RangePicker
               onChange={(dates) => setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
               placeholder={['开始日期', '结束日期']}

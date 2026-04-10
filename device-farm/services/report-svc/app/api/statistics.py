@@ -71,7 +71,7 @@ async def get_task_stats(
 
 @router.get("/trend")
 async def get_usage_trend(
-    metric: str = Query("device_hours", description="Metric: device_hours or task_count"),
+    metric: str = Query("device_hours", description="Metric: device_hours, task_count, or success_rate"),
     granularity: TimeGranularity = Query(TimeGranularity.DAILY, description="Time granularity"),
     start_time: Optional[datetime] = Query(None, description="Start time (ISO format)"),
     end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
@@ -83,10 +83,10 @@ async def get_usage_trend(
     if not end_time:
         end_time = datetime.utcnow()
 
-    if metric not in ["device_hours", "task_count"]:
+    if metric not in ["device_hours", "task_count", "success_rate"]:
         raise HTTPException(
             status_code=400,
-            detail="metric must be 'device_hours' or 'task_count'"
+            detail="metric must be 'device_hours', 'task_count', or 'success_rate'"
         )
 
     trend = statistics_service.get_usage_trend(
@@ -97,6 +97,24 @@ async def get_usage_trend(
     )
 
     return trend
+
+
+@router.get("/response-time-distribution")
+async def get_response_time_distribution(
+    start_time: Optional[datetime] = Query(None, description="Start time (ISO format)"),
+    end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
+):
+    """Get task execution response time distribution"""
+    distribution = statistics_service.get_response_time_distribution(
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    return {
+        "distribution": distribution,
+        "start_time": start_time,
+        "end_time": end_time,
+    }
 
 
 @router.get("/reports/{report_type}")
