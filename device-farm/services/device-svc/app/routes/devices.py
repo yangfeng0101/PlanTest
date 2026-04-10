@@ -109,12 +109,41 @@ async def get_screenshot(device_id: str):
 
 
 @router.post("/{device_id}/command")
-async def execute_command(device_id: str, command: str):
-    """Execute shell command on device"""
+async def execute_command(
+    device_id: str,
+    command: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Execute shell command on device (admin only)"""
+    # Check admin role
+    user_role = current_user.get("role", "")
+    if user_role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin users can execute commands on devices"
+        )
+
+    user_id = current_user.get("id", "unknown")
+
+    # Log the operation
+    logger.info(
+        f"Command execution - User: {user_id}, Device: {device_id}, Command: {command}"
+    )
+
     try:
         result = await device_service.execute_command(device_id, command)
+
+        # Log success
+        logger.info(
+            f"Command success - User: {user_id}, Device: {device_id}, Command: {command}"
+        )
+
         return {"device_id": device_id, "result": result}
     except ValueError as e:
+        # Log failure
+        logger.warning(
+            f"Command failed - User: {user_id}, Device: {device_id}, Command: {command}, Error: {e}"
+        )
         raise HTTPException(status_code=404, detail=str(e))
 
 
