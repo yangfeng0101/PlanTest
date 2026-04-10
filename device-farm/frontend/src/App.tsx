@@ -5,12 +5,14 @@ import {
   PlayCircleOutlined,
   CodeOutlined,
   FileTextOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import DevicesPage from './pages/devices'
 import DeviceDetailPage from './pages/devices/Detail'
 import ScreenPage from './pages/screen'
 import ScriptsPage from './pages/scripts'
 import ReportsPage from './pages/reports'
+import ParallelExecutionPage from './pages/parallel'
 import './App.css'
 
 const { Sider, Content } = Layout
@@ -30,6 +32,11 @@ const menuItems = [
     key: '/scripts',
     icon: <CodeOutlined />,
     label: '脚本管理',
+  },
+  {
+    key: '/parallel',
+    icon: <TeamOutlined />,
+    label: '并行执行',
   },
   {
     key: '/reports',
@@ -62,6 +69,7 @@ function App() {
             <Route path="/devices/:id" element={<DeviceDetailPage />} />
             <Route path="/screen" element={<ScreenPage />} />
             <Route path="/scripts" element={<ScriptsPage />} />
+            <Route path="/parallel" element={<ParallelExecutionPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/" element={<Navigate to="/devices" replace />} />
           </Routes>

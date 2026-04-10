@@ -93,7 +93,7 @@
       "id": "PARALLEL-001",
       "title": "多设备并行执行",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "支持选择多个设备同时执行同一脚本",
         "实现任务分发逻辑",
@@ -110,7 +110,7 @@
       "id": "PARALLEL-002",
       "title": "并行结果聚合",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "聚合多设备执行结果",
         "生成汇总报告（通过率、失败设备列表）",

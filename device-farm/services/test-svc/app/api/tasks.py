@@ -27,6 +27,11 @@ from app.services.parallel_executor import (
     ParallelTaskSummary,
     ParallelTaskStatus,
 )
+from app.services.result_aggregator import (
+    result_aggregator_service,
+    AggregatedResult,
+    ParallelReportSummary,
+)
 
 router = APIRouter()
 
@@ -508,3 +513,132 @@ async def cancel_parallel_task(
     parallel_task.finished_at = datetime.utcnow()
 
     return None
+
+
+# ============ Result Aggregation Endpoints ============
+
+@router.post("/parallel/{parallel_task_id}/aggregate", response_model=AggregatedResult)
+async def aggregate_parallel_results(
+    parallel_task_id: str,
+    _: str = Depends(verify_api_key),
+):
+    """Aggregate results from parallel execution
+
+    This endpoint collects and aggregates results from all sub-tasks
+    in a parallel execution, generating a comprehensive summary.
+
+    Args:
+        parallel_task_id: ID of the parallel task
+
+    Returns:
+        Aggregated result with all device results and metrics
+    """
+    try:
+        aggregated = await result_aggregator_service.aggregate_results(parallel_task_id)
+        return aggregated
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.get("/parallel/{parallel_task_id}/report", response_model=ParallelReportSummary)
+async def get_parallel_report(
+    parallel_task_id: str,
+    _: str = Depends(verify_api_key),
+):
+    """Get comprehensive report summary for parallel execution
+
+    Returns aggregated metrics including:
+    - Device success rate
+    - Test success rate
+    - Failed device list with details
+    - Status breakdown
+
+    Args:
+        parallel_task_id: ID of the parallel task
+
+    Returns:
+        Summary report with all aggregated metrics
+    """
+    summary = result_aggregator_service.generate_report_summary(parallel_task_id)
+
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Parallel task {parallel_task_id} not found"
+        )
+
+    return summary
+
+
+@router.get("/parallel/{parallel_task_id}/devices/{device_id}/logs", response_model=List[str])
+async def get_device_execution_logs(
+    parallel_task_id: str,
+    device_id: str,
+    _: str = Depends(verify_api_key),
+):
+    """Get detailed logs for a specific device in parallel execution
+
+    Args:
+        parallel_task_id: ID of the parallel task
+        device_id: ID of the device
+
+    Returns:
+        List of log entries for the device
+    """
+    logs = await result_aggregator_service.get_device_logs(parallel_task_id, device_id)
+
+    if logs is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Parallel task {parallel_task_id} or device {device_id} not found"
+        )
+
+    return logs
+
+
+@router.get("/aggregated", response_model=List[AggregatedResult])
+async def list_aggregated_results(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _: str = Depends(verify_api_key),
+):
+    """List aggregated results from parallel executions
+
+    Args:
+        limit: Maximum number of results to return
+        offset: Offset for pagination
+
+    Returns:
+        List of aggregated results
+    """
+    return result_aggregator_service.list_aggregated_results(
+        limit=limit,
+        offset=offset
+    )
+
+
+@router.get("/aggregated/{aggregated_result_id}", response_model=AggregatedResult)
+async def get_aggregated_result(
+    aggregated_result_id: str,
+    _: str = Depends(verify_api_key),
+):
+    """Get aggregated result by ID
+
+    Args:
+        aggregated_result_id: ID of the aggregated result
+
+    Returns:
+        Aggregated result with all details
+    """
+    result = result_aggregator_service.get_aggregated_result(aggregated_result_id)
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Aggregated result {aggregated_result_id} not found"
+        )
+
+    return result

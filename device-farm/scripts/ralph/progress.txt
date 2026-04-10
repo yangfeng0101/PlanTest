@@ -135,3 +135,56 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Changes to schedule configuration require removing and re-adding to Celery Beat
   - get_db dependency is in app.database, not app.models.database
 ---
+
+## 2026-04-10 21:00 - PARALLEL-001
+- Created ParallelExecutorService for multi-device parallel execution
+- Implemented three device selection strategies: ALL, RANDOM, SPECIFIC
+- Implemented concurrency control with configurable max_concurrency (default 5, max 20)
+- Created parallel task management API with full CRUD operations
+- Added parallel task execution with background task support
+- Files changed:
+  - services/test-svc/app/services/parallel_executor.py (new)
+  - services/test-svc/app/api/tasks.py (updated - added parallel endpoints)
+- **Learnings for future iterations:**
+  - Parallel tasks use asyncio.Semaphore for concurrency control
+  - Sub-tasks are tracked in memory (should migrate to database for persistence)
+  - Device selection uses device-svc API to get available devices
+  - Background tasks in FastAPI use BackgroundTasks for async execution
+---
+
+## 2026-04-10 22:00 - PARALLEL-002
+- Created ResultAggregatorService in test-svc for aggregating parallel execution results
+- Created AggregatorService in report-svc for generating HTML/JSON reports
+- Implemented comprehensive result aggregation with metrics:
+  - Device-level success/failure tracking
+  - Test case statistics aggregation
+  - Duration metrics (total, avg, min, max)
+  - Failed device identification with error details
+- Added API endpoints:
+  - POST /api/v1/tasks/parallel/{id}/aggregate - trigger aggregation
+  - GET /api/v1/tasks/parallel/{id}/report - get summary report
+  - GET /api/v1/tasks/parallel/{id}/devices/{device_id}/logs - get device logs
+  - POST /api/v1/reports/parallel/{id} - create parallel report
+  - GET /api/v1/reports/parallel/{id}/download - download report
+  - GET /api/v1/reports/parallel/{id}/preview - preview HTML report
+- Created frontend ParallelExecutionPage component with:
+  - Parallel task list with status and progress
+  - Real-time polling for running tasks
+  - Summary view with device/test statistics
+  - Device-level detail view
+  - Report download functionality
+- Files changed:
+  - services/test-svc/app/services/result_aggregator.py (updated)
+  - services/report-svc/app/services/aggregator.py (new)
+  - services/report-svc/app/services/__init__.py (updated)
+  - services/test-svc/app/api/tasks.py (updated - added aggregation endpoints)
+  - services/report-svc/app/api/reports.py (updated - added parallel report endpoints)
+  - frontend/src/pages/parallel/index.tsx (new)
+  - frontend/src/App.tsx (updated - added parallel route)
+  - frontend/src/components/ParallelProgress/index.tsx (fixed TypeScript issue)
+- **Learnings for future iterations:**
+  - Use ReturnType<typeof setInterval> instead of NodeJS.Timeout for TypeScript compatibility
+  - Parallel reports can be generated on-demand or pre-generated and cached
+  - Aggregation fetches task details from database for complete results
+  - Report-svc calls test-svc API to get execution data for report generation
+---

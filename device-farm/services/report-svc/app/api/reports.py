@@ -17,6 +17,7 @@ from app.models.models import (
 )
 from app.services.generator import report_generator
 from app.services.storage import storage_service
+from app.services.aggregator import aggregator_service
 from app.config import settings
 
 router = APIRouter()
@@ -302,3 +303,136 @@ async def preview_report(report_id: str):
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Report file not found"
     )
+
+
+# ============ Parallel Execution Report Endpoints ============
+
+@router.post("/parallel/{parallel_task_id}", status_code=status.HTTP_201_CREATED)
+async def create_parallel_report(
+    parallel_task_id: str,
+    format: ReportFormat = Query(ReportFormat.HTML),
+):
+    """Create a report for parallel execution
+
+    This endpoint aggregates results from a parallel task execution
+    and generates a comprehensive report.
+
+    Args:
+        parallel_task_id: ID of the parallel task
+        format: Report format (html or json)
+
+    Returns:
+        Report metadata with file path
+    """
+    try:
+        result = await aggregator_service.create_parallel_report(
+            parallel_task_id,
+            format=format
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create report: {str(e)}"
+        )
+
+
+@router.get("/parallel/{parallel_task_id}/download")
+async def get_parallel_report(
+    parallel_task_id: str,
+    format: ReportFormat = Query(ReportFormat.HTML),
+):
+    """Get or download parallel execution report
+
+    If the report exists, returns the file content.
+    If not, generates it on-the-fly.
+
+    Args:
+        parallel_task_id: ID of the parallel task
+        format: Report format (html or json)
+
+    Returns:
+        Report file content
+    """
+    # Check if report already exists
+    file_path = aggregator_service.get_report_file(parallel_task_id, format)
+
+    if not file_path:
+        # Generate report on-the-fly
+        try:
+            result = await aggregator_service.create_parallel_report(
+                parallel_task_id,
+                format=format
+            )
+            file_path = result.get("file_path")
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate report: {str(e)}"
+            )
+
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report for parallel task {parallel_task_id} not found"
+        )
+
+    # Read and return content
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    content_type = _get_content_type(format)
+    file_name = f"parallel_{parallel_task_id}.{format.value}"
+
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_name}"'
+        }
+    )
+
+
+@router.get("/parallel/{parallel_task_id}/preview", response_class=Response)
+async def preview_parallel_report(parallel_task_id: str):
+    """Preview parallel execution report in browser
+
+    Args:
+        parallel_task_id: ID of the parallel task
+
+    Returns:
+        HTML content for browser preview
+    """
+    # Check if report exists
+    file_path = aggregator_service.get_report_file(parallel_task_id, ReportFormat.HTML)
+
+    if not file_path:
+        # Generate report on-the-fly
+        try:
+            result = await aggregator_service.create_parallel_report(
+                parallel_task_id,
+                format=ReportFormat.HTML
+            )
+            file_path = result.get("file_path")
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate report: {str(e)}"
+            )
+
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report for parallel task {parallel_task_id} not found"
+        )
+
+    # Read and return HTML content
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    return Response(content=content, media_type="text/html")
