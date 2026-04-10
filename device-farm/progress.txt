@@ -7,6 +7,8 @@
 - Group routes follow RESTful pattern: GET /groups, POST /groups, PUT /groups/{id}, DELETE /groups/{id}
 - Statistics service uses in-memory lists for session/execution data - production needs database
 - TrendChart component supports multiple chart types: line, bar, area, histogram
+- Alert service supports Feishu/DingTalk webhook notifications via httpx async client
+- Alert rules use cooldown_seconds to prevent notification spam
 
 ---
 
@@ -79,4 +81,22 @@
   - The histogram type is useful for showing distributions (e.g., response time buckets)
   - Statistics trend API now supports 3 metrics: device_hours, task_count, success_rate
   - Response time distribution returns bucketed data with label, count, and percentage
+---
+
+## 2026-04-10 - ALERT-001
+- Verified alert notification system implementation
+- Alert data model with AlertType, AlertStatus, AlertSeverity, NotificationChannel enums
+- Alert rules support device_offline, task_failure_rate, device_idle, custom types
+- Alert API routes: CRUD for rules, trigger/acknowledge/resolve alerts, history
+- Feishu/DingTalk webhook notifications via httpx async client
+- Email notification placeholder (requires SMTP config in production)
+- **Files:**
+  - services/report-svc/app/models/alert.py (verified)
+  - services/report-svc/app/services/alert.py (verified)
+  - services/report-svc/app/api/alerts.py (verified)
+  - services/report-svc/app/main.py (alerts router registered)
+- **Learnings for future iterations:**
+  - Alert rules use cooldown_seconds to prevent notification spam
+  - Notifications sent via asyncio.create_task for fire-and-forget pattern
+  - Feishu uses interactive card format, DingTalk uses markdown format
 ---
