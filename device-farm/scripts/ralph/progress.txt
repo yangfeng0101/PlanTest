@@ -103,3 +103,19 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 预约提醒默认在开始前5分钟发送
   - 如果没有配置通知渠道，会降级到日志记录
 ---
+
+## 2026-04-10 19:50 - FIX-FUNC-003
+- 前端添加 AI 功能入口
+- 文件变更:
+  - frontend/src/App.tsx (添加 AI 工具菜单和路由)
+  - frontend/src/pages/ai/OCR.tsx (新建，OCR 文字识别页面)
+  - frontend/src/pages/ai/Locate.tsx (新建，元素定位页面)
+  - frontend/src/pages/ai/Generate.tsx (新建，用例生成页面)
+- **Learnings for future iterations:**
+  - AI 服务运行在端口 8003
+  - OCR API: POST /api/v1/ocr/recognize, /api/v1/ocr/find
+  - 元素定位 API: POST /api/v1/locate/locate
+  - 用例生成 API: POST /api/v1/generate/generate
+  - 菜单支持 children 属性实现子菜单
+  - AI 服务 URL 应配置为环境变量
+---

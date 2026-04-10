@@ -37,7 +37,7 @@
       "id": "FIX-FUNC-003",
       "title": "前端添加 AI 功能入口",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "添加 AI 工具菜单项",
         "创建 OCR 页面（上传图片识别文字）",

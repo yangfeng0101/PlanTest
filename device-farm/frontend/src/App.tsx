@@ -9,6 +9,10 @@ import {
   LogoutOutlined,
   UserOutlined,
   SettingOutlined,
+  RobotOutlined,
+  ScanOutlined,
+  AimOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import DevicesPage from './pages/devices'
 import DeviceDetailPage from './pages/devices/Detail'
@@ -18,6 +22,9 @@ import ReportsPage from './pages/reports'
 import TrendPage from './pages/reports/Trend'
 import ParallelExecutionPage from './pages/parallel'
 import LoginPage from './pages/auth/Login'
+import OCRPage from './pages/ai/OCR'
+import LocatePage from './pages/ai/Locate'
+import GeneratePage from './pages/ai/Generate'
 import AuthGuard from './components/AuthGuard'
 import { useAuthStore } from './stores/authStore'
 import './App.css'
@@ -49,6 +56,28 @@ const menuItems = [
     key: '/reports',
     icon: <FileTextOutlined />,
     label: '测试报告',
+  },
+  {
+    key: '/ai',
+    icon: <RobotOutlined />,
+    label: 'AI 工具',
+    children: [
+      {
+        key: '/ai/ocr',
+        icon: <ScanOutlined />,
+        label: 'OCR 识别',
+      },
+      {
+        key: '/ai/locate',
+        icon: <AimOutlined />,
+        label: '元素定位',
+      },
+      {
+        key: '/ai/generate',
+        icon: <ThunderboltOutlined />,
+        label: '用例生成',
+      },
+    ],
   },
 ]
 
@@ -101,6 +130,7 @@ function MainLayout() {
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}
+          defaultOpenKeys={['/ai']}
           items={menuItems}
           onClick={({ key }) => {
             navigate(key)
@@ -133,6 +163,9 @@ function MainLayout() {
             <Route path="/parallel" element={<ParallelExecutionPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/reports/trend" element={<TrendPage />} />
+            <Route path="/ai/ocr" element={<OCRPage />} />
+            <Route path="/ai/locate" element={<LocatePage />} />
+            <Route path="/ai/generate" element={<GeneratePage />} />
             <Route path="/" element={<Navigate to="/devices" replace />} />
           </Routes>
         </Content>
