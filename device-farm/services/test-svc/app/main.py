@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api import scripts, tasks, schedules, auth
 from app.middleware.auth import AuthMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
 
 # Create FastAPI application
 app = FastAPI(
@@ -23,6 +24,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limit middleware
+app.add_middleware(RateLimitMiddleware)
 
 # Auth middleware (applies to all routes)
 app.add_middleware(AuthMiddleware)
