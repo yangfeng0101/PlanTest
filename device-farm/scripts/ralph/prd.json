@@ -1,215 +1,322 @@
 {
-  "projectName": "Device Farm Phase 2",
-  "branchName": "phase2-enhancements",
+  "projectName": "Device Farm Phase 3",
+  "branchName": "phase3-features",
   "userStories": [
     {
-      "id": "DEF-018",
-      "title": "API 认证中间件实现",
+      "id": "RESERVATION-001",
+      "title": "设备预约数据模型",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "创建 services/test-svc/app/services/auth.py 认证服务",
-        "创建 services/test-svc/app/middleware/auth.py 认证中间件",
-        "所有 API 端点添加认证保护",
-        "支持 JWT 或 API Key 认证",
-        "未认证请求返回 401 Unauthorized"
+        "创建 DeviceReservation 数据库模型",
+        "包含字段：device_id, user_id, start_time, end_time, status, purpose",
+        "支持预约状态：pending, active, completed, cancelled",
+        "添加数据库索引优化查询性能",
+        "Typecheck passes"
       ],
       "files": [
-        "services/test-svc/app/services/auth.py",
-        "services/test-svc/app/middleware/auth.py",
+        "services/device-svc/app/models/reservation.py",
+        "services/device-svc/app/database.py"
+      ]
+    },
+    {
+      "id": "RESERVATION-002",
+      "title": "设备预约 API",
+      "priority": 2,
+      "passes": false,
+      "acceptanceCriteria": [
+        "POST /api/v1/devices/{id}/reserve - 创建预约",
+        "DELETE /api/v1/devices/{id}/reserve - 取消预约",
+        "GET /api/v1/reservations - 获取预约列表",
+        "验证设备可用性（不能重复预约）",
+        "支持预约时间冲突检测",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/device-svc/app/routes/reservations.py",
+        "services/device-svc/app/services/reservation_service.py"
+      ]
+    },
+    {
+      "id": "RESERVATION-003",
+      "title": "预约队列与自动释放",
+      "priority": 3,
+      "passes": false,
+      "acceptanceCriteria": [
+        "实现预约队列逻辑（先到先得）",
+        "预约到期自动释放设备",
+        "预约开始前 5 分钟提醒用户",
+        "支持预约续期（最多延长 1 小时）",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/device-svc/app/services/reservation_service.py",
+        "services/device-svc/app/tasks/reservation_tasks.py"
+      ]
+    },
+    {
+      "id": "SCHEDULE-001",
+      "title": "Celery Beat 定时任务配置",
+      "priority": 4,
+      "passes": false,
+      "acceptanceCriteria": [
+        "配置 Celery Beat 作为任务调度器",
+        "支持 Cron 表达式定义执行时间",
+        "支持间隔执行（每隔 N 秒/分钟/小时）",
+        "支持一次性定时任务",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/test-svc/app/tasks/scheduler.py",
+        "services/test-svc/app/config.py"
+      ]
+    },
+    {
+      "id": "SCHEDULE-002",
+      "title": "定时任务管理 API",
+      "priority": 5,
+      "passes": false,
+      "acceptanceCriteria": [
+        "POST /api/v1/schedules - 创建定时任务",
+        "GET /api/v1/schedules - 获取定时任务列表",
+        "PUT /api/v1/schedules/{id} - 更新定时任务",
+        "DELETE /api/v1/schedules/{id} - 删除定时任务",
+        "POST /api/v1/schedules/{id}/enable - 启用/禁用",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/test-svc/app/api/schedules.py",
+        "services/test-svc/app/models/schedule.py"
+      ]
+    },
+    {
+      "id": "PARALLEL-001",
+      "title": "多设备并行执行",
+      "priority": 6,
+      "passes": false,
+      "acceptanceCriteria": [
+        "支持选择多个设备同时执行同一脚本",
+        "实现任务分发逻辑",
+        "并发数可配置（默认 5 个并行）",
+        "支持设备选择策略（全部/随机/指定）",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/test-svc/app/services/parallel_executor.py",
         "services/test-svc/app/api/tasks.py"
       ]
     },
     {
-      "id": "DEF-011",
-      "title": "Goroutine 泄漏修复",
-      "priority": 2,
-      "passes": true,
-      "acceptanceCriteria": [
-        "Session 结构体添加 context.Context 和 cancel 函数",
-        "StartSession 使用 context.WithCancel",
-        "streamVideo 协程响应 context.Done()",
-        "StopSession 调用 cancel() 终止协程"
-      ],
-      "files": [
-        "services/screen-svc/internal/handler/manager.go"
-      ]
-    },
-    {
-      "id": "DEF-012",
-      "title": "WebRTC 播放器内存泄漏修复",
-      "priority": 3,
-      "passes": true,
-      "acceptanceCriteria": [
-        "useEffect 添加正确的依赖数组 [deviceId, wsUrl]",
-        "清理 statsInterval 定时器",
-        "清理 reconnectTimer 定时器",
-        "组件卸载时调用 stopConnection"
-      ],
-      "files": [
-        "frontend/src/components/WebrtcPlayer/index.tsx"
-      ]
-    },
-    {
-      "id": "DEF-013",
-      "title": "FPS 计算修复",
-      "priority": 4,
-      "passes": true,
-      "acceptanceCriteria": [
-        "使用 WebRTC getStats() API 获取真实帧率",
-        "从 inbound-rtp report 读取 framesPerSecond",
-        "移除无效的字节数估算逻辑"
-      ],
-      "files": [
-        "frontend/src/components/WebrtcPlayer/index.tsx"
-      ]
-    },
-    {
-      "id": "DEF-014",
-      "title": "WebRTC 重连机制实现",
-      "priority": 5,
-      "passes": true,
-      "acceptanceCriteria": [
-        "实现指数退避重连策略",
-        "最大重连次数限制 (5次)",
-        "重连延迟: min(1000 * 2^attempts, 30000)ms",
-        "连接失败时触发 onConnectionStateChange"
-      ],
-      "files": [
-        "frontend/src/components/WebrtcPlayer/index.tsx"
-      ]
-    },
-    {
-      "id": "DEF-015",
-      "title": "触摸坐标计算修复",
-      "priority": 6,
-      "passes": true,
-      "acceptanceCriteria": [
-        "使用 containerRef 获取容器边界",
-        "正确计算相对坐标 (clientX - rect.left)",
-        "转换到设备坐标 (x/width * screenWidth)",
-        "移除对 e.target 的错误依赖"
-      ],
-      "files": [
-        "frontend/src/components/TouchOverlay/index.tsx"
-      ]
-    },
-    {
-      "id": "DEF-016",
-      "title": "长按定时器内存泄漏修复",
+      "id": "PARALLEL-002",
+      "title": "并行结果聚合",
       "priority": 7,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "useEffect 返回清理函数",
-        "清理 longPressTimer.current",
-        "组件卸载时清除所有定时器"
+        "聚合多设备执行结果",
+        "生成汇总报告（通过率、失败设备列表）",
+        "支持按设备维度查看详细日志",
+        "前端展示并行执行进度",
+        "Typecheck passes"
       ],
       "files": [
-        "frontend/src/components/TouchOverlay/index.tsx"
+        "services/test-svc/app/services/result_aggregator.py",
+        "services/report-svc/app/services/aggregator.py"
       ]
     },
     {
-      "id": "IOS-001",
-      "title": "iOS 设备服务实现",
+      "id": "AUTH-001",
+      "title": "用户数据模型与 JWT",
       "priority": 8,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "创建 services/device-svc/app/services/ios_service.py",
-        "实现 IOSDeviceService 类",
-        "实现 discover_devices() 通过 usbmuxd 发现设备",
-        "实现 get_device_info(udid) 获取设备信息",
-        "实现 pair_device(udid) 设备配对",
-        "添加 pymobiledevice3 依赖"
+        "创建 User 数据库模型（username, email, role, password_hash）",
+        "实现 JWT Token 生成和验证",
+        "支持 Access Token（2小时）和 Refresh Token（7天）",
+        "密码使用 bcrypt 加密存储",
+        "Typecheck passes"
       ],
       "files": [
-        "services/device-svc/app/services/ios_service.py",
-        "services/device-svc/requirements.txt"
+        "services/test-svc/app/models/user.py",
+        "services/test-svc/app/services/jwt_service.py",
+        "services/test-svc/app/services/password_service.py"
       ]
     },
     {
-      "id": "IOS-002",
-      "title": "WebDriverAgent 驱动实现",
+      "id": "AUTH-002",
+      "title": "用户认证 API",
       "priority": 9,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "创建 services/device-svc/app/drivers/wda_driver.py",
-        "实现 WDADriver 类",
-        "实现 start_wda(udid) 启动 WebDriverAgent",
-        "实现 tap(x, y) 点击操作",
-        "实现 swipe(x1, y1, x2, y2) 滑动操作",
-        "实现 screenshot() 截图"
+        "POST /api/v1/auth/register - 用户注册",
+        "POST /api/v1/auth/login - 用户登录",
+        "POST /api/v1/auth/refresh - 刷新 Token",
+        "POST /api/v1/auth/logout - 用户登出",
+        "GET /api/v1/auth/me - 获取当前用户信息",
+        "Typecheck passes"
       ],
       "files": [
-        "services/device-svc/app/drivers/wda_driver.py"
+        "services/test-svc/app/api/auth.py",
+        "services/test-svc/app/services/auth_service.py"
       ]
     },
     {
-      "id": "IOS-003",
-      "title": "iOS 投屏适配",
+      "id": "AUTH-003",
+      "title": "权限控制与前端登录",
       "priority": 10,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "创建 services/screen-svc/internal/ios/mirror.go",
-        "实现 IOSMirror 结构体",
-        "实现 Start() 使用 ios-deploy 或 libimobiledevice",
-        "实现 Stop() 停止镜像",
-        "视频帧输出到 WebRTC 管道"
+        "实现基于角色的权限控制（admin, user, viewer）",
+        "前端登录页面实现",
+        "Token 存储在 localStorage",
+        "路由守卫保护需要认证的页面",
+        "登录状态持久化",
+        "Typecheck passes"
       ],
       "files": [
-        "services/screen-svc/internal/ios/mirror.go",
-        "services/screen-svc/internal/ios/encoder.go",
-        "services/screen-svc/internal/handler/manager.go"
+        "services/test-svc/app/middleware/rbac.py",
+        "frontend/src/pages/auth/Login.tsx",
+        "frontend/src/stores/authStore.ts",
+        "frontend/src/components/AuthGuard.tsx"
       ]
     },
     {
-      "id": "HARMONY-001",
-      "title": "鸿蒙设备服务实现",
+      "id": "GROUP-001",
+      "title": "设备分组管理",
       "priority": 11,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "创建 services/device-svc/app/services/harmony_service.py",
-        "实现 HarmonyDeviceService 类",
-        "实现 discover_devices() 通过 HDC 发现设备",
-        "实现 get_device_info(serial) 获取设备信息",
-        "实现 install_app(serial, hap_path) 安装 HAP"
+        "创建 DeviceGroup 数据模型",
+        "支持创建、编辑、删除分组",
+        "设备可以属于多个分组",
+        "支持按分组筛选设备",
+        "Typecheck passes"
       ],
       "files": [
-        "services/device-svc/app/services/harmony_service.py"
+        "services/device-svc/app/models/group.py",
+        "services/device-svc/app/routes/groups.py"
       ]
     },
     {
-      "id": "HARMONY-002",
-      "title": "鸿蒙投屏适配",
+      "id": "STATS-001",
+      "title": "使用统计报表",
       "priority": 12,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "创建 services/screen-svc/internal/harmony/mirror.go",
-        "实现 HarmonyMirror 结构体",
-        "实现 Start() 调用 HOScrcpy",
-        "实现 Stop() 停止镜像",
-        "创建 services/screen-svc/internal/harmony/input.go 输入注入"
+        "记录设备使用时长",
+        "统计任务执行次数和成功率",
+        "生成日报、周报、月报",
+        "支持按设备、用户、时间范围筛选",
+        "Typecheck passes"
       ],
       "files": [
-        "services/screen-svc/internal/harmony/mirror.go",
-        "services/screen-svc/internal/harmony/input.go"
+        "services/report-svc/app/services/statistics.py",
+        "services/report-svc/app/api/statistics.py"
       ]
     },
     {
-      "id": "APPIUM-001",
-      "title": "Appium 真实连接实现",
+      "id": "STATS-002",
+      "title": "趋势分析图表",
       "priority": 13,
       "passes": false,
       "acceptanceCriteria": [
-        "重构 services/test-svc/app/drivers/appium.py",
-        "实现真实 Appium 驱动初始化",
-        "创建 services/test-svc/app/services/driver_pool.py 连接池",
-        "创建 infra/docker/appium-docker.yml 部署配置",
-        "支持 UiAutomator2 和 XCUITest"
+        "前端实现趋势图表组件",
+        "支持任务成功率趋势",
+        "支持设备使用率趋势",
+        "支持响应时间分布图",
+        "Typecheck passes"
       ],
       "files": [
-        "services/test-svc/app/drivers/appium.py",
-        "services/test-svc/app/services/driver_pool.py",
-        "infra/docker/appium-docker.yml"
+        "frontend/src/components/TrendChart/index.tsx",
+        "frontend/src/pages/reports/Trend.tsx"
+      ]
+    },
+    {
+      "id": "ALERT-001",
+      "title": "告警通知系统",
+      "priority": 14,
+      "passes": false,
+      "acceptanceCriteria": [
+        "创建 Alert 数据模型",
+        "支持告警规则配置（设备离线、任务失败率超阈值）",
+        "支持飞书/钉钉 Webhook 通知",
+        "支持邮件通知",
+        "告警历史记录",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/report-svc/app/services/alert.py",
+        "services/report-svc/app/models/alert.py",
+        "services/report-svc/app/api/alerts.py"
+      ]
+    },
+    {
+      "id": "EXPORT-001",
+      "title": "数据导出功能",
+      "priority": 15,
+      "passes": false,
+      "acceptanceCriteria": [
+        "支持导出测试报告为 PDF",
+        "支持导出执行日志为 Excel",
+        "支持导出统计数据为 CSV",
+        "支持批量导出",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/report-svc/app/services/export.py",
+        "services/report-svc/app/api/export.py"
+      ]
+    },
+    {
+      "id": "AI-001",
+      "title": "OCR 引擎集成",
+      "priority": 16,
+      "passes": false,
+      "acceptanceCriteria": [
+        "创建 ai-svc 服务目录结构",
+        "集成 PaddleOCR 或 Tesseract",
+        "实现 OCR API（图片 -> 文本）",
+        "支持中英文识别",
+        "返回文本位置坐标",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/ai-svc/app/main.py",
+        "services/ai-svc/app/services/ocr.py",
+        "services/ai-svc/requirements.txt"
+      ]
+    },
+    {
+      "id": "AI-002",
+      "title": "AI 元素定位",
+      "priority": 17,
+      "passes": false,
+      "acceptanceCriteria": [
+        "实现基于描述的元素定位",
+        "支持自然语言查询（如点击登录按钮）",
+        "返回元素坐标和置信度",
+        "支持相似元素匹配",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/ai-svc/app/services/element_locator.py",
+        "services/ai-svc/app/api/locate.py"
+      ]
+    },
+    {
+      "id": "AI-003",
+      "title": "智能用例生成",
+      "priority": 18,
+      "passes": false,
+      "acceptanceCriteria": [
+        "支持自然语言描述生成测试用例",
+        "生成的用例可直接执行",
+        "支持用例模板库",
+        "支持用例优化建议",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/ai-svc/app/services/test_generator.py",
+        "services/ai-svc/app/api/generate.py"
       ]
     }
   ]
