@@ -24,6 +24,7 @@ type ScreenSession struct {
 	VideoWidth    int
 	VideoHeight   int
 	CreatedAt     string
+	ctx           context.Context
 	cancel        context.CancelFunc
 }
 
@@ -87,6 +88,7 @@ func (m *ScreenManager) StartSession(deviceID string) (*ScreenSession, error) {
 		ScreenWidth:  width,
 		ScreenHeight: height,
 		CreatedAt:    "now",
+		ctx:          ctx,
 		cancel:       cancel,
 	}
 
