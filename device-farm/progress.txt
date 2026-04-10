@@ -9,6 +9,7 @@
 - TrendChart component supports multiple chart types: line, bar, area, histogram
 - Alert service supports Feishu/DingTalk webhook notifications via httpx async client
 - Alert rules use cooldown_seconds to prevent notification spam
+- OCR service uses PaddleOCR primary, Tesseract fallback, lazy initialization on first use
 
 ---
 
@@ -117,4 +118,24 @@
   - PDF export uses A4 page size with Table and Paragraph elements
   - Excel uses PatternFill for header styling, auto-adjust column widths
   - Batch export returns base64-encoded content for JSON response
+---
+
+## 2026-04-10 - AI-001
+- Created AI service (ai-svc) directory structure
+- Integrated PaddleOCR (primary) and Tesseract (fallback) OCR engines
+- OCR API: /api/v1/ocr/recognize, /api/v1/ocr/recognize/file, /api/v1/ocr/find
+- Supports Chinese (ch) and English (en) recognition
+- Returns text regions with bounding boxes and confidence scores
+- OCR health endpoint to check engine availability
+- **Files:**
+  - services/ai-svc/app/config.py (new)
+  - services/ai-svc/app/services/ocr.py (new)
+  - services/ai-svc/app/api/ocr.py (new)
+  - services/ai-svc/app/main.py (new)
+  - services/ai-svc/requirements.txt (new)
+- **Learnings for future iterations:**
+  - PaddleOCR is primary engine, Tesseract is fallback
+  - OCR engines are lazily initialized on first use
+  - TextRegion dataclass contains text, confidence, bbox (4 corners), and center point
+  - GPU support via AI_DEVICE setting (cpu or cuda)
 ---

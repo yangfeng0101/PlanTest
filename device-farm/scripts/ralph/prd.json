@@ -270,7 +270,7 @@
       "id": "AI-001",
       "title": "OCR 引擎集成",
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建 ai-svc 服务目录结构",
         "集成 PaddleOCR 或 Tesseract",
