@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Card, Row, Col, Select, Button, Space, message, Switch, Input, Tabs, Spin } from 'antd'
+import { Card, Row, Col, Select, Button, Space, message, Input, Tabs, Spin } from 'antd'
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,

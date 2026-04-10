@@ -307,21 +307,31 @@ export default function WebrtcPlayer({
 
   // Start stats collection
   useEffect(() => {
+    // Clear any existing interval before creating a new one
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current)
+      statsIntervalRef.current = null
+    }
+
     if (isConnected && onStats) {
       statsIntervalRef.current = window.setInterval(collectStats, 1000)
     }
+
     return () => {
       if (statsIntervalRef.current) {
         clearInterval(statsIntervalRef.current)
+        statsIntervalRef.current = null
       }
     }
   }, [isConnected, onStats, collectStats])
 
   // Auto-connect on mount or when props change
   useEffect(() => {
-    startConnection()
-    return stopConnection
-  }, [deviceId, wsUrl, startConnection, stopConnection])
+    startConnectionRef.current?.()
+    return () => {
+      stopConnection()
+    }
+  }, [deviceId, wsUrl]) // Only re-run when deviceId or wsUrl changes
 
   return (
     <div className="webrtc-player">

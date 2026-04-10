@@ -125,7 +125,7 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
           // Send long press event
           onInput?.('long-press', x, y)
         }
-      }, longPressTimer)
+      }, longPressDelay)
     },
     [mapCoordinates, onInput, longPressDelay]
   )
