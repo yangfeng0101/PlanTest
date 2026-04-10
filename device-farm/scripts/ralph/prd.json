@@ -306,7 +306,7 @@
       "id": "AI-003",
       "title": "智能用例生成",
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "支持自然语言描述生成测试用例",
         "生成的用例可直接执行",

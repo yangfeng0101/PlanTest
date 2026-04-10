@@ -157,3 +157,21 @@
   - Text similarity calculated using character overlap and containment
   - Clickable detection based on element type and keywords
 ---
+
+## 2026-04-10 - AI-003
+- Implemented intelligent test case generation service
+- Natural language to test case conversion (e.g., "点击登录按钮，输入用户名")
+- Test step types: click, input, swipe, wait, assert, screenshot
+- Built-in templates: login_flow, search_flow, form_submit, smoke_basic
+- Test improvement suggestions (missing assertions, waits, screenshots)
+- Export to Python script or JSON format
+- **Files:**
+  - services/ai-svc/app/services/test_generator.py (new)
+  - services/ai-svc/app/api/generate.py (new)
+  - services/ai-svc/app/main.py (added generate router)
+- **Learnings for future iterations:**
+  - Test steps parsed from natural language using action patterns
+  - Templates use placeholders like {field1} for parameterization
+  - Improvement suggestions help ensure test quality
+  - Python export generates executable test scripts with driver calls
+---
