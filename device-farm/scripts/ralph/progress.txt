@@ -275,3 +275,32 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Token persistence uses zustand persist middleware with partialize
   - Frontend hasPermission() mirrors backend permission logic
 ---
+
+## 2026-04-10 17:30 - GROUP-001
+- Verified DeviceGroup model with all required fields
+- Verified group API routes with full CRUD operations:
+  - GET /api/v1/groups - List groups with filters
+  - POST /api/v1/groups - Create group
+  - GET /api/v1/groups/{id} - Get group details
+  - PUT /api/v1/groups/{id} - Update group
+  - DELETE /api/v1/groups/{id} - Delete group
+  - POST /api/v1/groups/{id}/devices - Add devices to group
+  - DELETE /api/v1/groups/{id}/devices - Remove devices from group
+  - GET /api/v1/groups/{id}/devices - Get devices in group
+- All acceptance criteria verified:
+  - DeviceGroup data model created ✓
+  - Create, edit, delete groups supported ✓
+  - Devices can belong to multiple groups ✓
+  - Filter devices by group supported ✓
+- Files verified:
+  - services/device-svc/app/models/group.py (existing)
+  - services/device-svc/app/routes/groups.py (existing)
+  - services/device-svc/app/routes/__init__.py (exports groups_router)
+  - services/device-svc/app/main.py (includes groups router)
+- **Learnings for future iterations:**
+  - Groups use in-memory storage (should migrate to database for persistence)
+  - GroupType enum: CUSTOM, SYSTEM, TAG
+  - System groups cannot be deleted
+  - Devices can be in multiple groups (many-to-many relationship)
+  - GroupDetail extends DeviceGroup with device_count and online_count
+---

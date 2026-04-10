@@ -183,7 +183,7 @@
       "id": "GROUP-001",
       "title": "设备分组管理",
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建 DeviceGroup 数据模型",
         "支持创建、编辑、删除分组",
