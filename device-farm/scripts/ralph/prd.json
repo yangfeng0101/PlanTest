@@ -1,63 +1,104 @@
 {
-  "projectName": "Phase 3 Code Review Fixes",
-  "branchName": "phase3-features",
+  "projectName": "缺陷修复 - 安全加固",
+  "branchName": "main",
   "userStories": [
     {
-      "id": "FIX-CRITICAL-3",
-      "title": "预约路由添加认证保护",
+      "id": "FIX-SEC-001",
+      "title": "移除 .env 文件中的敏感信息",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "reservations.py 路由添加认证依赖",
-        "所有预约 API 需要验证 JWT Token",
-        "用户只能查看/修改自己的预约",
-        "Typecheck passes"
+        ".env 文件从版本控制中移除",
+        "创建 .env.example 模板文件",
+        "添加 .env 到 .gitignore",
+        "文档说明如何配置环境变量"
       ],
       "files": [
-        "services/device-svc/app/routes/reservations.py",
-        "services/device-svc/app/middleware/auth.py"
+        "device-farm/.env",
+        "device-farm/.env.example",
+        "device-farm/.gitignore"
       ]
     },
     {
-      "id": "FIX-HIGH-4",
-      "title": "修复导入路径错误",
+      "id": "FIX-SEC-002",
+      "title": "DEBUG 模式默认关闭",
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "schedules.py 导入路径修复",
-        "API 正常启动无 500 错误",
+        "所有服务 DEBUG 默认为 false",
+        "通过环境变量控制 DEBUG 模式",
         "Typecheck passes"
       ],
       "files": [
-        "services/test-svc/app/api/schedules.py"
+        "services/device-svc/app/config.py",
+        "services/test-svc/app/config.py",
+        "services/report-svc/app/config.py",
+        "services/ai-svc/app/config.py"
       ]
     },
     {
-      "id": "FIX-HIGH-5",
-      "title": "修复 Bearer Token 验证逻辑",
+      "id": "FIX-SEC-003",
+      "title": "CORS 配置限制为指定域名",
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "auth.py Bearer Token 验证逻辑修复",
-        "JWT Token 可以正常验证",
+        "CORS origins 从环境变量读取",
+        "默认只允许 localhost",
+        "支持多域名配置（逗号分隔）",
         "Typecheck passes"
       ],
       "files": [
-        "services/test-svc/app/api/auth.py"
+        "services/device-svc/app/main.py",
+        "services/test-svc/app/main.py",
+        "services/report-svc/app/main.py",
+        "services/ai-svc/app/main.py"
       ]
     },
     {
-      "id": "FIX-HIGH-6",
-      "title": "导出接口添加认证",
+      "id": "FIX-SEC-004",
+      "title": "设备命令接口添加认证和授权",
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "export.py 添加认证保护",
-        "未授权用户无法导出数据",
+        "命令执行接口添加 JWT 认证",
+        "只有 admin 角色可以执行命令",
+        "记录操作日志（用户ID、命令、时间）",
         "Typecheck passes"
       ],
       "files": [
-        "services/report-svc/app/api/export.py"
+        "services/device-svc/app/routes/devices.py"
+      ]
+    },
+    {
+      "id": "FIX-SEC-005",
+      "title": "认证接口添加速率限制",
+      "priority": 5,
+      "passes": false,
+      "acceptanceCriteria": [
+        "登录接口限制 5次/分钟",
+        "注册接口限制 3次/分钟",
+        "刷新 Token 接口限制 10次/分钟",
+        "使用 Redis 存储计数",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/test-svc/app/api/auth.py",
+        "services/test-svc/app/middleware/rate_limit.py"
+      ]
+    },
+    {
+      "id": "FIX-SEC-006",
+      "title": "API Key 启用时强制检查非空",
+      "priority": 6,
+      "passes": false,
+      "acceptanceCriteria": [
+        "API_KEY_ENABLED=true 时 API_KEY 不能为空",
+        "启动时验证配置",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/test-svc/app/config.py",
+        "services/test-svc/app/main.py"
       ]
     }
   ]
