@@ -1,4 +1,5 @@
 # Device Service Configuration
+import os
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -12,7 +13,7 @@ class Settings(BaseSettings):
     # Server config
     HOST: str = "0.0.0.0"
     PORT: int = 8001
-    DEBUG: bool = True
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
     # API config
     API_PREFIX: str = "/api/v1"
