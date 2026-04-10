@@ -28,3 +28,16 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - test-svc, report-svc, ai-svc 已经正确使用环境变量控制 DEBUG
   - 只有 device-svc 之前硬编码为 True
 ---
+
+## 2026-04-10 19:20 - FIX-SEC-003
+- CORS 配置限制为指定域名
+- 文件变更:
+  - services/device-svc/app/config.py (CORS 从环境变量读取)
+  - services/test-svc/app/config.py, main.py (添加 CORS_ORIGINS 配置)
+  - services/report-svc/app/config.py, main.py (添加 CORS_ORIGINS 配置)
+  - services/ai-svc/app/config.py, main.py (添加 CORS_ORIGINS 配置)
+- **Learnings for future iterations:**
+  - 所有服务现在使用 CORS_ORIGINS 环境变量
+  - 默认值: http://localhost:3000,http://localhost:5173
+  - 生产环境需要设置 CORS_ORIGINS 为实际域名
+---

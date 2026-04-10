@@ -40,7 +40,7 @@
       "id": "FIX-SEC-003",
       "title": "CORS 配置限制为指定域名",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "CORS origins 从环境变量读取",
         "默认只允许 localhost",
