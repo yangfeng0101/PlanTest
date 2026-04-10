@@ -31,6 +31,11 @@ from app.models.schedule import (
     IntervalConfig,
     OneTimeConfig,
 )
+from app.models.user import (
+    UserRole,
+    UserStatus,
+    UserDB,
+)
 
 __all__ = [
     # Script/Task models
@@ -63,4 +68,8 @@ __all__ = [
     "CrontabConfig",
     "IntervalConfig",
     "OneTimeConfig",
+    # User models
+    "UserRole",
+    "UserStatus",
+    "UserDB",
 ]

@@ -127,7 +127,7 @@
       "id": "AUTH-001",
       "title": "用户数据模型与 JWT",
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建 User 数据库模型（username, email, role, password_hash）",
         "实现 JWT Token 生成和验证",

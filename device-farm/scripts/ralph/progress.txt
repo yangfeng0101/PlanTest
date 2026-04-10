@@ -205,3 +205,22 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Device logs are fetched via /api/v1/tasks/parallel/{id}/devices/{device_id}/logs
   - Report summary includes status_breakdown and failed_device_details
 ---
+
+## 2026-04-10 22:30 - AUTH-001
+- Created User database model with username, email, role, password_hash fields
+- Implemented JWT service with access token (2 hours) and refresh token (7 days)
+- Verified password service already exists with bcrypt hashing
+- Added JWT configuration to config.py (secret key, algorithm, expiration times)
+- Files changed:
+  - services/test-svc/app/models/user.py (new)
+  - services/test-svc/app/services/jwt_service.py (new)
+  - services/test-svc/app/services/password_service.py (verified existing)
+  - services/test-svc/app/config.py (updated - added JWT settings)
+  - services/test-svc/app/models/__init__.py (updated - exported user models)
+- **Learnings for future iterations:**
+  - JWT tokens use HS256 algorithm with configurable expiration
+  - Access token: 2 hours, Refresh token: 7 days
+  - Password service uses bcrypt with 12 rounds for security
+  - User model includes role-based access (admin, user, viewer)
+  - UserStatus enum tracks active/inactive/suspended accounts
+---
