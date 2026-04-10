@@ -89,7 +89,7 @@
       "id": "FIX-FUNC-006",
       "title": "告警通知服务完善",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "实现飞书 Webhook 调用",
         "实现钉钉 Webhook 调用",
@@ -106,7 +106,7 @@
       "id": "FIX-FUNC-007",
       "title": "Token 存储迁移到 HTTP-only Cookie",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "后端登录接口设置 HTTP-only Cookie",
         "前端不再存储 Token 到 localStorage",

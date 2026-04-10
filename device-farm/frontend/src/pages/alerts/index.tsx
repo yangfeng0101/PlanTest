@@ -134,7 +134,7 @@ const getAlertTypeTag = (type: AlertType) => {
 }
 
 export default function AlertsPage() {
-  const { user: currentUser, accessToken } = useAuthStore()
+  const { user: currentUser } = useAuthStore()
   const [rules, setRules] = useState<AlertRule[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [history, setHistory] = useState<AlertHistory[]>([])
@@ -152,23 +152,29 @@ export default function AlertsPage() {
   const canManageAlerts = hasPermission(currentUser, 'alert:write')
 
   const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}) => {
-    if (!accessToken) {
-      throw new Error('Not authenticated')
+    // Get CSRF token for state-changing requests
+    const method = (options.method || 'GET').toUpperCase()
+    const requiresCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+    const csrfMatch = document.cookie.match(/csrf_token=([^;]+)/)
+    const csrfToken = csrfMatch ? csrfMatch[1] : null
+
+    const headers = new Headers(options.headers)
+    headers.set('Content-Type', 'application/json')
+    if (requiresCsrf && csrfToken) {
+      headers.set('X-CSRF-Token', csrfToken)
     }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        ...options.headers,
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
+      credentials: 'include',
     })
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
       throw new Error(error.detail || 'Request failed')
     }
     return response
-  }, [accessToken])
+  }, [])
 
   const fetchRules = useCallback(async () => {
     setLoading(true)

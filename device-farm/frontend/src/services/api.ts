@@ -4,7 +4,64 @@ import type { Device, Script, Task, Report, PaginatedResponse } from '@/types'
 const api = axios.create({
   baseURL: '/api/v1',
   timeout: 10000,
+  withCredentials: true, // Important: send cookies with requests
 })
+
+// Helper to get CSRF token from cookie
+function getCsrfToken(): string | null {
+  const match = document.cookie.match(/csrf_token=([^;]+)/)
+  return match ? match[1] : null
+}
+
+// Add CSRF token to requests for state-changing methods
+api.interceptors.request.use((config) => {
+  const method = config.method?.toUpperCase() || ''
+  const requiresCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+
+  if (requiresCsrf) {
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
+  }
+
+  return config
+})
+
+// Handle 401 responses - try to refresh token
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+
+    // If 401 and not already retrying
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        // Try to refresh tokens
+        const response = await axios.post('/api/v1/auth/refresh', {}, {
+          withCredentials: true,
+        })
+
+        if (response.status === 200) {
+          // Update CSRF token for retry
+          const newCsrfToken = getCsrfToken()
+          if (newCsrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(originalRequest.method?.toUpperCase() || '')) {
+            originalRequest.headers['X-CSRF-Token'] = newCsrfToken
+          }
+          return api(originalRequest)
+        }
+      } catch (refreshError) {
+        // Refresh failed, redirect to login
+        window.location.href = '/login'
+        return Promise.reject(refreshError)
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
 
 // 设备 API
 export const deviceApi = {

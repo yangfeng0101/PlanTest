@@ -148,3 +148,38 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 页面使用 Tabs 组件分离规则、活动告警、历史三个视图
   - Switch 组件可直接在 Table 列中实现启用/禁用切换
 ---
+
+## 2026-04-10 20:05 - FIX-FUNC-006
+- 告警通知服务完善
+- 文件变更:
+  - services/report-svc/app/services/notification.py (新建，完整通知服务实现)
+  - services/report-svc/app/services/alert.py (集成通知服务，异步通知发送)
+  - services/report-svc/app/api/alerts.py (添加通知日志查询接口)
+  - services/report-svc/app/config.py (添加 SMTP 配置项)
+- **Learnings for future iterations:**
+  - notification.py 提供统一的通知发送接口，支持飞书/钉钉/邮件
+  - 飞书使用 interactive card 格式，钉钉使用 markdown 格式
+  - 邮件发送使用 SMTP，支持 TLS 加密
+  - 所有通知发送都有详细日志记录，可通过 API 查询
+  - 通知发送使用 asyncio.gather 并行执行，提高效率
+  - 环境变量配置: FEISHU_WEBHOOK_URL, DINGTALK_WEBHOOK_URL, SMTP_*, EMAIL_FROM
+---
+
+## 2026-04-11 00:30 - FIX-FUNC-007
+- Token 存储迁移到 HTTP-only Cookie
+- 文件变更:
+  - frontend/src/stores/authStore.ts (移除 localStorage 存储，使用 cookie 认证)
+  - frontend/src/services/api.ts (添加 withCredentials 和 CSRF token 支持)
+  - frontend/src/stores/index.ts (移除 TokenResponse 导出)
+  - frontend/src/pages/admin/Users.tsx (更新 fetchWithAuth 使用 cookie)
+  - frontend/src/pages/alerts/index.tsx (更新 fetchWithAuth 使用 cookie)
+  - services/test-svc/app/api/auth.py (添加 CSRF token 验证依赖)
+- **Learnings for future iterations:**
+  - HTTP-only Cookie 比 localStorage 更安全，可防止 XSS 攻击
+  - CSRF token 存储在非 HTTP-only cookie 中，前端可读取并在请求头中发送
+  - 前端请求需要设置 credentials: 'include' 才能发送 cookie
+  - axios 使用 withCredentials: true 配置
+  - Headers 对象用于设置自定义 header，避免 TypeScript 类型问题
+  - 后端已实现 validate_csrf_token 和 require_csrf_token 依赖
+  - Cookie 设置通过环境变量控制: COOKIE_SECURE, COOKIE_SAMESITE
+---
