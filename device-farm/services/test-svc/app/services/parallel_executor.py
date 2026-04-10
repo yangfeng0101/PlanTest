@@ -111,32 +111,45 @@ class ParallelExecutorService:
         Returns:
             List of available device IDs
         """
-        # In production, call device-svc API to get available devices
-        # For now, return a mock list
-        # TODO: Integrate with device-svc API
         import httpx
+        import logging
+
+        logger = logging.getLogger(__name__)
 
         try:
             async with httpx.AsyncClient() as client:
-                # Call device-svc to get available devices
-                params = {"status": "available"}
+                # Call device-svc API to get available devices
+                # device-svc runs on port 8001
+                params = {"status": "online"}
                 if platform:
-                    params["platform"] = platform
+                    # Map platform to device os filter if needed
+                    pass
 
                 response = await client.get(
-                    f"{settings.REPORT_SERVICE_URL.replace('8002', '8000')}/api/v1/devices",
+                    f"{settings.DEVICE_SERVICE_URL}{settings.API_PREFIX}/devices",
                     params=params,
                     timeout=10.0
                 )
 
                 if response.status_code == 200:
                     data = response.json()
-                    devices = data.get("items", [])
-                    return [d.get("id") or d.get("device_id") for d in devices]
-        except Exception:
-            pass
+                    # Device-svc returns {"devices": [...], "total": N}
+                    devices = data.get("devices", [])
+                    # Device ID field is "id" in device model
+                    device_ids = [d.get("id") for d in devices if d.get("id")]
+                    logger.info(f"Retrieved {len(device_ids)} available devices from device-svc")
+                    return device_ids
+                else:
+                    logger.warning(f"Failed to get devices from device-svc: {response.status_code}")
 
-        # Fallback to mock devices for testing
+        except httpx.ConnectError:
+            logger.warning("Cannot connect to device-svc, using fallback mock devices")
+        except httpx.TimeoutException:
+            logger.warning("Timeout connecting to device-svc, using fallback mock devices")
+        except Exception as e:
+            logger.warning(f"Error getting devices from device-svc: {e}")
+
+        # Fallback to mock devices for testing/development
         return [
             "device-001",
             "device-002",

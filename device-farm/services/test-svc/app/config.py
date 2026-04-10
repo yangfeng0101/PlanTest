@@ -59,6 +59,12 @@ class Settings(BaseSettings):
         "http://localhost:8002"
     )
 
+    # Device Service
+    DEVICE_SERVICE_URL: str = os.getenv(
+        "DEVICE_SERVICE_URL",
+        "http://localhost:8001"
+    )
+
     # API Authentication
     API_KEY: str = os.getenv("API_KEY", "")
     API_KEY_ENABLED: bool = os.getenv("API_KEY_ENABLED", "true").lower() == "true"

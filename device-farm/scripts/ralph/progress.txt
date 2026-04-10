@@ -8,6 +8,8 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
 - CORS_ORIGINS 从环境变量读取，默认 localhost
 - 启动时验证安全配置 (JWT, API_KEY)
 - 速率限制使用 Redis，不可用时降级到内存
+- 服务端口: device-svc=8001, test-svc=8001, report-svc=8002, ai-svc=8003
+- 服务间调用应使用 settings.XXX_SERVICE_URL 配置
 
 ---
 
@@ -75,4 +77,17 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
 - **Learnings for future iterations:**
   - 配置验证应在启动时进行，避免运行时错误
   - validate_jwt_config 和 validate_api_key_config 模式一致
+---
+
+## 2026-04-10 19:40 - FIX-FUNC-001
+- 并行执行器集成设备服务 API
+- 文件变更:
+  - services/test-svc/app/config.py (添加 DEVICE_SERVICE_URL 配置)
+  - services/test-svc/app/services/parallel_executor.py (修复 HTTP 调用集成)
+- **Learnings for future iterations:**
+  - device-svc 运行在端口 8001，test-svc 在 8001，report-svc 在 8002
+  - device-svc API 响应格式: {"devices": [...], "total": N}
+  - Device ID 字段为 "id"，不是 "device_id"
+  - 查询参数 status 应使用 "online" 而非 "available"
+  - 应使用 settings.DEVICE_SERVICE_URL 而非手动替换端口号
 ---

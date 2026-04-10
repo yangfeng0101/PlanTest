@@ -1,104 +1,140 @@
 {
-  "projectName": "缺陷修复 - 安全加固",
+  "projectName": "缺陷修复 - 功能完善",
   "branchName": "main",
   "userStories": [
     {
-      "id": "FIX-SEC-001",
-      "title": "移除 .env 文件中的敏感信息",
+      "id": "FIX-FUNC-001",
+      "title": "并行执行器集成设备服务 API",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        ".env 文件从版本控制中移除",
-        "创建 .env.example 模板文件",
-        "添加 .env 到 .gitignore",
-        "文档说明如何配置环境变量"
+        "parallel_executor.py 实现与 device-svc 的 HTTP 调用",
+        "设备选择策略 ALL/RANDOM/SPECIFIC 正常工作",
+        "获取真实设备列表并验证设备可用性",
+        "Typecheck passes"
       ],
       "files": [
-        "device-farm/.env",
-        "device-farm/.env.example",
-        "device-farm/.gitignore"
+        "services/test-svc/app/services/parallel_executor.py"
       ]
     },
     {
-      "id": "FIX-SEC-002",
-      "title": "DEBUG 模式默认关闭",
+      "id": "FIX-FUNC-002",
+      "title": "预约通知服务集成",
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "所有服务 DEBUG 默认为 false",
-        "通过环境变量控制 DEBUG 模式",
+        "reservation_tasks.py 实现通知发送",
+        "支持飞书/钉钉/邮件通知",
+        "预约开始前5分钟发送提醒",
         "Typecheck passes"
       ],
       "files": [
-        "services/device-svc/app/config.py",
-        "services/test-svc/app/config.py",
-        "services/report-svc/app/config.py",
-        "services/ai-svc/app/config.py"
+        "services/device-svc/app/tasks/reservation_tasks.py",
+        "services/device-svc/app/services/notification_service.py"
       ]
     },
     {
-      "id": "FIX-SEC-003",
-      "title": "CORS 配置限制为指定域名",
+      "id": "FIX-FUNC-003",
+      "title": "前端添加 AI 功能入口",
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "CORS origins 从环境变量读取",
-        "默认只允许 localhost",
-        "支持多域名配置（逗号分隔）",
-        "Typecheck passes"
+        "添加 AI 工具菜单项",
+        "创建 OCR 页面（上传图片识别文字）",
+        "创建元素定位页面",
+        "创建用例生成页面",
+        "TypeScript passes"
       ],
       "files": [
-        "services/device-svc/app/main.py",
-        "services/test-svc/app/main.py",
-        "services/report-svc/app/main.py",
-        "services/ai-svc/app/main.py"
+        "frontend/src/App.tsx",
+        "frontend/src/pages/ai/OCR.tsx",
+        "frontend/src/pages/ai/Locate.tsx",
+        "frontend/src/pages/ai/Generate.tsx"
       ]
     },
     {
-      "id": "FIX-SEC-004",
-      "title": "设备命令接口添加认证和授权",
+      "id": "FIX-FUNC-004",
+      "title": "前端添加用户管理页面",
       "priority": 4,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "命令执行接口添加 JWT 认证",
-        "只有 admin 角色可以执行命令",
-        "记录操作日志（用户ID、命令、时间）",
-        "Typecheck passes"
+        "创建用户列表页面（admin 角色）",
+        "支持创建/编辑/删除用户",
+        "支持修改用户角色",
+        "TypeScript passes"
       ],
       "files": [
-        "services/device-svc/app/routes/devices.py"
+        "frontend/src/App.tsx",
+        "frontend/src/pages/admin/Users.tsx"
       ]
     },
     {
-      "id": "FIX-SEC-005",
-      "title": "认证接口添加速率限制",
+      "id": "FIX-FUNC-005",
+      "title": "前端添加告警配置页面",
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "acceptanceCriteria": [
-        "登录接口限制 5次/分钟",
-        "注册接口限制 3次/分钟",
-        "刷新 Token 接口限制 10次/分钟",
-        "使用 Redis 存储计数",
+        "创建告警规则列表页面",
+        "支持创建/编辑/删除告警规则",
+        "支持启用/禁用告警",
+        "显示告警历史记录",
+        "TypeScript passes"
+      ],
+      "files": [
+        "frontend/src/App.tsx",
+        "frontend/src/pages/alerts/index.tsx"
+      ]
+    },
+    {
+      "id": "FIX-FUNC-006",
+      "title": "告警通知服务完善",
+      "priority": 6,
+      "passes": false,
+      "acceptanceCriteria": [
+        "实现飞书 Webhook 调用",
+        "实现钉钉 Webhook 调用",
+        "实现邮件发送（SMTP）",
+        "添加通知发送日志",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/report-svc/app/services/alert.py",
+        "services/report-svc/app/services/notification.py"
+      ]
+    },
+    {
+      "id": "FIX-FUNC-007",
+      "title": "Token 存储迁移到 HTTP-only Cookie",
+      "priority": 7,
+      "passes": false,
+      "acceptanceCriteria": [
+        "后端登录接口设置 HTTP-only Cookie",
+        "前端不再存储 Token 到 localStorage",
+        "Cookie 设置 Secure、SameSite 属性",
+        "支持 CSRF 保护",
         "Typecheck passes"
       ],
       "files": [
         "services/test-svc/app/api/auth.py",
-        "services/test-svc/app/middleware/rate_limit.py"
+        "frontend/src/stores/authStore.ts",
+        "frontend/src/api/client.ts"
       ]
     },
     {
-      "id": "FIX-SEC-006",
-      "title": "API Key 启用时强制检查非空",
-      "priority": 6,
-      "passes": true,
+      "id": "FIX-FUNC-008",
+      "title": "WebSocket 连接清理机制",
+      "priority": 8,
+      "passes": false,
       "acceptanceCriteria": [
-        "API_KEY_ENABLED=true 时 API_KEY 不能为空",
-        "启动时验证配置",
+        "添加连接超时检测",
+        "实现心跳检查机制",
+        "定期清理断开的连接",
+        "添加连接状态监控",
         "Typecheck passes"
       ],
       "files": [
-        "services/test-svc/app/config.py",
-        "services/test-svc/app/main.py"
+        "services/test-svc/app/api/tasks.py",
+        "services/device-svc/app/routes/devices.py"
       ]
     }
   ]
