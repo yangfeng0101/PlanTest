@@ -251,3 +251,27 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Auth service handles user creation with duplicate username/email checks
   - Login updates last_login_at timestamp
 ---
+
+## 2026-04-10 17:20 - AUTH-003
+- Verified RBAC middleware implementation with role-based permission control
+- Verified frontend login page with proper form validation
+- Verified auth store with token persistence in localStorage
+- Verified AuthGuard component for route protection
+- Fixed refresh token endpoint to use proper request body
+- Added RefreshTokenRequest Pydantic model
+- All acceptance criteria verified:
+  - Role-based permission control (admin, user, viewer) ✓
+  - Frontend login page ✓
+  - Token stored in localStorage ✓
+  - Route guard protecting authenticated pages ✓
+  - Login state persistence ✓
+- Files changed:
+  - services/test-svc/app/services/auth_service.py (updated - added RefreshTokenRequest)
+  - services/test-svc/app/api/auth.py (updated - fixed refresh endpoint)
+- **Learnings for future iterations:**
+  - RBAC middleware uses PERMISSIONS dict to define role-permission mappings
+  - require_permission() returns a FastAPI dependency for route protection
+  - AuthGuard component checks both authentication and optional permission
+  - Token persistence uses zustand persist middleware with partialize
+  - Frontend hasPermission() mirrors backend permission logic
+---

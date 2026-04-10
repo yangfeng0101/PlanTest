@@ -163,7 +163,7 @@
       "id": "AUTH-003",
       "title": "权限控制与前端登录",
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "实现基于角色的权限控制（admin, user, viewer）",
         "前端登录页面实现",
