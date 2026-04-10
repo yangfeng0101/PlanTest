@@ -83,7 +83,7 @@
       "id": "DEF-015",
       "title": "触摸坐标计算修复",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "使用 containerRef 获取容器边界",
         "正确计算相对坐标 (clientX - rect.left)",
@@ -98,7 +98,7 @@
       "id": "DEF-016",
       "title": "长按定时器内存泄漏修复",
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "useEffect 返回清理函数",
         "清理 longPressTimer.current",

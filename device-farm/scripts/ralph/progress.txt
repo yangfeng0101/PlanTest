@@ -119,3 +119,36 @@ Files changed:
 - When reconnecting from 'disconnected' state, must fully stop old connection first to clean up resources
 
 ---
+
+## 2026-04-10 - DEF-015
+
+- Verified touch coordinate calculation is already correctly implemented
+- Uses containerRef to get container bounds (not e.target)
+- Correctly calculates relative coordinates (clientX - rect.left, clientY - rect.top)
+- Properly scales to device coordinates (x/width * screenWidth)
+
+Files changed:
+- None (already correctly implemented)
+
+**Learnings for future iterations:**
+- The TouchOverlay uses the ref pattern (setContainerRef callback) to get accurate container bounds
+- Using e.target for getBoundingClientRect() can return wrong bounds from child elements
+- Coordinate mapping: relativeX * (screenWidth / containerWidth) scales properly for any container size
+
+---
+
+## 2026-04-10 - DEF-016
+
+- Verified long-press timer cleanup is already correctly implemented
+- useEffect returns cleanup function that clears longPressTimerRef.current
+- Timer is also cleared on pointerUp and when swipe is detected
+
+Files changed:
+- None (already correctly implemented)
+
+**Learnings for future iterations:**
+- Timer refs should always be cleared in useEffect cleanup to prevent memory leaks on unmount
+- Multiple cleanup points (unmount, pointerUp, swipe detection) ensure timers don't leak
+- The pattern `useRef<number | null>(null)` with `window.setTimeout` and `clearTimeout` is idiomatic for React timers
+
+---
