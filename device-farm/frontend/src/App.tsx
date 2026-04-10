@@ -15,6 +15,7 @@ import DeviceDetailPage from './pages/devices/Detail'
 import ScreenPage from './pages/screen'
 import ScriptsPage from './pages/scripts'
 import ReportsPage from './pages/reports'
+import TrendPage from './pages/reports/Trend'
 import ParallelExecutionPage from './pages/parallel'
 import LoginPage from './pages/auth/Login'
 import AuthGuard from './components/AuthGuard'
@@ -131,6 +132,7 @@ function MainLayout() {
             <Route path="/scripts" element={<ScriptsPage />} />
             <Route path="/parallel" element={<ParallelExecutionPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/reports/trend" element={<TrendPage />} />
             <Route path="/" element={<Navigate to="/devices" replace />} />
           </Routes>
         </Content>

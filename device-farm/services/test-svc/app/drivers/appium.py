@@ -1,6 +1,7 @@
 # Appium Driver Wrapper
 import asyncio
 import json
+import logging
 from typing import Optional, Dict, Any
 from functools import wraps
 
@@ -9,6 +10,8 @@ from appium.options.common.base import AppiumOptions
 from appium.webdriver.common.appiumby import AppiumBy
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def retry_on_failure(max_retries=3, delay=1):
@@ -38,12 +41,21 @@ class AppiumDriver:
         platform: str = "android",
         device_id: Optional[str] = None,
         capabilities: Optional[Dict[str, Any]] = None,
+        appium_host: Optional[str] = None,
+        udid: Optional[str] = None,  # iOS UDID or Android serial
+        app_path: Optional[str] = None,  # Path to app (APK/IPA)
+        bundle_id: Optional[str] = None,  # Bundle ID for installed app
     ):
         self.platform = platform.lower()
-        self.device_id = device_id
+        self.device_id = device_id or udid
+        self.udid = udid or device_id
         self.capabilities = capabilities or {}
+        self.appium_host = appium_host or settings.APPIUM_HOST
+        self.app_path = app_path
+        self.bundle_id = bundle_id
         self.driver: Optional[webdriver.WebDriver] = None
         self.session_id: Optional[str] = None
+        self._initialized = False
 
     def _build_options(self) -> AppiumOptions:
         """Build Appium options based on platform and capabilities"""
@@ -55,49 +67,94 @@ class AppiumDriver:
                 "platformName": "Android",
                 "automationName": "UiAutomator2",
                 "deviceName": self.device_id or "Android Device",
+                "udid": self.udid,
                 "noReset": True,
                 "newCommandTimeout": settings.APPIUM_TIMEOUT,
+                # Enable real device connection
+                "skipServerInstallation": True,  # Skip uiautomator2 server installation if already present
+                "skipDeviceInitialization": True,  # Skip device initialization
+                "disableWindowAnimation": True,
+                "ignoreUnimportantViews": True,
+                "enablePerformanceLogging": True,
             }
+            # Add app path if provided
+            if self.app_path:
+                default_caps["app"] = self.app_path
+            # Add bundle_id (appPackage) if provided
+            if self.bundle_id:
+                default_caps["appPackage"] = self.bundle_id
+                default_caps["appActivity"] = ".MainActivity"  # Common default, can be overridden
         else:  # iOS
             default_caps = {
                 "platformName": "iOS",
                 "automationName": "XCUITest",
                 "deviceName": self.device_id or "iOS Device",
+                "udid": self.udid,
                 "noReset": True,
                 "newCommandTimeout": settings.APPIUM_TIMEOUT,
+                # Enable real device connection
+                "usePrebuiltWDA": True,  # Use pre-built WebDriverAgent
+                "skipLogCapture": True,
+                "waitForQuiescence": False,
             }
+            # Add app path if provided
+            if self.app_path:
+                default_caps["app"] = self.app_path
+            # Add bundle_id if provided
+            if self.bundle_id:
+                default_caps["bundleId"] = self.bundle_id
 
         # Merge with user capabilities
         caps = {**default_caps, **self.capabilities}
 
         for key, value in caps.items():
-            options.set_capability(key, value)
+            if value is not None:  # Skip None values
+                options.set_capability(key, value)
 
         return options
 
     @retry_on_failure(max_retries=3, delay=2)
     def initialize(self) -> "AppiumDriver":
         """Initialize the Appium driver"""
+        if self._initialized and self.driver is not None:
+            logger.debug(f"Driver already initialized for {self.platform}:{self.udid}")
+            return self
+
         options = self._build_options()
 
-        self.driver = webdriver.Remote(
-            command_executor=settings.APPIUM_HOST,
-            options=options
-        )
+        logger.info(f"Initializing Appium driver for {self.platform}:{self.udid}")
+        logger.debug(f"Appium host: {self.appium_host}")
 
-        self.session_id = self.driver.session_id
-        return self
+        try:
+            self.driver = webdriver.Remote(
+                command_executor=self.appium_host,
+                options=options
+            )
+
+            self.session_id = self.driver.session_id
+            self._initialized = True
+            logger.info(f"Appium driver initialized successfully, session_id: {self.session_id}")
+            return self
+        except Exception as e:
+            logger.error(f"Failed to initialize Appium driver: {e}")
+            raise
 
     def quit(self):
         """Quit the driver session"""
         if self.driver:
             try:
                 self.driver.quit()
-            except Exception:
-                pass
+                logger.info(f"Appium driver quit for session {self.session_id}")
+            except Exception as e:
+                logger.warning(f"Error quitting driver: {e}")
             finally:
                 self.driver = None
                 self.session_id = None
+                self._initialized = False
+
+    def is_active(self) -> bool:
+        """Check if driver session is active"""
+        return self._initialized and self.driver is not None
 
     # Element finding methods
     def find_element_by_id(self, element_id: str):

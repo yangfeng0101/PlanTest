@@ -411,3 +411,45 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Python automatically imports `__init__.py` when importing a package
   - py_compile can be used to verify Python syntax without full import resolution
 ---
+
+## 2026-04-10 - FIX-HIGH-5
+- Fixed verify_bearer_token dependency to validate JWT tokens instead of API key
+- Changed return type from str to dict with user info (sub, username, role)
+- Updated error handling to use proper HTTP 401 for invalid/expired tokens
+- All acceptance criteria verified:
+  - auth.py Bearer Token 验证逻辑修复 ✓
+  - JWT Token 可以正常验证 ✓
+  - Typecheck passes ✓
+- Files changed:
+  - services/test-svc/app/middleware/auth.py (updated)
+- **Learnings for future iterations:**
+  - verify_bearer_token now returns user dict for route handlers
+  - The middleware AuthMiddleware already validates JWT correctly
+  - Use jwt_service.validate_access_token() for JWT validation
+---
+
+## 2026-04-10 - FIX-HIGH-6
+- Created authentication middleware for report-svc (similar to device-svc)
+- Added JWT validation by calling test-svc auth API
+- Added authentication to all export endpoints:
+  - POST /api/v1/export/csv - Export to CSV
+  - POST /api/v1/export/excel - Export to Excel
+  - POST /api/v1/export/pdf - Export to PDF
+  - GET /api/v1/export/statistics/csv - Export statistics to CSV
+  - GET /api/v1/export/statistics/excel - Export statistics to Excel
+  - POST /api/v1/export/execution-logs/excel - Export execution logs
+  - POST /api/v1/export/test-report/pdf - Export test report
+  - POST /api/v1/export/batch - Batch export
+- All acceptance criteria verified:
+  - export.py 添加认证保护 ✓
+  - 未授权用户无法导出数据 ✓
+  - Typecheck passes ✓
+- Files changed:
+  - services/report-svc/app/middleware/auth.py (new)
+  - services/report-svc/app/middleware/__init__.py (new)
+  - services/report-svc/app/api/export.py (updated)
+- **Learnings for future iterations:**
+  - report-svc uses same auth pattern as device-svc (calls test-svc to validate JWT)
+  - All export endpoints now require Bearer token authentication
+  - get_current_user dependency provides user info to route handlers
+---

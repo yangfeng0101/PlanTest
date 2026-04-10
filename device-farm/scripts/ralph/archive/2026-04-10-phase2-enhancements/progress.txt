@@ -1,0 +1,313 @@
+## Codebase Patterns
+
+- Go services use internal/ for private packages
+- Python services use FastAPI with async/await
+- Frontend uses React with TypeScript and Vite
+- WebRTC for real-time video streaming
+- MinIO for object storage with async executor
+- Safe Python execution with restricted builtins
+- Safe JavaScript execution with Node.js VM sandbox
+- iOS device identification uses UDID (40 hex chars), Android uses serial numbers
+- iOS mirroring uses WDA HTTP API or idevicescreenshot (no scrcpy equivalent)
+
+---
+
+## 2026-04-10 - Ralph Setup
+
+- Created prd.json with Phase 2 user stories
+- Installed Ralph scripts to scripts/ralph/
+- Installed Ralph skills globally (~/.claude/skills/)
+
+**Learnings for future iterations:**
+- Phase 1 defects DEF-001 through DEF-017 have been addressed
+- Critical security issues (code injection) fixed with sandboxing
+- WebRTC improvements needed (reconnect, FPS, memory leaks)
+- iOS and Harmony device support is the next major work
+
+---
+
+## 2026-04-10 - DEF-018
+
+- Implemented API authentication middleware
+- Created AuthService for API key management
+- Added AuthMiddleware for request-level authentication
+- Protected all API endpoints with verify_api_key dependency
+- Support for both X-API-Key header and Bearer token
+
+Files changed:
+- services/test-svc/app/services/auth.py (new)
+- services/test-svc/app/middleware/auth.py (new)
+- services/test-svc/app/middleware/__init__.py (new)
+- services/test-svc/app/api/scripts.py (modified - added auth to all endpoints)
+- services/test-svc/app/main.py (modified - added AuthMiddleware)
+- services/test-svc/app/config.py (modified - API_KEY_ENABLED defaults to true)
+
+**Learnings for future iterations:**
+- FastAPI middleware is applied in reverse order (last added runs first)
+- Public paths must be explicitly listed in AuthMiddleware.PUBLIC_PATHS
+- API key validation uses dependency injection pattern with Depends()
+- Both middleware and dependency injection provide redundant protection
+
+---
+
+## 2026-04-10 - DEF-011
+
+- Added context.Context to ScreenSession struct for proper goroutine lifecycle management
+- Goroutine leak fix already partially implemented: cancel function stored and streamVideo responds to context.Done()
+- StartSession uses context.WithCancel as expected
+- StopSession calls cancel() to terminate the streamVideo goroutine
+
+Files changed:
+- services/screen-svc/internal/handler/manager.go (added ctx field to struct)
+
+**Learnings for future iterations:**
+- Go context pattern: store both ctx and cancel in struct for goroutine lifecycle control
+- The select/case pattern with ctx.Done() is the idiomatic way to make goroutines cancellable
+- Always cancel context before cleaning up resources to stop dependent goroutines
+
+---
+## 2026-04-10 - DEF-012
+
+- Fixed useEffect dependency array to [deviceId, wsUrl] to prevent connection churn from callback function dependencies
+- Ensured statsInterval is properly cleared before creating new one and ref is reset to null in cleanup
+- Verified reconnectTimer is cleared in stopConnection and on successful connection
+- stopConnection is called via useEffect cleanup function on component unmount
+- Fixed pre-existing TypeScript errors (longPressDelay typo in TouchHandler, unused Switch import in screen page)
+
+Files changed:
+- frontend/src/components/WebrtcPlayer/index.tsx (memory leak fix)
+- frontend/src/components/TouchHandler/index.tsx (typo fix)
+- frontend/src/pages/screen/index.tsx (unused import fix)
+
+**Learnings for future iterations:**
+- React useEffect with callback functions in dependencies causes unnecessary re-runs; use refs to store callbacks instead
+- Always clear intervals/timeouts before creating new ones in useEffect to prevent multiple timers
+- TypeScript strict mode catches pre-existing issues that should be fixed for clean builds
+- The ref pattern (useRef + useEffect to sync) avoids stale closures without triggering re-renders
+
+---
+
+## 2026-04-10 - DEF-013
+
+- Verified FPS calculation already uses WebRTC getStats() API correctly
+- Reads framesPerSecond from inbound-rtp report (Chrome 78+)
+- Fallback uses framesDecoded delta calculation for browsers without framesPerSecond
+- No invalid byte-based estimation logic present
+
+Files changed:
+- None (already correctly implemented)
+
+**Learnings for future iterations:**
+- The DEFECTS.md described a byte-based FPS estimation `Math.round(bytesReceived / 10000)` but this was already fixed in the initial commit
+- Always verify current code state against defect descriptions before making changes
+- WebRTC getStats() provides framesPerSecond directly for modern browsers
+- Fallback using framesDecoded delta is a reliable alternative for older browsers
+
+---
+
+## 2026-04-10 - DEF-014
+
+- Added MAX_RECONNECT_DELAY constant (30000ms) to cap exponential backoff
+- Implemented Math.min() to ensure delay never exceeds 30 seconds
+- Added reconnection handling for 'disconnected' state (in addition to 'failed')
+- Reconnection now properly stops old connection before starting new one on 'disconnected' state
+
+Files changed:
+- frontend/src/components/WebrtcPlayer/index.tsx (reconnection improvements)
+
+**Learnings for future iterations:**
+- WebRTC connections can enter 'disconnected' state temporarily before 'failed' - handling both provides better resilience
+- Exponential backoff must always have a maximum cap to prevent excessive delays
+- When reconnecting from 'disconnected' state, must fully stop old connection first to clean up resources
+
+---
+
+## 2026-04-10 - DEF-015
+
+- Verified touch coordinate calculation is already correctly implemented
+- Uses containerRef to get container bounds (not e.target)
+- Correctly calculates relative coordinates (clientX - rect.left, clientY - rect.top)
+- Properly scales to device coordinates (x/width * screenWidth)
+
+Files changed:
+- None (already correctly implemented)
+
+**Learnings for future iterations:**
+- The TouchOverlay uses the ref pattern (setContainerRef callback) to get accurate container bounds
+- Using e.target for getBoundingClientRect() can return wrong bounds from child elements
+- Coordinate mapping: relativeX * (screenWidth / containerWidth) scales properly for any container size
+
+---
+
+## 2026-04-10 - DEF-016
+
+- Verified long-press timer cleanup is already correctly implemented
+- useEffect returns cleanup function that clears longPressTimerRef.current
+- Timer is also cleared on pointerUp and when swipe is detected
+
+Files changed:
+- None (already correctly implemented)
+
+**Learnings for future iterations:**
+- Timer refs should always be cleared in useEffect cleanup to prevent memory leaks on unmount
+- Multiple cleanup points (unmount, pointerUp, swipe detection) ensure timers don't leak
+- The pattern `useRef<number | null>(null)` with `window.setTimeout` and `clearTimeout` is idiomatic for React timers
+
+---
+
+## 2026-04-10 - IOS-001
+
+- Created ios_service.py with IOSDeviceService class
+- Implemented discover_devices() using pymobiledevice3 usbmux list
+- Implemented get_device_info(udid) via lockdown info query
+- Implemented pair_device(udid) with support for handling user confirmation requirement
+- Added pymobiledevice3 dependency to requirements.txt
+- Bonus: Implemented unpair_device, get_pairing_status, list_apps, install_app, uninstall_app
+
+Files changed:
+- services/device-svc/app/services/ios_service.py (new)
+- services/device-svc/requirements.txt (modified - added pymobiledevice3)
+
+**Learnings for future iterations:**
+- pymobiledevice3 CLI is invoked via `python3 -m pymobiledevice3` with JSON output via `--json` flag
+- iOS device identification uses UDID (Unique Device Identifier) not serial number
+- Pairing may require user confirmation on the device screen (PasswordRequired/UserPairingRequired errors)
+- Device info is retrieved via lockdown service; battery and storage require separate domain queries
+- Screen resolution/size for iOS devices must be mapped from ProductType as lockdown doesn't expose display info directly
+- The ADBService pattern (async subprocess execution with stdout/stderr handling) works well for pymobiledevice3 too
+
+---
+
+## 2026-04-10 - IOS-002
+
+- Created WDADriver class for iOS automation via WebDriverAgent
+- Implemented start_wda(udid) to launch WebDriverAgent on device via ios-deploy or pymobiledevice3
+- Implemented tap(x, y) for single tap with fallback to W3C actions
+- Implemented swipe(x1, y1, x2, y2) with configurable duration
+- Implemented screenshot() returning base64-encoded image
+- Bonus: Implemented double_tap, pinch, home_button, type_text, find_element, get_page_source
+
+Files changed:
+- services/device-svc/app/drivers/__init__.py (new)
+- services/device-svc/app/drivers/wda_driver.py (new)
+- services/device-svc/requirements.txt (modified - added httpx)
+
+**Learnings for future iterations:**
+- WebDriverAgent provides REST API for iOS automation on port 8100 by default
+- WDA session management uses sessionId pattern similar to Selenium/WebDriver
+- Multiple tap/swipe API endpoints exist in WDA - always implement fallbacks
+- httpx.AsyncClient is the async replacement for requests library
+- WDA can be started via xcodebuild test or ios-deploy --justlaunch
+
+---
+
+## 2026-04-10 - IOS-003
+
+- Created ios package with IOSMirror struct for iOS screen mirroring
+- Implemented Start() using WebDriverAgent HTTP API for screenshots (primary) or idevicescreenshot (fallback)
+- Implemented Stop() to cancel context and stop mirroring
+- Implemented frame streaming via Read() method that feeds WebRTC pipeline
+- Added VideoEncoder and MJPEGToH264Stream for PNG/MJPEG to H.264 conversion
+- Integrated iOS support into ScreenManager with device type detection
+- Added device-specific control message handling (iOS vs Android)
+- Updated main.go to initialize iOS config
+
+Files changed:
+- services/screen-svc/internal/ios/mirror.go (new)
+- services/screen-svc/internal/ios/encoder.go (new)
+- services/screen-svc/internal/handler/manager.go (modified - added iOS support)
+- services/screen-svc/cmd/main.go (modified - added iOS config)
+
+**Learnings for future iterations:**
+- iOS screen mirroring requires WebDriverAgent (WDA) or idevicescreenshot since there's no direct equivalent to Android's scrcpy
+- iOS devices are identified by UDID (40 hex characters) vs Android serial numbers
+- iOS frames are PNG/MJPEG format, not H.264 - need conversion for WebRTC
+- Screen size detection from PNG header bytes 16-23 (IHDR chunk)
+- WDA provides touch/swipe/home button control via HTTP REST API
+- iOS mirroring is inherently slower than Android (15 FPS default vs 30+ FPS for Android)
+- Device type detection: iOS UDID is 40 hex chars, Android serial varies
+
+---
+
+## 2026-04-10 - HARMONY-001
+
+- Created harmony_service.py with HarmonyDeviceService class
+- Implemented discover_devices() using HDC (HarmonyOS Device Connector)
+- Implemented get_device_info(serial) via HDC shell commands
+- Implemented install_app(serial, hap_path) for HAP package installation
+- Implemented bonus methods: uninstall_app, start_app, stop_app, get_screenshot, list_apps, get_device_logs, shell
+- Added HDC_PATH configuration setting to config.py
+
+Files changed:
+- services/device-svc/app/services/harmony_service.py (new)
+- services/device-svc/app/config.py (modified - added HDC_PATH)
+- services/device-svc/CLAUDE.md (modified - added HarmonyOS documentation)
+
+**Learnings for future iterations:**
+- HDC (HarmonyOS Device Connector) is similar to ADB but with different command syntax
+- Device identification uses serial number (same as Android)
+- HAP files are HarmonyOS Ability Packages (equivalent to APK)
+- App management uses `bm` (Bundle Manager) and `aa` (Ability Manager) tools
+- Properties are accessed via `param get` or `getprop` (fallback to Android-style)
+- Screenshot uses `snapshot_display` command, not `screencap`
+- OS version is `ro.build.version.harmonyos` (fallback to SDK level)
+- The async subprocess execution pattern from ADBService works for HDC too
+
+---
+
+## 2026-04-10 - HARMONY-002
+
+- Created harmony package with HarmonyMirror struct for HarmonyOS screen mirroring
+- Implemented Start() using HOScrpy (if available) or HDC snapshot_display for screenshots
+- Implemented Stop() to stop mirroring and clean up resources
+- Created input.go with InputManager for touch/swipe/key input injection
+- Integrated HarmonyOS support into ScreenManager with device type detection
+- Added startHarmonySession and streamHarmonyVideo methods
+- Updated main.go to initialize HarmonyOS config
+
+Files changed:
+- services/screen-svc/internal/harmony/mirror.go (new)
+- services/screen-svc/internal/harmony/input.go (new)
+- services/screen-svc/internal/handler/manager.go (modified - added HarmonyOS support)
+- services/screen-svc/cmd/main.go (modified - added harmony config)
+
+**Learnings for future iterations:**
+- HarmonyOS uses HDC (HarmonyOS Device Connector) similar to ADB for Android
+- HOScrpy is the HarmonyOS equivalent of scrcpy but may not be widely available
+- Screenshot fallback uses `hdc shell snapshot_display` command
+- HarmonyOS input commands use `hdc shell input tap/swipe/keyevent` similar to Android
+- Device type detection relies on device service to identify HarmonyOS vs Android devices
+- HarmonyOS devices use serial numbers like Android (not UDID like iOS)
+
+---
+
+## 2026-04-10 - APPIUM-001
+
+- Created driver_pool.py with DriverPool class for connection pool management
+- Implemented PooledDriver wrapper for tracking driver usage and health
+- Added acquire/release/remove methods for driver lifecycle management
+- Implemented background health check to clean up expired drivers
+- Refactored appium.py to support real device connections
+- Added udid, app_path, bundle_id parameters for device-specific configuration
+- Enhanced _build_options with real device capabilities (skipServerInstallation, usePrebuiltWDA)
+- Added logging throughout for better debugging
+- Created appium-docker.yml with Appium server configurations
+- Added separate containers for Android (UiAutomator2) and iOS (XCUITest)
+- Included Selenium Grid integration for distributed execution
+- Added Redis for session caching
+
+Files changed:
+- services/test-svc/app/services/driver_pool.py (new)
+- services/test-svc/app/drivers/appium.py (modified - real device support)
+- infra/docker/appium-docker.yml (new)
+
+**Learnings for future iterations:**
+- Appium connection pooling improves performance by reusing driver sessions
+- Android uses UiAutomator2 automation, iOS uses XCUITest
+- Real device connections should skip server installation for faster startup
+- iOS requires WebDriverAgent (WDA) pre-built or running on device
+- Connection pool should have health checks to clean up stale sessions
+- Docker deployment needs privileged mode for USB device access
+- Selenium Grid enables distributed Appium execution across multiple nodes
+
+---

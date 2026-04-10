@@ -64,7 +64,11 @@
       "Bash(kill 95498)",
       "Bash(nohup python3:*)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f\\\\\"设备数: {d['total']}\\\\\"\\); [print\\(f\\\\\"  - {dev['name']} \\({dev['id']}\\): {dev['status']}\\\\\"\\) for dev in d['data']]\")",
-      "Bash(python3 -c \"import websockets; print\\('websockets installed'\\)\")"
+      "Bash(python3 -c \"import websockets; print\\('websockets installed'\\)\")",
+      "Bash(./scripts/ralph/ralph.sh:*)",
+      "Bash(git log:*)",
+      "Bash(./ralph.sh --tool claude 5)",
+      "Bash(git commit -m ':*)"
     ]
   },
   "enableAllProjectMcpServers": true,

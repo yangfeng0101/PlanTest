@@ -14,16 +14,13 @@ from app.services.auth_service import (
     RefreshTokenRequest,
 )
 from app.services.jwt_service import jwt_service
+from app.services.token_blacklist import token_blacklist
 from app.models.user import UserRole, UserStatus, UserDB
 from app.config import settings
 
 
 router = APIRouter()
 security = HTTPBearer()
-
-
-# In-memory token blacklist (in production, use Redis)
-_token_blacklist: set = set()
 
 
 async def get_current_user(
@@ -45,7 +42,7 @@ async def get_current_user(
     token = credentials.credentials
 
     # Check blacklist
-    if token in _token_blacklist:
+    if await token_blacklist.is_blacklisted(token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked",
@@ -168,7 +165,7 @@ async def refresh_token(
         HTTPException: If refresh token is invalid
     """
     # Check blacklist
-    if request.refresh_token in _token_blacklist:
+    if await token_blacklist.is_blacklisted(request.refresh_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked",
@@ -199,9 +196,10 @@ async def logout(
     Returns:
         Success message
     """
-    # Add access token to blacklist
+    # Add access token to blacklist with TTL matching token expiration
     token = credentials.credentials
-    _token_blacklist.add(token)
+    ttl_seconds = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    await token_blacklist.add_token(token, ttl_seconds)
 
     return {"message": "Successfully logged out"}
 

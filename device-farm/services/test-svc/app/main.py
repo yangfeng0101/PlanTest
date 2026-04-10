@@ -50,6 +50,12 @@ app.include_router(
 )
 
 
+@app.on_event("startup")
+async def validate_config():
+    """Validate configuration at startup."""
+    settings.validate_jwt_config()
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""

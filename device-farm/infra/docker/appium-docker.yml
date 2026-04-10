@@ -1,0 +1,124 @@
+# Appium Docker Deployment Configuration
+# Supports both UiAutomator2 (Android) and XCUITest (iOS) drivers
+
+version: '3.8'
+
+services:
+  # Appium Server for Android devices
+  appium-android:
+    image: appium/appium:latest
+    container_name: appium-android
+    ports:
+      - "4723:4723"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - appium-android-data:/tmp
+    environment:
+      - APPIUM_HOST=0.0.0.0
+      - APPIUM_PORT=4723
+      - SE_NODE_MAX_SESSIONS=10
+      - SE_NODE_SESSION_TIMEOUT=1800
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+    privileged: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4723/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - device-farm-network
+
+  # Appium Server for iOS devices
+  # Note: iOS requires macOS host with Xcode and WebDriverAgent
+  appium-ios:
+    image: appium/appium:latest
+    container_name: appium-ios
+    ports:
+      - "4724:4724"
+    volumes:
+      - appium-ios-data:/tmp
+      # Mount Xcode and WDA from macOS host
+      # - /Applications/Xcode.app:/Applications/Xcode.app:ro
+      # - ~/Library/Developer/Xcode/DerivedData:/Library/Developer/Xcode/DerivedData
+    environment:
+      - APPIUM_HOST=0.0.0.0
+      - APPIUM_PORT=4724
+      - SE_NODE_MAX_SESSIONS=5
+      - SE_NODE_SESSION_TIMEOUT=1800
+    privileged: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4724/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - device-farm-network
+    # iOS requires macOS host
+    # platform: linux/amd64  # Uncomment if running on Linux
+
+  # Selenium Grid (optional - for distributed execution)
+  selenium-hub:
+    image: selenium/hub:latest
+    container_name: selenium-hub
+    ports:
+      - "4444:4444"
+    environment:
+      - GRID_MAX_SESSION=20
+      - GRID_BROWSER_TIMEOUT=1800
+      - GRID_TIMEOUT=300
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - device-farm-network
+
+  # Appium node connected to Selenium Grid (Android)
+  appium-node-android:
+    image: appium/appium:latest
+    container_name: appium-node-android
+    depends_on:
+      - selenium-hub
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=5
+    privileged: true
+    restart: unless-stopped
+    networks:
+      - device-farm-network
+
+  # Redis for session caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: appium-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - device-farm-network
+
+volumes:
+  appium-android-data:
+  appium-ios-data:
+  redis-data:
+
+networks:
+  device-farm-network:
+    external: true
+    # Create with: docker network create device-farm-network

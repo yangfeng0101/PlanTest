@@ -1,11 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(mkdir -p ~/.claude/skills)",
+      "Bash(cp -r ralph/skills/prd ~/.claude/skills/)",
+      "Bash(cp -r ralph/skills/ralph ~/.claude/skills/)"
+    ]
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "feishu"
-  ],
-  "permissions": {
-    "allow": [
-      "Bash(go build:*)"
-    ]
-  }
+  ]
 }
