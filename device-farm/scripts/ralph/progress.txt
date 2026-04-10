@@ -4,6 +4,10 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
 ## Codebase Patterns
 - .env 文件已在 .gitignore 中，不应提交敏感信息
 - 环境变量配置文档在 docs/IMPLEMENTATION.md
+- 所有服务 DEBUG 默认为 false，通过环境变量控制
+- CORS_ORIGINS 从环境变量读取，默认 localhost
+- 启动时验证安全配置 (JWT, API_KEY)
+- 速率限制使用 Redis，不可用时降级到内存
 
 ---
 
@@ -61,4 +65,14 @@ Started: 2026年 4月10日 星期五 19时05分26秒 CST
   - 使用 Redis ZSET 实现滑动窗口限流
   - Redis 不可用时自动降级到内存存储
   - 返回标准 Rate Limit 响应头
+---
+
+## 2026-04-10 19:35 - FIX-SEC-006
+- API Key 启用时强制检查非空
+- 文件变更:
+  - services/test-svc/app/config.py (添加 validate_api_key_config)
+  - services/test-svc/app/main.py (启动时调用验证)
+- **Learnings for future iterations:**
+  - 配置验证应在启动时进行，避免运行时错误
+  - validate_jwt_config 和 validate_api_key_config 模式一致
 ---

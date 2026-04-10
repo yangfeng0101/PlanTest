@@ -90,7 +90,7 @@
       "id": "FIX-SEC-006",
       "title": "API Key 启用时强制检查非空",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "API_KEY_ENABLED=true 时 API_KEY 不能为空",
         "启动时验证配置",
