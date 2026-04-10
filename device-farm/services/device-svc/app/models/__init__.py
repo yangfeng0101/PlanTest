@@ -10,7 +10,16 @@ from app.models.device import (
 )
 from app.models.reservation import (
     DeviceReservation,
+    ReservationStatus as ModelReservationStatus,
+)
+from app.models.reservation_schemas import (
     ReservationStatus,
+    ReservationCreate,
+    ReservationUpdate,
+    ReservationResponse,
+    ReservationListResponse,
+    ReservationConflictError,
+    ConflictDetail,
 )
 
 __all__ = [
@@ -22,5 +31,12 @@ __all__ = [
     "DeviceListResponse",
     "DeviceFilter",
     "DeviceReservation",
+    "ModelReservationStatus",
     "ReservationStatus",
+    "ReservationCreate",
+    "ReservationUpdate",
+    "ReservationResponse",
+    "ReservationListResponse",
+    "ReservationConflictError",
+    "ConflictDetail",
 ]

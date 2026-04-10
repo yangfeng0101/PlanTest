@@ -6,9 +6,11 @@ import base64
 
 from app.models import (
     Device, DeviceUpdate, DeviceFilter, DeviceStatus,
-    DeviceListResponse, DeviceOccupyRequest
+    DeviceListResponse, DeviceOccupyRequest,
+    ReservationCreate, ReservationResponse, ReservationStatus
 )
 from app.services import device_service
+from app.services.reservation_service import reservation_service
 from app.websocket import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -124,6 +126,85 @@ async def get_device_logs(device_id: str, lines: int = 100):
         return {"device_id": device_id, "logs": logs}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{device_id}/reserve", response_model=ReservationResponse, status_code=201)
+async def reserve_device(device_id: str, reservation: ReservationCreate):
+    """
+    Create a reservation for a specific device.
+
+    The reservation will be checked for conflicts with existing reservations.
+    """
+    # Override device_id with path parameter
+    reservation.device_id = device_id
+
+    try:
+        result = await reservation_service.create_reservation(reservation)
+        return ReservationResponse(
+            id=result.id,
+            device_id=result.device_id,
+            user_id=result.user_id,
+            start_time=result.start_time,
+            end_time=result.end_time,
+            status=ReservationStatus(result.status.value),
+            purpose=result.purpose,
+            created_at=result.created_at,
+            updated_at=result.updated_at
+        )
+    except ValueError as e:
+        if "conflicts" in str(e).lower():
+            raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/{device_id}/reserve")
+async def cancel_device_reservation(
+    device_id: str,
+    user_id: Optional[str] = Query(None, description="User ID for authorization")
+):
+    """
+    Cancel reservation for a specific device.
+
+    Cancels the active or pending reservation for the device.
+    If user_id is provided, only that user's reservation will be cancelled.
+    """
+    # Get active reservation for device
+    reservations = await reservation_service.get_reservations(
+        device_id=device_id,
+        status=ReservationStatus.ACTIVE
+    )
+
+    if not reservations:
+        # Check for pending reservations
+        reservations = await reservation_service.get_reservations(
+            device_id=device_id,
+            status=ReservationStatus.PENDING
+        )
+
+    if not reservations:
+        raise HTTPException(
+            status_code=404,
+            detail="No active or pending reservation found for device"
+        )
+
+    # Filter by user_id if provided
+    if user_id:
+        reservations = [r for r in reservations if r.user_id == user_id]
+        if not reservations:
+            raise HTTPException(
+                status_code=404,
+                detail="No reservation found for user on this device"
+            )
+
+    # Cancel the first matching reservation
+    try:
+        reservation = await reservation_service.cancel_reservation(
+            reservations[0].id,
+            user_id=user_id
+        )
+        return {"message": "Reservation cancelled", "reservation_id": reservation.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.websocket("/ws")

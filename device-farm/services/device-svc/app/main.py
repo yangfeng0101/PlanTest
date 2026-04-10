@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import settings
-from app.routes import devices_router
+from app.routes import devices_router, reservations_router
 from app.services import device_service
 from app.websocket import ws_manager
 
@@ -67,6 +67,11 @@ app.include_router(
     devices_router,
     prefix=f"{settings.API_PREFIX}/devices",
     tags=["Devices"]
+)
+app.include_router(
+    reservations_router,
+    prefix=f"{settings.API_PREFIX}/reservations",
+    tags=["Reservations"]
 )
 
 

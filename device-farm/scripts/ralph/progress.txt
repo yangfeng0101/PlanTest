@@ -2,6 +2,17 @@
 Started: 2026年 4月10日 星期五 16时20分35秒 CST
 ---
 
+## Codebase Patterns
+- device-svc uses SQLAlchemy async with asyncpg driver (same pattern as test-svc)
+- Database URL is configured in config.py settings.DATABASE_URL
+- Models inherit from Base in database.py (DeclarativeBase)
+- Use SQLEnum for enum fields, String(36) for UUID primary keys
+- Add indexes for foreign keys and frequently queried fields
+- Pydantic schemas are defined in separate *_schemas.py files for API request/response
+- Services use async session pattern with optional db parameter for transaction management
+
+---
+
 ## 2026-04-10 16:30 - RESERVATION-001
 - Created DeviceReservation SQLAlchemy model with all required fields
 - Created database.py for async database connection management
@@ -17,4 +28,22 @@ Started: 2026年 4月10日 星期五 16时20分35秒 CST
   - Models inherit from Base in database.py (DeclarativeBase)
   - Use SQLEnum for enum fields, String(36) for UUID primary keys
   - Add indexes for foreign keys and frequently queried fields
+---
+
+## 2026-04-10 17:15 - RESERVATION-002
+- Created reservation API with full CRUD operations
+- Implemented time conflict detection for reservations
+- Added device-specific reserve/cancel endpoints
+- Files changed:
+  - services/device-svc/app/models/reservation_schemas.py (new)
+  - services/device-svc/app/services/reservation_service.py (new)
+  - services/device-svc/app/routes/reservations.py (new)
+  - services/device-svc/app/routes/devices.py (updated - added reserve/cancel endpoints)
+  - services/device-svc/app/routes/__init__.py (updated)
+  - services/device-svc/app/models/__init__.py (updated)
+  - services/device-svc/app/main.py (updated)
+- **Learnings for future iterations:**
+  - Pydantic schemas are defined in separate *_schemas.py files for API request/response
+  - Services use async session pattern with optional db parameter for transaction management
+  - Conflict detection uses: start1 < end2 AND start2 < end1 for overlapping time ranges
 ---

@@ -23,7 +23,7 @@
       "id": "RESERVATION-002",
       "title": "设备预约 API",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "POST /api/v1/devices/{id}/reserve - 创建预约",
         "DELETE /api/v1/devices/{id}/reserve - 取消预约",
