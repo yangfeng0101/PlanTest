@@ -234,7 +234,7 @@
       "id": "ALERT-001",
       "title": "告警通知系统",
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建 Alert 数据模型",
         "支持告警规则配置（设备离线、任务失败率超阈值）",
