@@ -1,0 +1,49 @@
+## Codebase Patterns
+
+- Go services use internal/ for private packages
+- Python services use FastAPI with async/await
+- Frontend uses React with TypeScript and Vite
+- WebRTC for real-time video streaming
+- MinIO for object storage with async executor
+- Safe Python execution with restricted builtins
+- Safe JavaScript execution with Node.js VM sandbox
+
+---
+
+## 2026-04-10 - Ralph Setup
+
+- Created prd.json with Phase 2 user stories
+- Installed Ralph scripts to scripts/ralph/
+- Installed Ralph skills globally (~/.claude/skills/)
+
+**Learnings for future iterations:**
+- Phase 1 defects DEF-001 through DEF-017 have been addressed
+- Critical security issues (code injection) fixed with sandboxing
+- WebRTC improvements needed (reconnect, FPS, memory leaks)
+- iOS and Harmony device support is the next major work
+
+---
+
+## 2026-04-10 - DEF-018
+
+- Implemented API authentication middleware
+- Created AuthService for API key management
+- Added AuthMiddleware for request-level authentication
+- Protected all API endpoints with verify_api_key dependency
+- Support for both X-API-Key header and Bearer token
+
+Files changed:
+- services/test-svc/app/services/auth.py (new)
+- services/test-svc/app/middleware/auth.py (new)
+- services/test-svc/app/middleware/__init__.py (new)
+- services/test-svc/app/api/scripts.py (modified - added auth to all endpoints)
+- services/test-svc/app/main.py (modified - added AuthMiddleware)
+- services/test-svc/app/config.py (modified - API_KEY_ENABLED defaults to true)
+
+**Learnings for future iterations:**
+- FastAPI middleware is applied in reverse order (last added runs first)
+- Public paths must be explicitly listed in AuthMiddleware.PUBLIC_PATHS
+- API key validation uses dependency injection pattern with Depends()
+- Both middleware and dependency injection provide redundant protection
+
+---

@@ -1,0 +1,215 @@
+{
+  "projectName": "Device Farm Phase 2",
+  "branchName": "phase2-enhancements",
+  "userStories": [
+    {
+      "id": "DEF-018",
+      "title": "API 认证中间件实现",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "创建 services/test-svc/app/services/auth.py 认证服务",
+        "创建 services/test-svc/app/middleware/auth.py 认证中间件",
+        "所有 API 端点添加认证保护",
+        "支持 JWT 或 API Key 认证",
+        "未认证请求返回 401 Unauthorized"
+      ],
+      "files": [
+        "services/test-svc/app/services/auth.py",
+        "services/test-svc/app/middleware/auth.py",
+        "services/test-svc/app/api/tasks.py"
+      ]
+    },
+    {
+      "id": "DEF-011",
+      "title": "Goroutine 泄漏修复",
+      "priority": 2,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Session 结构体添加 context.Context 和 cancel 函数",
+        "StartSession 使用 context.WithCancel",
+        "streamVideo 协程响应 context.Done()",
+        "StopSession 调用 cancel() 终止协程"
+      ],
+      "files": [
+        "services/screen-svc/internal/handler/manager.go"
+      ]
+    },
+    {
+      "id": "DEF-012",
+      "title": "WebRTC 播放器内存泄漏修复",
+      "priority": 3,
+      "passes": false,
+      "acceptanceCriteria": [
+        "useEffect 添加正确的依赖数组 [deviceId, wsUrl]",
+        "清理 statsInterval 定时器",
+        "清理 reconnectTimer 定时器",
+        "组件卸载时调用 stopConnection"
+      ],
+      "files": [
+        "frontend/src/components/WebrtcPlayer/index.tsx"
+      ]
+    },
+    {
+      "id": "DEF-013",
+      "title": "FPS 计算修复",
+      "priority": 4,
+      "passes": false,
+      "acceptanceCriteria": [
+        "使用 WebRTC getStats() API 获取真实帧率",
+        "从 inbound-rtp report 读取 framesPerSecond",
+        "移除无效的字节数估算逻辑"
+      ],
+      "files": [
+        "frontend/src/components/WebrtcPlayer/index.tsx"
+      ]
+    },
+    {
+      "id": "DEF-014",
+      "title": "WebRTC 重连机制实现",
+      "priority": 5,
+      "passes": false,
+      "acceptanceCriteria": [
+        "实现指数退避重连策略",
+        "最大重连次数限制 (5次)",
+        "重连延迟: min(1000 * 2^attempts, 30000)ms",
+        "连接失败时触发 onConnectionStateChange"
+      ],
+      "files": [
+        "frontend/src/components/WebrtcPlayer/index.tsx"
+      ]
+    },
+    {
+      "id": "DEF-015",
+      "title": "触摸坐标计算修复",
+      "priority": 6,
+      "passes": false,
+      "acceptanceCriteria": [
+        "使用 containerRef 获取容器边界",
+        "正确计算相对坐标 (clientX - rect.left)",
+        "转换到设备坐标 (x/width * screenWidth)",
+        "移除对 e.target 的错误依赖"
+      ],
+      "files": [
+        "frontend/src/components/TouchOverlay/index.tsx"
+      ]
+    },
+    {
+      "id": "DEF-016",
+      "title": "长按定时器内存泄漏修复",
+      "priority": 7,
+      "passes": false,
+      "acceptanceCriteria": [
+        "useEffect 返回清理函数",
+        "清理 longPressTimer.current",
+        "组件卸载时清除所有定时器"
+      ],
+      "files": [
+        "frontend/src/components/TouchOverlay/index.tsx"
+      ]
+    },
+    {
+      "id": "IOS-001",
+      "title": "iOS 设备服务实现",
+      "priority": 8,
+      "passes": false,
+      "acceptanceCriteria": [
+        "创建 services/device-svc/app/services/ios_service.py",
+        "实现 IOSDeviceService 类",
+        "实现 discover_devices() 通过 usbmuxd 发现设备",
+        "实现 get_device_info(udid) 获取设备信息",
+        "实现 pair_device(udid) 设备配对",
+        "添加 pymobiledevice3 依赖"
+      ],
+      "files": [
+        "services/device-svc/app/services/ios_service.py",
+        "services/device-svc/requirements.txt"
+      ]
+    },
+    {
+      "id": "IOS-002",
+      "title": "WebDriverAgent 驱动实现",
+      "priority": 9,
+      "passes": false,
+      "acceptanceCriteria": [
+        "创建 services/device-svc/app/drivers/wda_driver.py",
+        "实现 WDADriver 类",
+        "实现 start_wda(udid) 启动 WebDriverAgent",
+        "实现 tap(x, y) 点击操作",
+        "实现 swipe(x1, y1, x2, y2) 滑动操作",
+        "实现 screenshot() 截图"
+      ],
+      "files": [
+        "services/device-svc/app/drivers/wda_driver.py"
+      ]
+    },
+    {
+      "id": "IOS-003",
+      "title": "iOS 投屏适配",
+      "priority": 10,
+      "passes": false,
+      "acceptanceCriteria": [
+        "创建 services/screen-svc/internal/ios/mirror.go",
+        "实现 IOSMirror 结构体",
+        "实现 Start() 使用 ios-deploy 或 libimobiledevice",
+        "实现 Stop() 停止镜像",
+        "视频帧输出到 WebRTC 管道"
+      ],
+      "files": [
+        "services/screen-svc/internal/ios/mirror.go",
+        "services/screen-svc/internal/handler/manager.go"
+      ]
+    },
+    {
+      "id": "HARMONY-001",
+      "title": "鸿蒙设备服务实现",
+      "priority": 11,
+      "passes": false,
+      "acceptanceCriteria": [
+        "创建 services/device-svc/app/services/harmony_service.py",
+        "实现 HarmonyDeviceService 类",
+        "实现 discover_devices() 通过 HDC 发现设备",
+        "实现 get_device_info(serial) 获取设备信息",
+        "实现 install_app(serial, hap_path) 安装 HAP"
+      ],
+      "files": [
+        "services/device-svc/app/services/harmony_service.py"
+      ]
+    },
+    {
+      "id": "HARMONY-002",
+      "title": "鸿蒙投屏适配",
+      "priority": 12,
+      "passes": false,
+      "acceptanceCriteria": [
+        "创建 services/screen-svc/internal/harmony/mirror.go",
+        "实现 HarmonyMirror 结构体",
+        "实现 Start() 调用 HOScrcpy",
+        "实现 Stop() 停止镜像",
+        "创建 services/screen-svc/internal/harmony/input.go 输入注入"
+      ],
+      "files": [
+        "services/screen-svc/internal/harmony/mirror.go",
+        "services/screen-svc/internal/harmony/input.go"
+      ]
+    },
+    {
+      "id": "APPIUM-001",
+      "title": "Appium 真实连接实现",
+      "priority": 13,
+      "passes": false,
+      "acceptanceCriteria": [
+        "重构 services/test-svc/app/drivers/appium.py",
+        "实现真实 Appium 驱动初始化",
+        "创建 services/test-svc/app/services/driver_pool.py 连接池",
+        "创建 infra/docker/appium-docker.yml 部署配置",
+        "支持 UiAutomator2 和 XCUITest"
+      ],
+      "files": [
+        "services/test-svc/app/drivers/appium.py",
+        "services/test-svc/app/services/driver_pool.py",
+        "infra/docker/appium-docker.yml"
+      ]
+    }
+  ]
+}
