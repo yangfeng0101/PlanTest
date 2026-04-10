@@ -3,7 +3,7 @@ import asyncio
 import json
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status, Depends
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -20,6 +20,13 @@ from app.models.database import TaskDB, TaskLogDB, TaskStatus as TaskStatusDB
 from app.tasks.executor import execute_test_task
 from app.config import settings
 from app.auth import verify_api_key
+from app.services.parallel_executor import (
+    parallel_executor_service,
+    ParallelTaskCreate,
+    ParallelTask,
+    ParallelTaskSummary,
+    ParallelTaskStatus,
+)
 
 router = APIRouter()
 
@@ -341,3 +348,163 @@ async def _get_task_by_id_async(task_id: str) -> Optional[Task]:
             return None
 
         return _task_db_to_pydantic(task_db)
+
+
+# ============ Parallel Execution Endpoints ============
+
+@router.post("/parallel", response_model=ParallelTask, status_code=status.HTTP_201_CREATED)
+async def create_parallel_task(
+    request: ParallelTaskCreate,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(verify_api_key),
+):
+    """Create a parallel execution task for multiple devices
+
+    This endpoint allows executing the same script across multiple devices simultaneously.
+
+    Args:
+        request: Parallel task configuration including:
+            - script_id: The script to execute
+            - device_ids: Specific device IDs (for SPECIFIC strategy)
+            - selection_strategy: ALL, RANDOM, or SPECIFIC
+            - max_devices: Number of devices to select (for RANDOM)
+            - max_concurrency: Maximum concurrent executions (default 5)
+            - parameters: Execution parameters
+
+    Returns:
+        Created parallel task with sub-tasks for each device
+    """
+    try:
+        parallel_task = await parallel_executor_service.create_parallel_task(request)
+
+        # Start execution in background
+        background_tasks.add_task(
+            parallel_executor_service.execute_parallel_task,
+            parallel_task.id
+        )
+
+        return parallel_task
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/parallel/{parallel_task_id}", response_model=ParallelTask)
+async def get_parallel_task(
+    parallel_task_id: str,
+    _: str = Depends(verify_api_key),
+):
+    """Get parallel task status and details
+
+    Args:
+        parallel_task_id: ID of the parallel task
+
+    Returns:
+        Parallel task with all sub-task statuses
+    """
+    parallel_task = parallel_executor_service.get_parallel_task(parallel_task_id)
+
+    if not parallel_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Parallel task {parallel_task_id} not found"
+        )
+
+    return parallel_task
+
+
+@router.get("/parallel/{parallel_task_id}/summary", response_model=ParallelTaskSummary)
+async def get_parallel_task_summary(
+    parallel_task_id: str,
+    _: str = Depends(verify_api_key),
+):
+    """Get summary of parallel task execution
+
+    Returns aggregated metrics including:
+    - Success rate
+    - Total duration
+    - Device-level results
+
+    Args:
+        parallel_task_id: ID of the parallel task
+
+    Returns:
+        Summary with aggregated metrics
+    """
+    summary = parallel_executor_service.get_parallel_task_summary(parallel_task_id)
+
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Parallel task {parallel_task_id} not found"
+        )
+
+    return summary
+
+
+@router.get("/parallel", response_model=List[ParallelTask])
+async def list_parallel_tasks(
+    status_filter: Optional[ParallelTaskStatus] = Query(None, alias="status"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    _: str = Depends(verify_api_key),
+):
+    """List parallel execution tasks
+
+    Args:
+        status_filter: Filter by status (pending, running, completed, failed, partial)
+        limit: Maximum number of tasks to return
+        offset: Offset for pagination
+
+    Returns:
+        List of parallel tasks
+    """
+    return parallel_executor_service.list_parallel_tasks(
+        status=status_filter,
+        limit=limit,
+        offset=offset
+    )
+
+
+@router.delete("/parallel/{parallel_task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_parallel_task(
+    parallel_task_id: str,
+    _: str = Depends(verify_api_key),
+):
+    """Cancel a running parallel task
+
+    This will attempt to cancel all pending/running sub-tasks.
+
+    Args:
+        parallel_task_id: ID of the parallel task to cancel
+    """
+    parallel_task = parallel_executor_service.get_parallel_task(parallel_task_id)
+
+    if not parallel_task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Parallel task {parallel_task_id} not found"
+        )
+
+    if parallel_task.status == ParallelTaskStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot cancel completed task"
+        )
+
+    # Cancel all running/pending sub-tasks
+    from app.tasks.executor import celery_app
+
+    for sub_task in parallel_task.sub_tasks:
+        if sub_task.status in ["pending", "running"]:
+            try:
+                celery_app.control.revoke(sub_task.task_id, terminate=True)
+            except Exception:
+                pass
+
+    parallel_task.status = ParallelTaskStatus.FAILED
+    parallel_task.finished_at = datetime.utcnow()
+
+    return None
