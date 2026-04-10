@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import ocr_router
+from app.api.ocr import router as ocr_router
+from app.api.locate import router as locate_router
 
 # Create FastAPI application
 app = FastAPI(
@@ -28,6 +29,11 @@ app.include_router(
     ocr_router,
     prefix=f"{settings.API_PREFIX}/ocr",
     tags=["OCR"]
+)
+app.include_router(
+    locate_router,
+    prefix=f"{settings.API_PREFIX}/locate",
+    tags=["Element Location"]
 )
 
 
