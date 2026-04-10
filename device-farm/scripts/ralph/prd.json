@@ -130,7 +130,7 @@
       "id": "IOS-002",
       "title": "WebDriverAgent 驱动实现",
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "创建 services/device-svc/app/drivers/wda_driver.py",
         "实现 WDADriver 类",

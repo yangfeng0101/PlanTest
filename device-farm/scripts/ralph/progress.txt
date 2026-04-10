@@ -175,3 +175,26 @@ Files changed:
 - The ADBService pattern (async subprocess execution with stdout/stderr handling) works well for pymobiledevice3 too
 
 ---
+
+## 2026-04-10 - IOS-002
+
+- Created WDADriver class for iOS automation via WebDriverAgent
+- Implemented start_wda(udid) to launch WebDriverAgent on device via ios-deploy or pymobiledevice3
+- Implemented tap(x, y) for single tap with fallback to W3C actions
+- Implemented swipe(x1, y1, x2, y2) with configurable duration
+- Implemented screenshot() returning base64-encoded image
+- Bonus: Implemented double_tap, pinch, home_button, type_text, find_element, get_page_source
+
+Files changed:
+- services/device-svc/app/drivers/__init__.py (new)
+- services/device-svc/app/drivers/wda_driver.py (new)
+- services/device-svc/requirements.txt (modified - added httpx)
+
+**Learnings for future iterations:**
+- WebDriverAgent provides REST API for iOS automation on port 8100 by default
+- WDA session management uses sessionId pattern similar to Selenium/WebDriver
+- Multiple tap/swipe API endpoints exist in WDA - always implement fallbacks
+- httpx.AsyncClient is the async replacement for requests library
+- WDA can be started via xcodebuild test or ios-deploy --justlaunch
+
+---
