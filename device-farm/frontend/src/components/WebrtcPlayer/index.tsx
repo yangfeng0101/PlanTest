@@ -24,6 +24,7 @@ interface SignalingMessage {
 const DEFAULT_WS_URL = 'ws://localhost:8082/ws/webrtc'
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5
 const DEFAULT_RECONNECT_DELAY = 1000
+const MAX_RECONNECT_DELAY = 30000
 
 export default function WebrtcPlayer({
   deviceId,
@@ -86,7 +87,7 @@ export default function WebrtcPlayer({
         setError('Connection failed')
         // Attempt reconnect with exponential backoff
         if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-          const delay = reconnectDelay * Math.pow(2, reconnectAttemptsRef.current)
+          const delay = Math.min(reconnectDelay * Math.pow(2, reconnectAttemptsRef.current), MAX_RECONNECT_DELAY)
           console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`)
           reconnectTimeoutRef.current = window.setTimeout(() => {
             reconnectAttemptsRef.current++
@@ -94,6 +95,18 @@ export default function WebrtcPlayer({
           }, delay)
         } else {
           setError('Connection failed after max reconnect attempts')
+        }
+      } else if (state === 'disconnected') {
+        // Try to reconnect on temporary disconnection
+        setError('Connection lost, attempting to reconnect...')
+        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          const delay = Math.min(reconnectDelay * Math.pow(2, reconnectAttemptsRef.current), MAX_RECONNECT_DELAY)
+          console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`)
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            reconnectAttemptsRef.current++
+            stopConnection()
+            startConnectionRef.current?.()
+          }, delay)
         }
       } else if (state === 'connected') {
         setError(null)

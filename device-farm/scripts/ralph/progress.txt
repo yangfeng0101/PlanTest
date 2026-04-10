@@ -102,3 +102,20 @@ Files changed:
 - Fallback using framesDecoded delta is a reliable alternative for older browsers
 
 ---
+
+## 2026-04-10 - DEF-014
+
+- Added MAX_RECONNECT_DELAY constant (30000ms) to cap exponential backoff
+- Implemented Math.min() to ensure delay never exceeds 30 seconds
+- Added reconnection handling for 'disconnected' state (in addition to 'failed')
+- Reconnection now properly stops old connection before starting new one on 'disconnected' state
+
+Files changed:
+- frontend/src/components/WebrtcPlayer/index.tsx (reconnection improvements)
+
+**Learnings for future iterations:**
+- WebRTC connections can enter 'disconnected' state temporarily before 'failed' - handling both provides better resilience
+- Exponential backoff must always have a maximum cap to prevent excessive delays
+- When reconnecting from 'disconnected' state, must fully stop old connection first to clean up resources
+
+---

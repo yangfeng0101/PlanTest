@@ -68,7 +68,7 @@
       "id": "DEF-014",
       "title": "WebRTC 重连机制实现",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "实现指数退避重连策略",
         "最大重连次数限制 (5次)",
