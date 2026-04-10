@@ -8,6 +8,10 @@ from app.models.device import (
     DeviceListResponse,
     DeviceFilter,
 )
+from app.models.reservation import (
+    DeviceReservation,
+    ReservationStatus,
+)
 
 __all__ = [
     "Device",
@@ -17,4 +21,6 @@ __all__ = [
     "DeviceOccupyRequest",
     "DeviceListResponse",
     "DeviceFilter",
+    "DeviceReservation",
+    "ReservationStatus",
 ]
