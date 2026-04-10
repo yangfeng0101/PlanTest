@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import settings
-from app.routes import devices_router, reservations_router
+from app.routes import devices_router, reservations_router, groups_router
 from app.services import device_service
 from app.websocket import ws_manager
 from app.tasks import reservation_tasks
@@ -78,6 +78,11 @@ app.include_router(
     reservations_router,
     prefix=f"{settings.API_PREFIX}/reservations",
     tags=["Reservations"]
+)
+app.include_router(
+    groups_router,
+    prefix=f"{settings.API_PREFIX}/groups",
+    tags=["Device Groups"]
 )
 
 

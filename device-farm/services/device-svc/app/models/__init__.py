@@ -21,6 +21,15 @@ from app.models.reservation_schemas import (
     ReservationConflictError,
     ConflictDetail,
 )
+from app.models.group import (
+    DeviceGroup,
+    GroupType,
+    GroupCreate,
+    GroupUpdate,
+    GroupDeviceOperation,
+    GroupListResponse,
+    GroupDetail,
+)
 
 __all__ = [
     "Device",
@@ -39,4 +48,11 @@ __all__ = [
     "ReservationListResponse",
     "ReservationConflictError",
     "ConflictDetail",
+    "DeviceGroup",
+    "GroupType",
+    "GroupCreate",
+    "GroupUpdate",
+    "GroupDeviceOperation",
+    "GroupListResponse",
+    "GroupDetail",
 ]
