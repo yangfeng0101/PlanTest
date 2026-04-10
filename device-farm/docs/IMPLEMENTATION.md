@@ -448,7 +448,34 @@
 
 ---
 
-## 十、快速开始
+## 十、环境配置
+
+### 环境变量设置
+
+1. 复制示例文件创建环境配置:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. 修改 `.env` 文件中的敏感信息:
+   - 数据库密码 (`DB_PASSWORD`)
+   - Redis 密码 (`REDIS_PASSWORD`)
+   - MinIO 凭证 (`MINIO_USER`, `MINIO_PASSWORD`)
+   - JWT 密钥 (`JWT_SECRET`) - 生产环境必须修改!
+   - TURN 服务器凭证 (`TURN_USERNAME`, `TURN_PASSWORD`)
+
+3. **重要**: `.env` 文件已添加到 `.gitignore`，不会被提交到版本控制。
+
+### 生产环境安全建议
+
+- 使用强密码（至少16位，包含大小写字母、数字、特殊字符）
+- JWT_SECRET 应使用随机生成的密钥
+- 定期轮换密码和密钥
+- 使用环境变量管理工具或密钥管理服务
+
+---
+
+## 十一、快速开始
 
 ### 开发环境启动
 
