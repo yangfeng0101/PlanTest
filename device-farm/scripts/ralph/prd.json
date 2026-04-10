@@ -253,7 +253,7 @@
       "id": "EXPORT-001",
       "title": "数据导出功能",
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "支持导出测试报告为 PDF",
         "支持导出执行日志为 Excel",

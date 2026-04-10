@@ -100,3 +100,21 @@
   - Notifications sent via asyncio.create_task for fire-and-forget pattern
   - Feishu uses interactive card format, DingTalk uses markdown format
 ---
+
+## 2026-04-10 - EXPORT-001
+- Created export service for data export functionality
+- Export to CSV: generic data, statistics with multiple sections
+- Export to Excel: openpyxl with styling, headers, auto-width columns
+- Export to PDF: reportlab with tables, summary sections, device usage
+- Batch export API for multiple data sets at once
+- API endpoints: /export/csv, /export/excel, /export/pdf, /export/statistics/*, /export/batch
+- **Files:**
+  - services/report-svc/app/services/export.py (new)
+  - services/report-svc/app/api/export.py (new)
+  - services/report-svc/app/main.py (added export router)
+- **Learnings for future iterations:**
+  - reportlab and openpyxl are optional dependencies - service handles missing libraries gracefully
+  - PDF export uses A4 page size with Table and Paragraph elements
+  - Excel uses PatternFill for header styling, auto-adjust column widths
+  - Batch export returns base64-encoded content for JSON response
+---
