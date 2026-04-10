@@ -12,6 +12,7 @@ from app.models import (
 from app.services import device_service
 from app.services.reservation_service import reservation_service
 from app.websocket import ws_manager
+from app.middleware.auth import get_current_user, get_current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -129,14 +130,22 @@ async def get_device_logs(device_id: str, lines: int = 100):
 
 
 @router.post("/{device_id}/reserve", response_model=ReservationResponse, status_code=201)
-async def reserve_device(device_id: str, reservation: ReservationCreate):
+async def reserve_device(
+    device_id: str,
+    reservation: ReservationCreate,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Create a reservation for a specific device.
 
     The reservation will be checked for conflicts with existing reservations.
+    User ID is automatically set from the authenticated user.
     """
-    # Override device_id with path parameter
+    current_user_id = current_user.get("id", "")
+
+    # Override device_id with path parameter and user_id from auth
     reservation.device_id = device_id
+    reservation.user_id = current_user_id
 
     try:
         result = await reservation_service.create_reservation(reservation)
@@ -160,14 +169,17 @@ async def reserve_device(device_id: str, reservation: ReservationCreate):
 @router.delete("/{device_id}/reserve")
 async def cancel_device_reservation(
     device_id: str,
-    user_id: Optional[str] = Query(None, description="User ID for authorization")
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Cancel reservation for a specific device.
 
     Cancels the active or pending reservation for the device.
-    If user_id is provided, only that user's reservation will be cancelled.
+    Non-admin users can only cancel their own reservations.
     """
+    current_user_id = current_user.get("id", "")
+    user_role = current_user.get("role", "")
+
     # Get active reservation for device
     reservations = await reservation_service.get_reservations(
         device_id=device_id,
@@ -187,23 +199,25 @@ async def cancel_device_reservation(
             detail="No active or pending reservation found for device"
         )
 
-    # Filter by user_id if provided
-    if user_id:
-        reservations = [r for r in reservations if r.user_id == user_id]
+    # Non-admin users can only cancel their own reservations
+    if user_role != "admin":
+        reservations = [r for r in reservations if r.user_id == current_user_id]
         if not reservations:
             raise HTTPException(
-                status_code=404,
-                detail="No reservation found for user on this device"
+                status_code=403,
+                detail="Not authorized to cancel this reservation"
             )
 
     # Cancel the first matching reservation
     try:
         reservation = await reservation_service.cancel_reservation(
             reservations[0].id,
-            user_id=user_id
+            user_id=None if user_role == "admin" else current_user_id
         )
         return {"message": "Reservation cancelled", "reservation_id": reservation.id}
     except ValueError as e:
+        if "not authorized" in str(e).lower():
+            raise HTTPException(status_code=403, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
 
 
