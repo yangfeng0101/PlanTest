@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Qu
 from typing import Optional, List
 import logging
 import base64
+from datetime import datetime
 
 from app.models import (
     Device, DeviceUpdate, DeviceFilter, DeviceStatus,
@@ -285,11 +286,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif msg_type == "ping":
                     await websocket.send_text(json.dumps({
                         "type": "pong",
-                        "timestamp": logging.datetime.now().isoformat()
+                        "timestamp": datetime.utcnow().isoformat()
                     }))
+
+                elif msg_type == "pong":
+                    # Client responds to our ping, update heartbeat
+                    ws_manager.handle_pong(websocket)
 
             except json.JSONDecodeError:
                 pass
 
     except WebSocketDisconnect:
         await ws_manager.disconnect(websocket)
+
+
+@router.get("/ws/stats")
+async def get_websocket_stats():
+    """Get WebSocket connection statistics
+
+    Returns information about active WebSocket connections including:
+    - Total number of connections
+    - Connections per device subscription
+    - Connection ages
+
+    Returns:
+        Connection statistics
+    """
+    return ws_manager.get_connection_stats()
