@@ -35,3 +35,19 @@ Started: 2026年 4月13日 星期一 09时56分20秒 CST
   - Metrics collection runs every 30 seconds (configurable), WebSocket push every 5 seconds
   - iOS metrics are limited because pymobiledevice3 doesn't easily expose CPU/memory without DeveloperDiskImage
 ---
+## 2026年 4月13日 星期日 14时30分00秒 CST - MON-004
+- Completed frontend monitoring dashboard page implementation
+- **Files modified:**
+  - `frontend/src/App.tsx` - Added /monitoring route and menu entry
+  - `frontend/src/pages/monitoring/index.tsx` - Fixed icon name and type casting
+- **Files created (by previous iteration):**
+  - `frontend/src/pages/monitoring/index.tsx` - Full dashboard with device stats, metrics cards, charts
+  - `frontend/src/pages/monitoring/Monitoring.css` - Dashboard styling
+- **Dependencies added:**
+  - `echarts` - Charting library
+  - `echarts-for-react` - React wrapper for ECharts
+- **Learnings for future iterations:**
+  - Ant Design icons don't have a "CpUOutlined" - use "FundOutlined" or other alternatives
+  - The monitoring page uses ECharts for real-time charts with WebSocket updates
+  - TypeScript type assertions need `unknown` intermediate for incompatible types
+---

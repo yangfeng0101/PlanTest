@@ -15,6 +15,7 @@ import {
   ThunderboltOutlined,
   UsergroupAddOutlined,
   AlertOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons'
 import DevicesPage from './pages/devices'
 import DeviceDetailPage from './pages/devices/Detail'
@@ -29,6 +30,7 @@ import LocatePage from './pages/ai/Locate'
 import GeneratePage from './pages/ai/Generate'
 import UsersPage from './pages/admin/Users'
 import AlertsPage from './pages/alerts'
+import MonitoringPage from './pages/monitoring'
 import AuthGuard from './components/AuthGuard'
 import { useAuthStore, hasPermission } from './stores/authStore'
 import './App.css'
@@ -40,6 +42,11 @@ const baseMenuItems = [
     key: '/devices',
     icon: <MobileOutlined />,
     label: '设备管理',
+  },
+  {
+    key: '/monitoring',
+    icon: <DashboardOutlined />,
+    label: '设备监控',
   },
   {
     key: '/screen',
@@ -182,6 +189,7 @@ function MainLayout() {
           <Routes>
             <Route path="/devices" element={<DevicesPage />} />
             <Route path="/devices/:id" element={<DeviceDetailPage />} />
+            <Route path="/monitoring" element={<MonitoringPage />} />
             <Route path="/screen" element={<ScreenPage />} />
             <Route path="/scripts" element={<ScriptsPage />} />
             <Route path="/parallel" element={<ParallelExecutionPage />} />

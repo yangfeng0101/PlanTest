@@ -1,0 +1,128 @@
+.monitoring-page {
+  padding: 0;
+}
+
+.monitoring-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+}
+
+.monitoring-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.monitoring-header h4 {
+  margin: 0;
+}
+
+.monitoring-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.device-stats {
+  margin-bottom: 24px;
+}
+
+.device-stats .ant-card {
+  border-radius: 8px;
+}
+
+.current-metrics {
+  margin-bottom: 24px;
+}
+
+.metric-card {
+  text-align: center;
+}
+
+.metric-card .ant-card-body {
+  padding: 16px;
+}
+
+.metric-card .ant-progress-text {
+  display: block;
+}
+
+.metric-card .ant-typography.ant-typography-secondary {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.metrics-charts {
+  margin-bottom: 24px;
+}
+
+.metrics-charts .ant-card {
+  border-radius: 8px;
+}
+
+.no-device-selected {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Critical status animation */
+@keyframes pulse-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 77, 79, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 77, 79, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 77, 79, 0);
+  }
+}
+
+.metric-card:has(.ant-progress-circle-trail[stroke="#ff4d4f"]) {
+  animation: pulse-red 2s infinite;
+}
+
+/* Warning status */
+.metric-card:has(.ant-progress-circle-trail[stroke="#faad14"]) {
+  border-color: #faad14;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .current-metrics .ant-col {
+    flex: 0 0 50%;
+    max-width: 50%;
+    margin-bottom: 16px;
+  }
+
+  .metrics-charts .ant-col {
+    flex: 0 0 100%;
+    max-width: 100%;
+    margin-bottom: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .monitoring-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .device-stats .ant-col {
+    flex: 0 0 50%;
+    max-width: 50%;
+    margin-bottom: 8px;
+  }
+
+  .current-metrics .ant-col {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+}
