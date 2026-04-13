@@ -128,3 +128,23 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - Use set operations to find missing IDs: `set(request_ids) - set(found_devices.keys())`
   - Error messages now list all missing IDs instead of just the first one
 ---
+
+## 2026/04/13 17:00 - DATA-003
+- Added database initialization to test-svc main.py startup
+- Fixed cancel_parallel_task endpoint to persist status to database
+- Created AggregatedResultDB database model for persistence
+- Created aggregated_result_db_service for database operations
+- Refactored result_aggregator to use database instead of in-memory storage
+- Files changed:
+  - services/test-svc/app/main.py - Added init_db() and close_db() calls
+  - services/test-svc/app/api/tasks.py - Fixed cancel_parallel_task persistence
+  - services/test-svc/app/models/aggregated_result_db.py - New database model
+  - services/test-svc/app/services/aggregated_result_db_service.py - New database service
+  - services/test-svc/app/services/result_aggregator.py - Refactored to use database
+- **Learnings for future iterations:**
+  - test-svc now initializes database tables on startup via init_db()
+  - Aggregated results are persisted to database, not just in-memory
+  - Result aggregator uses cache + database pattern for performance
+  - When updating parallel task status, must use parallel_task_service.update_task_status()
+  - cancel_parallel_task now properly persists the FAILED status to database
+---
