@@ -9,7 +9,7 @@ from app.models.parallel_task_db import (
     ParallelTaskStatus,
     DeviceSelectionStrategy
 )
-from app.services.parallel_executor import (
+from app.models.parallel_task_models import (
     ParallelTask,
     ParallelTaskCreate,
     ParallelTaskSummary,
