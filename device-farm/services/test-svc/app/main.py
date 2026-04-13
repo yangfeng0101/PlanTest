@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import scripts, tasks, schedules, auth
+from app.api import scripts, tasks, schedules, auth, users
 from app.middleware.auth import AuthMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 
@@ -59,6 +59,18 @@ async def validate_config():
     """Validate configuration at startup."""
     settings.validate_jwt_config()
     settings.validate_api_key_config()
+
+    # Start WebSocket cleanup tasks
+    from app.api.tasks import manager
+    await manager.start_cleanup_task()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    # Stop WebSocket cleanup tasks
+    from app.api.tasks import manager
+    await manager.stop_cleanup_task()
 
 
 @app.get("/health")

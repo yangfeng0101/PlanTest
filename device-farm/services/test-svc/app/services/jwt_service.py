@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import jwt
+import hashlib
+import secrets
 from pydantic import BaseModel
 
 from app.config import settings
@@ -230,6 +232,34 @@ class JWTService:
             username=payload.username,
             role=payload.role,
         )
+
+    def generate_csrf_token(self, access_token: str) -> str:
+        """Generate a CSRF token from the access token
+
+        The CSRF token is a hash of the access token. This allows us to verify
+        that the CSRF token matches the cookie without exposing the actual token.
+
+        Args:
+            access_token: The access token to generate CSRF token for
+
+        Returns:
+            CSRF token string
+        """
+        # Create a hash of the access token using SHA-256
+        return hashlib.sha256(access_token.encode()).hexdigest()[:32]
+
+    def validate_csrf_token(self, access_token: str, csrf_token: str) -> bool:
+        """Validate that a CSRF token matches the access token
+
+        Args:
+            access_token: The access token from cookie
+            csrf_token: The CSRF token from request header
+
+        Returns:
+            True if CSRF token is valid
+        """
+        expected = self.generate_csrf_token(access_token)
+        return secrets.compare_digest(expected, csrf_token)
 
 
 # Global instance

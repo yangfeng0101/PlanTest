@@ -83,6 +83,15 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "120"))  # 2 hours
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))  # 7 days
 
+    # Cookie settings for HTTP-only cookie authentication
+    COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"  # True in production (HTTPS)
+    COOKIE_SAMESITE: str = os.getenv("COOKIE_SAMESITE", "lax")  # 'strict', 'lax', or 'none'
+
+    # WebSocket settings
+    WS_HEARTBEAT_INTERVAL: int = int(os.getenv("WS_HEARTBEAT_INTERVAL", "30"))  # seconds between heartbeats
+    WS_CONNECTION_TIMEOUT: int = int(os.getenv("WS_CONNECTION_TIMEOUT", "300"))  # 5 minutes default
+    WS_PING_TIMEOUT: int = int(os.getenv("WS_PING_TIMEOUT", "10"))  # seconds to wait for pong response
+
     # CORS - comma-separated origins from environment
     CORS_ORIGINS: list = [
         origin.strip()
