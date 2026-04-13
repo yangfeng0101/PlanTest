@@ -44,15 +44,15 @@ async def create_group(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new device group"""
-    # Validate device IDs exist
+    # Validate device IDs exist using batch query
     if group_data.device_ids:
-        for device_id in group_data.device_ids:
-            device = await device_service.get_device(device_id)
-            if not device:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Device not found: {device_id}"
-                )
+        devices = await device_service.batch_get_devices(group_data.device_ids)
+        missing_ids = set(group_data.device_ids) - set(devices.keys())
+        if missing_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Devices not found: {', '.join(missing_ids)}"
+            )
 
     try:
         group = await group_service.create_group(db, group_data)
@@ -74,15 +74,13 @@ async def get_group(
     if not group_db:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # Calculate device statistics
+    # Calculate device statistics using batch query
     device_ids = group_db.device_ids
     device_count = len(device_ids)
-    online_count = 0
 
-    for device_id in device_ids:
-        device = await device_service.get_device(device_id)
-        if device and device.status == "online":
-            online_count += 1
+    # Batch fetch devices to avoid N+1 query
+    devices = await device_service.batch_get_devices(device_ids)
+    online_count = sum(1 for d in devices.values() if d.status == "online")
 
     group_pydantic = group_service._to_pydantic(group_db)
 
@@ -100,15 +98,15 @@ async def update_group(
     db: AsyncSession = Depends(get_db),
 ):
     """Update group information"""
-    # Validate device IDs if being updated
+    # Validate device IDs if being updated using batch query
     if update.device_ids is not None:
-        for device_id in update.device_ids:
-            device = await device_service.get_device(device_id)
-            if not device:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Device not found: {device_id}"
-                )
+        devices = await device_service.batch_get_devices(update.device_ids)
+        missing_ids = set(update.device_ids) - set(devices.keys())
+        if missing_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Devices not found: {', '.join(missing_ids)}"
+            )
 
     try:
         group = await group_service.update_group(db, group_id, update)
@@ -147,14 +145,14 @@ async def add_devices(
     db: AsyncSession = Depends(get_db),
 ):
     """Add devices to a group"""
-    # Validate device IDs
-    for device_id in operation.device_ids:
-        device = await device_service.get_device(device_id)
-        if not device:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Device not found: {device_id}"
-            )
+    # Validate device IDs using batch query
+    devices = await device_service.batch_get_devices(operation.device_ids)
+    missing_ids = set(operation.device_ids) - set(devices.keys())
+    if missing_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Devices not found: {', '.join(missing_ids)}"
+        )
 
     group = await group_service.add_devices(db, group_id, operation.device_ids)
     if not group:
@@ -189,16 +187,13 @@ async def get_group_devices(
     if not group_db:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # Fetch device details
-    devices = []
-    for device_id in group_db.device_ids:
-        device = await device_service.get_device(device_id)
-        if device:
-            devices.append(device)
+    # Batch fetch device details to avoid N+1 query
+    devices = await device_service.batch_get_devices(group_db.device_ids)
+    device_list = list(devices.values())
 
     return {
         "group_id": group_id,
         "group_name": group_db.name,
-        "devices": devices,
-        "total": len(devices),
+        "devices": device_list,
+        "total": len(device_list),
     }

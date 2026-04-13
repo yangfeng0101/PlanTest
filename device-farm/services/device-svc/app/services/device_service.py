@@ -145,6 +145,24 @@ class DeviceService:
         """Get single device by ID"""
         return self._devices.get(device_id)
 
+    async def batch_get_devices(self, device_ids: List[str]) -> Dict[str, Device]:
+        """
+        Get multiple devices by IDs in a single call.
+
+        This is more efficient than calling get_device() in a loop.
+
+        Args:
+            device_ids: List of device IDs to fetch
+
+        Returns:
+            Dict mapping device_id to Device for found devices
+        """
+        return {
+            device_id: self._devices[device_id]
+            for device_id in device_ids
+            if device_id in self._devices
+        }
+
     async def occupy_device(self, device_id: str, user_id: str) -> Optional[Device]:
         """Occupy a device"""
         device = self._devices.get(device_id)
