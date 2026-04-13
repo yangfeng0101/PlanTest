@@ -17,7 +17,7 @@
         "支持配置采集间隔（默认 30 秒）",
         "提供 REST API 查询当前指标和历史指标"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "MON-002",
@@ -31,7 +31,7 @@
         "支持取消订阅",
         "WebSocket 断开时自动停止指标推送"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "MON-003",
@@ -44,7 +44,7 @@
         "支持按设备 ID 查询指标历史",
         "支持查询聚合统计（平均值、最大值、最小值）"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "MON-004",
@@ -59,7 +59,7 @@
         "图表支持实时更新（通过 WebSocket）",
         "异常指标（如 CPU > 90%）使用红色高亮显示"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "MON-005",
@@ -73,7 +73,7 @@
         "WebSocket 连接获取实时更新",
         "页面离开时断开 WebSocket 订阅"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "MON-006",
@@ -87,7 +87,7 @@
         "告警集成到现有告警系统",
         "前端提供阈值配置界面"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "MON-007",
@@ -100,7 +100,7 @@
         "支持按性能状态筛选设备",
         "添加快速排序（按 CPU/内存使用率）"
       ],
-      "passes": true
+      "passes": false
     },
     {
       "id": "MON-008",
@@ -113,7 +113,7 @@
         "支持选择时间范围和设备",
         "前端添加导出按钮和配置选项"
       ],
-      "passes": true
+      "passes": false
     }
   ]
 }

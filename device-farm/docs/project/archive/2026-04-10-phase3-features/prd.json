@@ -1,0 +1,105 @@
+{
+  "projectName": "缺陷修复 - 安全加固",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "FIX-SEC-001",
+      "title": "移除 .env 文件中的敏感信息",
+      "priority": 1,
+      "passes": false,
+      "acceptanceCriteria": [
+        ".env 文件从版本控制中移除",
+        "创建 .env.example 模板文件",
+        "添加 .env 到 .gitignore",
+        "文档说明如何配置环境变量"
+      ],
+      "files": [
+        "device-farm/.env",
+        "device-farm/.env.example",
+        "device-farm/.gitignore"
+      ]
+    },
+    {
+      "id": "FIX-SEC-002",
+      "title": "DEBUG 模式默认关闭",
+      "priority": 2,
+      "passes": false,
+      "acceptanceCriteria": [
+        "所有服务 DEBUG 默认为 false",
+        "通过环境变量控制 DEBUG 模式",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/device-svc/app/config.py",
+        "services/test-svc/app/config.py",
+        "services/report-svc/app/config.py",
+        "services/ai-svc/app/config.py"
+      ]
+    },
+    {
+      "id": "FIX-SEC-003",
+      "title": "CORS 配置限制为指定域名",
+      "priority": 3,
+      "passes": false,
+      "acceptanceCriteria": [
+        "CORS origins 从环境变量读取",
+        "默认只允许 localhost",
+        "支持多域名配置（逗号分隔）",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/device-svc/app/main.py",
+        "services/test-svc/app/main.py",
+        "services/report-svc/app/main.py",
+        "services/ai-svc/app/main.py"
+      ]
+    },
+    {
+      "id": "FIX-SEC-004",
+      "title": "设备命令接口添加认证和授权",
+      "priority": 4,
+      "passes": false,
+      "acceptanceCriteria": [
+        "命令执行接口添加 JWT 认证",
+        "只有 admin 角色可以执行命令",
+        "记录操作日志（用户ID、命令、时间）",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/device-svc/app/routes/devices.py"
+      ]
+    },
+    {
+      "id": "FIX-SEC-005",
+      "title": "认证接口添加速率限制",
+      "priority": 5,
+      "passes": false,
+      "acceptanceCriteria": [
+        "登录接口限制 5次/分钟",
+        "注册接口限制 3次/分钟",
+        "刷新 Token 接口限制 10次/分钟",
+        "使用 Redis 存储计数",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/test-svc/app/api/auth.py",
+        "services/test-svc/app/middleware/rate_limit.py"
+      ]
+    },
+    {
+      "id": "FIX-SEC-006",
+      "title": "API Key 启用时强制检查非空",
+      "priority": 6,
+      "passes": false,
+      "acceptanceCriteria": [
+        "API_KEY_ENABLED=true 时 API_KEY 不能为空",
+        "启动时验证配置",
+        "Typecheck passes"
+      ],
+      "files": [
+        "services/test-svc/app/config.py",
+        "services/test-svc/app/main.py"
+      ]
+    }
+  ]
+}

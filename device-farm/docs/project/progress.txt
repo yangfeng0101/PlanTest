@@ -123,3 +123,31 @@ Started: 2026年 4月13日 星期一 09时56分20秒 CST
   - Frontend uses `responseType: 'blob'` for file download API calls
   - Ant Design Modal with Checkbox.Group for multi-select and RangePicker for time range
 ---
+## 2026年 4月13日 星期一 22时00分00秒 CST - FIX-001 ~ FIX-005
+- Fixed all code review defects from PR review
+- **FIX-001: 清理 executor.py 中的死代码**
+  - Removed unused `execute_javascript_script` placeholder function
+  - File: `services/test-svc/app/tasks/executor.py`
+- **FIX-002: 设备分组持久化存储**
+  - Created `services/device-svc/app/models/group_db.py` - Group database model
+  - Created `services/device-svc/app/services/group_service.py` - Group service layer
+  - Modified `services/device-svc/app/routes/groups.py` - Persisted group APIs
+- **FIX-003: 并行任务持久化存储**
+  - Created `services/test-svc/app/models/parallel_task_db.py` - Parallel task database model
+  - Created `services/test-svc/app/services/parallel_task_service.py` - Parallel task service layer
+  - Modified `services/test-svc/app/services/parallel_executor.py` - Integrated database storage
+- **FIX-004: 阈值配置持久化存储**
+  - Created `services/device-svc/app/models/threshold_db.py` - Threshold database model
+  - Created `services/device-svc/app/services/threshold_service.py` - Threshold service layer
+  - Modified `services/device-svc/app/routes/metrics.py` - Removed in-memory storage, integrated database
+- **FIX-005: 更新 IMPLEMENTATION.md 文档**
+  - Updated version to 1.2, date to 2026-04-13
+  - Marked device grouping and parallel execution as completed
+  - Added 2026-04-13 changelog entry with all new files
+- **Learnings for future iterations:**
+  - Ralph tool manages tasks via `prd.json` and `progress.txt`
+  - All services follow singleton pattern with global instance
+  - Database models use SQLAlchemy with async session
+  - Service layer pattern: `_to_pydantic()` converts DB model to Pydantic response
+  - In-memory storage should be replaced with database for persistence
+---

@@ -17,20 +17,15 @@ from app.models import (
 )
 from app.services.metrics_service import metrics_collector
 from app.services import device_service
+from app.services.threshold_service import threshold_service
 from app.middleware.auth import get_current_user
 from app.config import settings
+from app.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# In-memory threshold configs (in production, use database)
-_threshold_configs: Dict[str, DeviceThresholdConfig] = {}
-
-
-def get_default_threshold(device_id: str) -> DeviceThresholdConfig:
-    """Get default threshold configuration"""
-    return DeviceThresholdConfig(device_id=device_id)
 
 
 @router.get("/{device_id}", response_model=DeviceMetrics)
@@ -245,7 +240,10 @@ async def collect_device_metrics_now(
 # === Threshold Configuration API ===
 
 @router.get("/{device_id}/thresholds", response_model=DeviceThresholdConfig)
-async def get_device_thresholds(device_id: str):
+async def get_device_thresholds(
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Get threshold configuration for a device.
 
@@ -256,8 +254,8 @@ async def get_device_thresholds(device_id: str):
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Return stored config or default
-    return _threshold_configs.get(device_id, get_default_threshold(device_id))
+    # Get from database or return default
+    return await threshold_service.get_threshold(db, device_id)
 
 
 @router.put("/{device_id}/thresholds", response_model=DeviceThresholdConfig)
@@ -265,6 +263,7 @@ async def update_device_thresholds(
     device_id: str,
     config: DeviceThresholdConfig,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Update threshold configuration for a device.
@@ -299,19 +298,20 @@ async def update_device_thresholds(
             detail="Temperature warning threshold must be less than critical threshold"
         )
 
-    # Store configuration
+    # Save to database
     config.device_id = device_id
-    _threshold_configs[device_id] = config
+    saved_config = await threshold_service.set_threshold(db, device_id, config)
 
     logger.info(f"Updated threshold config for device {device_id} by {current_user.get('username', 'unknown')}")
 
-    return config
+    return saved_config
 
 
 @router.post("/{device_id}/thresholds/reset", response_model=DeviceThresholdConfig)
 async def reset_device_thresholds(
     device_id: str,
     current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Reset threshold configuration to defaults.
@@ -323,13 +323,13 @@ async def reset_device_thresholds(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Reset to default
-    default_config = get_default_threshold(device_id)
-    _threshold_configs[device_id] = default_config
+    # Delete from database to reset to defaults
+    await threshold_service.delete_threshold(db, device_id)
 
     logger.info(f"Reset threshold config for device {device_id} by {current_user.get('username', 'unknown')}")
 
-    return default_config
+    # Return default config
+    return DeviceThresholdConfig(device_id=device_id)
 
 
 @router.get("/{device_id}/alerts", response_model=List[MetricAlert])
@@ -359,7 +359,11 @@ async def check_thresholds_and_alert(metrics: DeviceMetrics, device_id: str):
 
     Integrates with the existing alert system in report-svc.
     """
-    config = _threshold_configs.get(device_id, get_default_threshold(device_id))
+    from app.database import get_db_session
+
+    # Get threshold config from database
+    async with get_db_session() as db:
+        config = await threshold_service.get_threshold(db, device_id)
     alerts_to_trigger = []
 
     # CPU check
