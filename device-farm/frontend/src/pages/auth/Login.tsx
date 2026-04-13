@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Form, Input, Button, Card, message, Typography, Space } from 'antd'
+import { Form, Input, Button, Card, message, Typography } from 'antd'
 import { UserOutlined, LockOutlined, MobileOutlined } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
 import './Login.css'
@@ -99,14 +99,6 @@ export default function LoginPage() {
                 </Button>
               </Form.Item>
             </Form>
-
-            <div className="login-footer">
-              <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                <Text type="secondary" className="login-hint">
-                  默认管理员账号: admin / admin123
-                </Text>
-              </Space>
-            </div>
           </Card>
         </div>
       </div>
