@@ -108,8 +108,8 @@ class ResultAggregatorService:
     """Service for aggregating results from parallel execution"""
 
     def __init__(self):
-        # In-memory storage for aggregated results (in production, use database)
-        self._aggregated_results: Dict[str, AggregatedResult] = {}
+        # In-memory cache for quick access (backed by database)
+        self._aggregated_results_cache: Dict[str, AggregatedResult] = {}
 
     async def aggregate_results(
         self,
@@ -123,18 +123,28 @@ class ResultAggregatorService:
         Returns:
             Aggregated result with all device results
         """
-        parallel_task = parallel_executor_service.get_parallel_task(parallel_task_id)
+        from app.database import get_db_session
+        from app.services.aggregated_result_db_service import aggregated_result_db_service
+
+        parallel_task = await parallel_executor_service.get_parallel_task(parallel_task_id)
         if not parallel_task:
             raise ValueError(f"Parallel task {parallel_task_id} not found")
 
-        # Create aggregation result
-        aggregated = AggregatedResult(
-            parallel_task_id=parallel_task_id,
-            script_id=parallel_task.script_id,
-            status=AggregationStatus.IN_PROGRESS,
-            started_at=datetime.utcnow(),
-            total_devices=parallel_task.total_devices,
-        )
+        async with get_db_session() as db:
+            # Check if result already exists in database
+            existing = await aggregated_result_db_service.get_result_by_parallel_task(
+                db, parallel_task_id
+            )
+            if existing:
+                return aggregated_result_db_service._to_pydantic(existing)
+
+            # Create aggregation record in database
+            result_db = await aggregated_result_db_service.create_result(
+                db=db,
+                parallel_task_id=parallel_task_id,
+                script_id=parallel_task.script_id,
+                total_devices=parallel_task.total_devices
+            )
 
         # Fetch results from each sub-task
         device_results = []
@@ -142,15 +152,50 @@ class ResultAggregatorService:
             device_result = await self._fetch_device_result(sub_task)
             device_results.append(device_result)
 
-        aggregated.device_results = device_results
-
         # Calculate aggregated metrics
+        aggregated = AggregatedResult(
+            id=result_db.id,
+            parallel_task_id=parallel_task_id,
+            script_id=parallel_task.script_id,
+            status=AggregationStatus.IN_PROGRESS,
+            started_at=result_db.started_at,
+            total_devices=parallel_task.total_devices,
+            device_results=device_results
+        )
         self._calculate_metrics(aggregated)
 
-        # Store result
+        # Store result in database
+        async with get_db_session() as db:
+            # Convert device_results to serializable format
+            device_results_data = [dr.model_dump() for dr in device_results]
+            # Convert datetime objects to ISO format strings
+            for dr in device_results_data:
+                if dr.get('started_at') and hasattr(dr['started_at'], 'isoformat'):
+                    dr['started_at'] = dr['started_at'].isoformat()
+                if dr.get('finished_at') and hasattr(dr['finished_at'], 'isoformat'):
+                    dr['finished_at'] = dr['finished_at'].isoformat()
+
+            await aggregated_result_db_service.complete_result(
+                db=db,
+                result_id=result_db.id,
+                completed_devices=aggregated.completed_devices,
+                failed_devices=aggregated.failed_devices,
+                success_rate=aggregated.success_rate,
+                total_duration=aggregated.total_duration,
+                total_tests=aggregated.total_tests,
+                passed_tests=aggregated.passed_tests,
+                failed_tests=aggregated.failed_tests,
+                skipped_tests=aggregated.skipped_tests,
+                test_success_rate=aggregated.test_success_rate,
+                device_results=device_results_data,
+                failed_device_ids=aggregated.failed_device_ids
+            )
+
         aggregated.status = AggregationStatus.COMPLETED
         aggregated.finished_at = datetime.utcnow()
-        self._aggregated_results[aggregated.id] = aggregated
+
+        # Update cache
+        self._aggregated_results_cache[aggregated.id] = aggregated
 
         return aggregated
 
@@ -283,7 +328,35 @@ class ResultAggregatorService:
         Returns:
             Aggregated result or None
         """
-        return self._aggregated_results.get(aggregated_result_id)
+        # Check cache first
+        if aggregated_result_id in self._aggregated_results_cache:
+            return self._aggregated_results_cache[aggregated_result_id]
+
+        # Fetch from database synchronously
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._get_result_from_db(aggregated_result_id))
+
+        # If there's a running loop, run in a new thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, self._get_result_from_db(aggregated_result_id))
+            return future.result()
+
+    async def _get_result_from_db(self, result_id: str) -> Optional[AggregatedResult]:
+        """Fetch result from database"""
+        from app.database import get_db_session
+        from app.services.aggregated_result_db_service import aggregated_result_db_service
+
+        async with get_db_session() as db:
+            result_db = await aggregated_result_db_service.get_result(db, result_id)
+            if result_db:
+                result = aggregated_result_db_service._to_pydantic(result_db)
+                self._aggregated_results_cache[result_id] = result
+                return result
+        return None
 
     def get_aggregated_result_by_parallel_task(
         self,
@@ -297,8 +370,34 @@ class ResultAggregatorService:
         Returns:
             Aggregated result or None
         """
-        for result in self._aggregated_results.values():
+        # Check cache first
+        for result in self._aggregated_results_cache.values():
             if result.parallel_task_id == parallel_task_id:
+                return result
+
+        # Fetch from database synchronously
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._get_result_by_task_from_db(parallel_task_id))
+
+        # If there's a running loop, run in a new thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, self._get_result_by_task_from_db(parallel_task_id))
+            return future.result()
+
+    async def _get_result_by_task_from_db(self, parallel_task_id: str) -> Optional[AggregatedResult]:
+        """Fetch result by parallel task ID from database"""
+        from app.database import get_db_session
+        from app.services.aggregated_result_db_service import aggregated_result_db_service
+
+        async with get_db_session() as db:
+            result_db = await aggregated_result_db_service.get_result_by_parallel_task(db, parallel_task_id)
+            if result_db:
+                result = aggregated_result_db_service._to_pydantic(result_db)
+                self._aggregated_results_cache[result.id] = result
                 return result
         return None
 
@@ -371,7 +470,7 @@ class ResultAggregatorService:
         self,
         parallel_task_id: str,
         device_id: str
-    ) -> List[str]:
+    ) -> Optional[List[str]]:
         """Get detailed logs for a specific device
 
         Args:
@@ -383,13 +482,13 @@ class ResultAggregatorService:
         """
         aggregated = self.get_aggregated_result_by_parallel_task(parallel_task_id)
         if not aggregated:
-            return []
+            return None
 
         for device_result in aggregated.device_results:
             if device_result.device_id == device_id:
                 return device_result.logs
 
-        return []
+        return None
 
     def list_aggregated_results(
         self,
@@ -405,9 +504,35 @@ class ResultAggregatorService:
         Returns:
             List of aggregated results
         """
-        results = list(self._aggregated_results.values())
-        results.sort(key=lambda r: r.created_at, reverse=True)
-        return results[offset:offset + limit]
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._list_results_from_db(limit, offset))
+
+        # If there's a running loop, run in a new thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, self._list_results_from_db(limit, offset))
+            return future.result()
+
+    async def _list_results_from_db(
+        self,
+        limit: int = 20,
+        offset: int = 0
+    ) -> List[AggregatedResult]:
+        """Fetch results list from database"""
+        from app.database import get_db_session
+        from app.services.aggregated_result_db_service import aggregated_result_db_service
+
+        async with get_db_session() as db:
+            results_db = await aggregated_result_db_service.list_results(db, limit, offset)
+            results = []
+            for r in results_db:
+                result = aggregated_result_db_service._to_pydantic(r)
+                self._aggregated_results_cache[result.id] = result
+                results.append(result)
+            return results
 
 
 # Global instance

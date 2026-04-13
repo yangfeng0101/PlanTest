@@ -544,32 +544,43 @@ async def cancel_parallel_task(
     Args:
         parallel_task_id: ID of the parallel task to cancel
     """
-    parallel_task = await parallel_executor_service.get_parallel_task(parallel_task_id)
+    from app.database import get_db_session
 
-    if not parallel_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Parallel task {parallel_task_id} not found"
+    async with get_db_session() as db:
+        parallel_task = await parallel_executor_service.get_parallel_task(parallel_task_id)
+
+        if not parallel_task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Parallel task {parallel_task_id} not found"
+            )
+
+        if parallel_task.status == ParallelTaskStatus.COMPLETED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot cancel completed task"
+            )
+
+        # Cancel all running/pending sub-tasks
+        from app.tasks.executor import celery_app
+
+        for sub_task in parallel_task.sub_tasks:
+            if sub_task.status in ["pending", "running"]:
+                try:
+                    celery_app.control.revoke(sub_task.task_id, terminate=True)
+                except Exception:
+                    pass
+
+        # Update status in database
+        from app.services.parallel_task_service import parallel_task_service
+        from app.models.parallel_task_db import ParallelTaskStatus as DBParallelTaskStatus
+
+        await parallel_task_service.update_task_status(
+            db,
+            parallel_task_id,
+            status=DBParallelTaskStatus.FAILED,
+            finished_at=datetime.utcnow()
         )
-
-    if parallel_task.status == ParallelTaskStatus.COMPLETED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot cancel completed task"
-        )
-
-    # Cancel all running/pending sub-tasks
-    from app.tasks.executor import celery_app
-
-    for sub_task in parallel_task.sub_tasks:
-        if sub_task.status in ["pending", "running"]:
-            try:
-                celery_app.control.revoke(sub_task.task_id, terminate=True)
-            except Exception:
-                pass
-
-    parallel_task.status = ParallelTaskStatus.FAILED
-    parallel_task.finished_at = datetime.utcnow()
 
     return None
 

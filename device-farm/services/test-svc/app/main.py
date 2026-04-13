@@ -6,6 +6,7 @@ from app.config import settings
 from app.api import scripts, tasks, schedules, auth, users
 from app.middleware.auth import AuthMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.database import init_db, close_db
 
 # Create FastAPI application
 app = FastAPI(
@@ -55,8 +56,11 @@ app.include_router(
 
 
 @app.on_event("startup")
-async def validate_config():
-    """Validate configuration at startup."""
+async def startup_event():
+    """Initialize database and validate configuration."""
+    # Initialize database tables
+    await init_db()
+
     settings.validate_jwt_config()
     settings.validate_api_key_config()
 
@@ -71,6 +75,9 @@ async def shutdown_event():
     # Stop WebSocket cleanup tasks
     from app.api.tasks import manager
     await manager.stop_cleanup_task()
+
+    # Close database connection
+    await close_db()
 
 
 @app.get("/health")
