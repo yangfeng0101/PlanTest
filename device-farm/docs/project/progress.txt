@@ -26,3 +26,41 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - require_role accepts string role names ("admin", "user", "viewer")
   - get_current_user_id is useful for operations that need user ID from token
 ---
+
+## 2026/04/13 15:25 - DATA-001
+- Created DeviceDB SQLAlchemy model for device persistence
+- Implemented DeviceDatabaseService with full CRUD operations
+- Modified DeviceService to persist all device changes to database
+- Added database initialization on service startup
+- Files changed:
+  - services/device-svc/app/models/device_db.py - New DeviceDB model
+  - services/device-svc/app/services/device_db_service.py - New persistence service
+  - services/device-svc/app/services/device_service.py - Added database integration
+  - services/device-svc/app/main.py - Added database init on startup
+- **Learnings for future iterations:**
+  - DeviceService keeps in-memory cache for performance, syncs to DB on changes
+  - On startup, devices are loaded from DB first, then ADB scan updates them
+  - Used SQLAlchemy merge() for upsert operations (insert or update)
+  - DeviceDB uses JSON column for tags (could be optimized with junction table)
+  - Status changes (occupy/release) are persisted immediately to DB
+---
+
+## 2026/04/13 15:40 - DATA-002
+- Created AlertRuleDB, AlertDB, AlertHistoryDB SQLAlchemy models
+- Created report-svc database.py module for connection management
+- Implemented AlertDatabaseService with full CRUD operations
+- Modified AlertService to use in-memory cache + async DB persistence
+- Added database initialization on service startup
+- Files changed:
+  - services/report-svc/app/database.py - New database module
+  - services/report-svc/app/models/alert_db.py - New Alert DB models
+  - services/report-svc/app/services/alert_db_service.py - New persistence service
+  - services/report-svc/app/services/alert.py - Added database integration
+  - services/report-svc/app/main.py - Added database init and lifespan
+- **Learnings for future iterations:**
+  - AlertService uses async background tasks for DB writes (fire-and-forget pattern)
+  - Rules/alerts loaded from DB on startup, then cached in memory
+  - Alert history is purely in database (no memory cache needed)
+  - JSON columns used for channels, recipients, and details fields
+  - Notification count increment is a separate DB operation
+---

@@ -38,7 +38,7 @@
         "修改 DeviceService 使用数据库",
         "服务重启后设备状态保留"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DATA-002",
@@ -51,7 +51,7 @@
         "修改 AlertService 使用数据库",
         "服务重启后告警数据保留"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "SEC-003",
