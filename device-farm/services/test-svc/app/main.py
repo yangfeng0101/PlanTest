@@ -64,17 +64,17 @@ async def startup_event():
     settings.validate_jwt_config()
     settings.validate_api_key_config()
 
-    # Start WebSocket cleanup tasks
+    # Start WebSocket heartbeat and cleanup tasks
     from app.api.tasks import manager
-    await manager.start_cleanup_task()
+    await manager.start_heartbeat()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
-    # Stop WebSocket cleanup tasks
+    # Stop WebSocket heartbeat and cleanup tasks
     from app.api.tasks import manager
-    await manager.stop_cleanup_task()
+    await manager.stop_heartbeat()
 
     # Close database connection
     await close_db()

@@ -174,7 +174,7 @@ class AuthService:
         token_response = jwt_service.create_token_pair(
             user_id=user.id,
             username=user.username,
-            role=user.role.value,
+            role=user.role,
         )
 
         return LoginResponse(
@@ -186,8 +186,8 @@ class AuthService:
                 id=user.id,
                 username=user.username,
                 email=user.email,
-                role=user.role.value,
-                status=user.status.value,
+                role=user.role,
+                status=user.status,
                 full_name=user.full_name,
                 avatar_url=user.avatar_url,
                 created_at=user.created_at,
