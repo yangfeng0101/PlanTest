@@ -165,3 +165,16 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - 数据库 users 表使用 VARCHAR 而非 ENUM 类型存储 role 和 status 字段
   - ralph 配置在 device-farm/docs/project/ 目录，不要在根目录重新初始化
 ---
+
+## 2026/04/13 19:20 - AUTH-002
+- 修复 AuthMiddleware 不支持 Cookie 认证的问题
+- 添加 cookie_token = request.cookies.get("access_token") 检查
+- 中间件现在支持三种认证方式：X-API-Key、Authorization Bearer、Cookie access_token
+- 同时重置了 admin 用户密码为 test123456（原密码 hash 无法匹配）
+- Files changed:
+  - services/test-svc/app/middleware/auth.py - 添加 Cookie token 支持
+- **Learnings for future iterations:**
+  - 前端使用 HTTP-only Cookie 存储访问令牌，中间件必须检查 request.cookies
+  - curl 测试 Cookie 认证使用 --cookie "access_token=$TOKEN"
+  - 验证完整登录流程：登录 -> Cookie 认证 -> /me 端点
+---

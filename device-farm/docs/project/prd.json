@@ -112,13 +112,14 @@
       "passes": true
     },
     {
-      "id": "AUTH-001",
-      "title": "修复 User 模型与数据库表结构不匹配",
+      "id": "AUTH-002",
+      "title": "AuthMiddleware 不支持 Cookie 认证导致登录后无法跳转",
       "priority": "critical",
-      "description": "修复 SQLAlchemy UserDB 模型与数据库 users 表结构不匹配导致登录 API 失败的问题",
+      "description": "AuthMiddleware 只检查 X-API-Key 和 Authorization Bearer header，不支持 HTTP-only Cookie 中的 access_token，导致浏览器登录后无法访问需要认证的 API",
       "acceptanceCriteria": [
-        "UserDB 模型与数据库表结构完全匹配",
-        "登录 API POST /api/v1/auth/login 正常工作"
+        "AuthMiddleware 支持 cookie 中的 access_token",
+        "登录后前端可以正常访问 /api/v1/auth/me 等受保护端点",
+        "浏览器登录后页面能正常跳转到主页"
       ],
       "passes": true
     }

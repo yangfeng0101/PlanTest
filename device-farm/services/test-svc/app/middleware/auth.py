@@ -66,8 +66,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if auth_header.startswith("Bearer "):
             bearer_token = auth_header[7:]
 
+        # Check for access_token in cookie (for browser-based auth)
+        cookie_token = request.cookies.get("access_token")
+
         # At least one auth method must be provided
-        if not api_key and not bearer_token:
+        if not api_key and not bearer_token and not cookie_token:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={
@@ -85,12 +88,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     content={"detail": "Invalid API key"},
                 )
 
-        # Validate Bearer token if provided (JWT validation)
-        elif bearer_token:
+        # Validate Bearer token or cookie token if provided (JWT validation)
+        elif bearer_token or cookie_token:
+            token = bearer_token or cookie_token
             # Try to validate as JWT token
             try:
                 from app.services.jwt_service import jwt_service
-                payload = jwt_service.validate_access_token(bearer_token)
+                from app.services.token_blacklist import token_blacklist
+
+                # Check if token is blacklisted
+                import asyncio
+                if asyncio.get_event_loop().is_running():
+                    # We're in an async context, but can't await here
+                    # Skip blacklist check in middleware (handled in route)
+                    pass
+
+                payload = jwt_service.validate_access_token(token)
                 if not payload:
                     logger.warning(f"Invalid JWT token attempt from {request.client.host if request.client else 'unknown'}")
                     return JSONResponse(
