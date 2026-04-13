@@ -1,153 +1,28 @@
 # Ralph Progress Log
-Started: 2026年 4月13日 星期一 09时56分20秒 CST
+Started: 2026年 4月13日 星期一 15时08分39秒 CST
 ---
 
-## Codebase Patterns
-- Device Service uses FastAPI with lifespan context manager for startup/shutdown
-- Services are instantiated as global singletons (e.g., `adb_service`, `device_service`)
-- WebSocket manager handles subscriptions via device_id keys
-- Redis is used for caching with `redis.asyncio` library
-- Config settings are in `app/config.py` using `pydantic_settings.BaseSettings`
-- Routes are organized in `app/routes/` and exported via `__init__.py`
-- Models use Pydantic with `model_dump()` and `model_validate_json()` methods
-
+## 2026/04/13 15:10 - SEC-001
+- Verified AuthMiddleware already implemented in ai-svc
+- The middleware validates JWT tokens via test-svc /api/v1/auth/me endpoint
+- All API endpoints protected (only /, /health, docs are public)
+- Files reviewed: services/ai-svc/app/main.py, services/ai-svc/app/middleware/auth.py
+- **Learnings for future iterations:**
+  - ai-svc uses BaseHTTPMiddleware pattern for auth (not route-level Depends)
+  - Token validation delegates to test-svc, avoiding JWT secret duplication
+  - PUBLIC_PATHS in middleware controls which paths bypass auth
 ---
 
-## 2026年 4月13日 星期日 10时30分00秒 CST - MON-001
-- Implemented backend device metrics collection service
-- **Files created:**
-  - `services/device-svc/app/models/metrics.py` - Metrics data models (DeviceMetrics, MetricsThreshold, MetricAlert, etc.)
-  - `services/device-svc/app/services/metrics_service.py` - Metrics collection service with Android/iOS/HarmonyOS support
-  - `services/device-svc/app/routes/metrics.py` - REST API endpoints for metrics queries
-- **Files modified:**
-  - `services/device-svc/app/models/__init__.py` - Added metrics model exports
-  - `services/device-svc/app/services/__init__.py` - Added metrics_collector export
-  - `services/device-svc/app/services/harmony_service.py` - Added public execute_hdc method
-  - `services/device-svc/app/routes/__init__.py` - Added metrics_router export
-  - `services/device-svc/app/routes/devices.py` - Added WebSocket metrics subscription handlers
-  - `services/device-svc/app/websocket/manager.py` - Added metrics subscription and push functionality
-  - `services/device-svc/app/config.py` - Added metrics collection config settings
-  - `services/device-svc/app/main.py` - Integrated metrics collection and WebSocket metrics push
+## 2026/04/13 15:15 - SEC-002
+- Added authentication to all alert API endpoints in report-svc
+- Admin-only operations: create/update/delete/enable/disable rules
+- Regular authenticated users can: list/view alerts, acknowledge/resolve
+- User ID for acknowledge/resolve now comes from token (not request body)
+- Files changed:
+  - services/report-svc/app/api/alerts.py - Added Depends(get_current_user) and Depends(require_role("admin"))
+  - services/report-svc/app/middleware/auth.py - Updated require_role for case-insensitive comparison
 - **Learnings for future iterations:**
-  - Patterns discovered: The codebase uses global singleton instances for services, FastAPI lifespan for startup/shutdown, and Redis for caching
-  - Gotchas encountered: HarmonyService had `_execute_hdc` as private, needed to add public wrapper
-  - Useful context: WebSocket manager already had device subscription pattern, extended it for metrics
-  - Metrics collection runs every 30 seconds (configurable), WebSocket push every 5 seconds
-  - iOS metrics are limited because pymobiledevice3 doesn't easily expose CPU/memory without DeveloperDiskImage
----
-## 2026年 4月13日 星期日 14时30分00秒 CST - MON-004
-- Completed frontend monitoring dashboard page implementation
-- **Files modified:**
-  - `frontend/src/App.tsx` - Added /monitoring route and menu entry
-  - `frontend/src/pages/monitoring/index.tsx` - Fixed icon name and type casting
-- **Files created (by previous iteration):**
-  - `frontend/src/pages/monitoring/index.tsx` - Full dashboard with device stats, metrics cards, charts
-  - `frontend/src/pages/monitoring/Monitoring.css` - Dashboard styling
-- **Dependencies added:**
-  - `echarts` - Charting library
-  - `echarts-for-react` - React wrapper for ECharts
-- **Learnings for future iterations:**
-  - Ant Design icons don't have a "CpUOutlined" - use "FundOutlined" or other alternatives
-  - The monitoring page uses ECharts for real-time charts with WebSocket updates
-  - TypeScript type assertions need `unknown` intermediate for incompatible types
----
-## 2026年 4月13日 星期日 18时20分00秒 CST - MON-005
-- Implemented device detail page metrics tab with real-time performance display
-- **Files modified:**
-  - `frontend/src/pages/devices/Detail.tsx` - Complete rewrite with Tabs component, Metrics tab with real-time data
-- **Features implemented:**
-  - Added Tabs component with "设备信息", "性能指标", "操作历史" tabs
-  - Metrics tab shows real-time CPU, memory, battery, network indicators with dashboard-style progress circles
-  - Added mini trend charts for CPU/memory and battery (last 5 minutes)
-  - WebSocket subscription for real-time metrics updates
-  - Proper cleanup: WebSocket unsubscribe and close on component unmount
-  - Device temperature display with threshold-based color coding
-- **Learnings for future iterations:**
-  - The monitoring page uses ECharts for charts - same pattern used in device detail
-  - WebSocket cleanup is done in useEffect return function
-  - Metrics history is stored in a ref to avoid stale state in WebSocket callback
-  - TypeScript build (`tsc --noEmit`) passes, but ESLint config is missing in this project
----
-## 2026年 4月13日 星期日 19时15分00秒 CST - MON-006
-- Implemented metrics threshold configuration and alert integration
-- **Files modified:**
-  - `services/device-svc/app/routes/metrics.py` - Added threshold config API endpoints and alert triggering
-  - `services/device-svc/app/services/metrics_service.py` - Added alerts cache and helper methods
-  - `services/device-svc/app/config.py` - Added REPORT_SVC_URL setting
-  - `frontend/src/services/api.ts` - Added threshold config API methods
-  - `frontend/src/types/index.ts` - Added MetricAlert interface
-  - `frontend/src/pages/devices/Detail.tsx` - Added Threshold Config tab with form UI
-- **Features implemented:**
-  - GET/PUT/Reset threshold configuration API for each device
-  - Threshold validation (warning < critical for CPU/memory/temp, warning > critical for battery)
-  - Automatic alert triggering when metrics exceed thresholds
-  - Integration with existing report-svc alert system via HTTP calls
-  - Frontend threshold configuration form with reset to defaults
-- **Learnings for future iterations:**
-  - Threshold configs are stored in-memory (in production should use database)
-  - Alerts are triggered via HTTP call to report-svc `/api/v1/alerts/trigger`
-  - Battery threshold is inverted (low is bad) compared to other metrics
-  - The frontend uses Ant Design Form with InputNumber for threshold inputs
----
-## 2026年 4月13日 星期一 20时30分00秒 CST - MON-007
-- Enhanced device list page with performance metrics preview and filtering
-- **Files modified:**
-  - `frontend/src/pages/devices/index.tsx` - Added metrics fetching, WebSocket subscription, performance filter, sort options
-  - `frontend/src/components/DeviceCard/DeviceCard.css` - Added warning/critical card styles
-- **Features implemented:**
-  - Device cards now show real-time CPU/memory indicators via WebSocket
-  - Performance warning/critical summary banner at top of page
-  - Filter dropdown for performance status (normal/warning/critical)
-  - Sort dropdown to sort by name/CPU/memory/battery
-  - Table view now includes CPU/memory columns with color coding
-  - Warning/critical cards have distinct styling with animations
-- **Learnings for future iterations:**
-  - Use `ReturnType<typeof setTimeout>` instead of `NodeJS.Timeout` for timeout refs in React
-  - WebSocket subscription for metrics uses `subscribe_metrics` message type with `device_ids` array
-  - The DeviceCard component already had metrics prop support but wasn't receiving data from parent
----
-## 2026年 4月13日 星期一 21时00分00秒 CST - MON-008
-- Implemented metrics data export functionality
-- **Files modified:**
-  - `services/device-svc/app/routes/metrics.py` - Added POST /metrics/export endpoint with CSV/JSON support
-  - `frontend/src/services/api.ts` - Added metricsApi.export method
-  - `frontend/src/pages/monitoring/index.tsx` - Added export button and modal dialog
-- **Features implemented:**
-  - Backend export API with StreamingResponse for CSV and JSON formats
-  - Support for filtering by device IDs and time range
-  - Frontend export modal with device selection, time range picker, and format selector
-  - Automatic file download with timestamp in filename
-- **Learnings for future iterations:**
-  - FastAPI StreamingResponse is used for file downloads with `Content-Disposition` header
-  - CSV export uses Python's csv.DictWriter with fieldnames from first data item
-  - Frontend uses `responseType: 'blob'` for file download API calls
-  - Ant Design Modal with Checkbox.Group for multi-select and RangePicker for time range
----
-## 2026年 4月13日 星期一 22时00分00秒 CST - FIX-001 ~ FIX-005
-- Fixed all code review defects from PR review
-- **FIX-001: 清理 executor.py 中的死代码**
-  - Removed unused `execute_javascript_script` placeholder function
-  - File: `services/test-svc/app/tasks/executor.py`
-- **FIX-002: 设备分组持久化存储**
-  - Created `services/device-svc/app/models/group_db.py` - Group database model
-  - Created `services/device-svc/app/services/group_service.py` - Group service layer
-  - Modified `services/device-svc/app/routes/groups.py` - Persisted group APIs
-- **FIX-003: 并行任务持久化存储**
-  - Created `services/test-svc/app/models/parallel_task_db.py` - Parallel task database model
-  - Created `services/test-svc/app/services/parallel_task_service.py` - Parallel task service layer
-  - Modified `services/test-svc/app/services/parallel_executor.py` - Integrated database storage
-- **FIX-004: 阈值配置持久化存储**
-  - Created `services/device-svc/app/models/threshold_db.py` - Threshold database model
-  - Created `services/device-svc/app/services/threshold_service.py` - Threshold service layer
-  - Modified `services/device-svc/app/routes/metrics.py` - Removed in-memory storage, integrated database
-- **FIX-005: 更新 IMPLEMENTATION.md 文档**
-  - Updated version to 1.2, date to 2026-04-13
-  - Marked device grouping and parallel execution as completed
-  - Added 2026-04-13 changelog entry with all new files
-- **Learnings for future iterations:**
-  - Ralph tool manages tasks via `prd.json` and `progress.txt`
-  - All services follow singleton pattern with global instance
-  - Database models use SQLAlchemy with async session
-  - Service layer pattern: `_to_pydantic()` converts DB model to Pydantic response
-  - In-memory storage should be replaced with database for persistence
+  - report-svc middleware uses same pattern as ai-svc (validates via test-svc HTTP call)
+  - require_role accepts string role names ("admin", "user", "viewer")
+  - get_current_user_id is useful for operations that need user ID from token
 ---
