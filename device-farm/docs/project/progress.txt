@@ -64,3 +64,15 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - JSON columns used for channels, recipients, and details fields
   - Notification count increment is a separate DB operation
 ---
+
+## 2026/04/13 15:50 - SEC-003
+- Removed default credentials display from Login.tsx
+- The login page previously showed "默认管理员账号: admin / admin123" hint
+- Also removed unused Space import from antd
+- Files changed:
+  - frontend/src/pages/auth/Login.tsx - Removed credentials hint and unused import
+- **Learnings for future iterations:**
+  - Never display default credentials in production UI
+  - Run `npx tsc --noEmit` in frontend to check for TypeScript errors
+  - Need to run `npm install` first before type checks if node_modules missing
+---

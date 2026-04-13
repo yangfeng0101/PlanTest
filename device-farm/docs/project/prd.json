@@ -62,7 +62,7 @@
         "移除 Login.tsx 中的默认凭据提示",
         "生产环境不泄露任何凭据信息"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "SEC-004",
