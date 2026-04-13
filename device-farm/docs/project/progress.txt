@@ -76,3 +76,19 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - Run `npx tsc --noEmit` in frontend to check for TypeScript errors
   - Need to run `npm install` first before type checks if node_modules missing
 ---
+
+## 2026/04/13 16:00 - SEC-004
+- Added RateLimitMiddleware to device-svc for command endpoint rate limiting
+- Limits POST requests to /devices/{id}/command to 60 requests per minute per client IP
+- Returns 429 Too Many Requests when limit exceeded
+- Includes standard rate limit headers (Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset)
+- Files changed:
+  - services/device-svc/app/middleware/rate_limit.py - New rate limit middleware
+  - services/device-svc/app/middleware/__init__.py - Export RateLimitMiddleware
+  - services/device-svc/app/main.py - Add middleware to app
+- **Learnings for future iterations:**
+  - Rate limiting uses in-memory storage (suitable for single instance)
+  - Only applies to POST requests with "/command" in path
+  - Middleware added after CORS middleware in the stack
+  - For distributed deployments, consider Redis-based rate limiting like test-svc
+---
