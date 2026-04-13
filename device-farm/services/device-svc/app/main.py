@@ -11,6 +11,7 @@ from app.services.metrics_service import metrics_collector
 from app.websocket import ws_manager
 from app.tasks import reservation_tasks
 from app.database import init_db, check_db_connection
+from app.middleware import RateLimitMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -86,6 +87,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting middleware for device commands
+app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(
