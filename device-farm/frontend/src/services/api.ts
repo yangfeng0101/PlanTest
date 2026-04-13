@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Device, Script, Task, Report, PaginatedResponse } from '@/types'
+import type { Device, Script, Task, Report, PaginatedResponse, DeviceMetrics, MetricsAggregation, DeviceThresholdConfig, MetricAlert } from '@/types'
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -129,6 +129,45 @@ export const reportApi = {
   // 获取报告详情
   getDetail: (id: string) =>
     api.get<Report>(`/reports/${id}`),
+}
+
+// 指标 API
+export const metricsApi = {
+  // 获取所有设备当前指标
+  getAll: () =>
+    api.get<DeviceMetrics[]>('/metrics'),
+
+  // 获取单个设备当前指标
+  getDevice: (deviceId: string) =>
+    api.get<DeviceMetrics>(`/metrics/${deviceId}`),
+
+  // 获取设备历史指标
+  getHistory: (deviceId: string, params?: { startTime?: string; endTime?: string; hours?: number }) =>
+    api.get<DeviceMetrics[]>(`/metrics/${deviceId}/history`, { params }),
+
+  // 获取设备指标聚合
+  getAggregation: (deviceId: string, params?: { startTime?: string; endTime?: string; hours?: number }) =>
+    api.get<MetricsAggregation>(`/metrics/${deviceId}/aggregation`, { params }),
+
+  // 强制采集设备指标
+  collectNow: (deviceId: string) =>
+    api.post<DeviceMetrics>(`/metrics/${deviceId}/collect`),
+
+  // 获取设备阈值配置
+  getThresholds: (deviceId: string) =>
+    api.get<DeviceThresholdConfig>(`/metrics/${deviceId}/thresholds`),
+
+  // 更新设备阈值配置
+  updateThresholds: (deviceId: string, config: Partial<DeviceThresholdConfig>) =>
+    api.put<DeviceThresholdConfig>(`/metrics/${deviceId}/thresholds`, config),
+
+  // 重置设备阈值配置
+  resetThresholds: (deviceId: string) =>
+    api.post<DeviceThresholdConfig>(`/metrics/${deviceId}/thresholds/reset`),
+
+  // 获取设备指标告警
+  getAlerts: (deviceId: string, limit?: number) =>
+    api.get<MetricAlert[]>(`/metrics/${deviceId}/alerts`, { params: { limit } }),
 }
 
 export default api

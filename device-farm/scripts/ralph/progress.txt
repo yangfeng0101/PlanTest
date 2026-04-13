@@ -68,3 +68,24 @@ Started: 2026年 4月13日 星期一 09时56分20秒 CST
   - Metrics history is stored in a ref to avoid stale state in WebSocket callback
   - TypeScript build (`tsc --noEmit`) passes, but ESLint config is missing in this project
 ---
+## 2026年 4月13日 星期日 19时15分00秒 CST - MON-006
+- Implemented metrics threshold configuration and alert integration
+- **Files modified:**
+  - `services/device-svc/app/routes/metrics.py` - Added threshold config API endpoints and alert triggering
+  - `services/device-svc/app/services/metrics_service.py` - Added alerts cache and helper methods
+  - `services/device-svc/app/config.py` - Added REPORT_SVC_URL setting
+  - `frontend/src/services/api.ts` - Added threshold config API methods
+  - `frontend/src/types/index.ts` - Added MetricAlert interface
+  - `frontend/src/pages/devices/Detail.tsx` - Added Threshold Config tab with form UI
+- **Features implemented:**
+  - GET/PUT/Reset threshold configuration API for each device
+  - Threshold validation (warning < critical for CPU/memory/temp, warning > critical for battery)
+  - Automatic alert triggering when metrics exceed thresholds
+  - Integration with existing report-svc alert system via HTTP calls
+  - Frontend threshold configuration form with reset to defaults
+- **Learnings for future iterations:**
+  - Threshold configs are stored in-memory (in production should use database)
+  - Alerts are triggered via HTTP call to report-svc `/api/v1/alerts/trigger`
+  - Battery threshold is inverted (low is bad) compared to other metrics
+  - The frontend uses Ant Design Form with InputNumber for threshold inputs
+---

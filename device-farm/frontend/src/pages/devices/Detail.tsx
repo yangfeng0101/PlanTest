@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Tabs, Progress, Spin, Row, Col, Statistic, Tooltip } from 'antd'
+import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Tabs, Progress, Spin, Row, Col, Statistic, Tooltip, Form, InputNumber, message } from 'antd'
 import {
   ArrowLeftOutlined,
   PlayCircleOutlined,
@@ -10,11 +10,13 @@ import {
   CloudOutlined,
   ThunderboltOutlined,
   FireOutlined,
+  SettingOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { deviceApi, metricsApi } from '@/services/api'
-import type { Device, DeviceMetrics } from '@/types'
+import type { Device, DeviceMetrics, DeviceThresholdConfig } from '@/types'
 
 const { Title, Text } = Typography
 
@@ -89,6 +91,12 @@ export default function DeviceDetail() {
   const [metricsHistory, setMetricsHistory] = useState<DeviceMetrics[]>([])
   const [metricsLoading, setMetricsLoading] = useState(true)
   const [wsConnected, setWsConnected] = useState(false)
+
+  // Threshold config state
+  const [thresholdConfig, setThresholdConfig] = useState<DeviceThresholdConfig | null>(null)
+  const [thresholdLoading, setThresholdLoading] = useState(false)
+  const [thresholdSaving, setThresholdSaving] = useState(false)
+  const [thresholdForm] = Form.useForm()
 
   const wsRef = useRef<WebSocket | null>(null)
   const metricsHistoryRef = useRef<DeviceMetrics[]>([])
@@ -194,6 +202,58 @@ export default function DeviceDetail() {
   useEffect(() => {
     fetchMetrics()
   }, [fetchMetrics])
+
+  // Fetch threshold config
+  const fetchThresholdConfig = useCallback(async () => {
+    if (!deviceId) return
+    try {
+      setThresholdLoading(true)
+      const response = await metricsApi.getThresholds(deviceId)
+      setThresholdConfig(response.data)
+      thresholdForm.setFieldsValue(response.data)
+    } catch (error) {
+      console.error('Failed to fetch threshold config:', error)
+    } finally {
+      setThresholdLoading(false)
+    }
+  }, [deviceId, thresholdForm])
+
+  useEffect(() => {
+    fetchThresholdConfig()
+  }, [fetchThresholdConfig])
+
+  // Save threshold config
+  const handleSaveThreshold = async (values: DeviceThresholdConfig) => {
+    if (!deviceId) return
+    try {
+      setThresholdSaving(true)
+      const response = await metricsApi.updateThresholds(deviceId, values)
+      setThresholdConfig(response.data)
+      message.success('阈值配置已保存')
+    } catch (error) {
+      console.error('Failed to save threshold config:', error)
+      message.error('保存失败')
+    } finally {
+      setThresholdSaving(false)
+    }
+  }
+
+  // Reset threshold config
+  const handleResetThreshold = async () => {
+    if (!deviceId) return
+    try {
+      setThresholdSaving(true)
+      const response = await metricsApi.resetThresholds(deviceId)
+      setThresholdConfig(response.data)
+      thresholdForm.setFieldsValue(response.data)
+      message.success('阈值配置已重置为默认值')
+    } catch (error) {
+      console.error('Failed to reset threshold config:', error)
+      message.error('重置失败')
+    } finally {
+      setThresholdSaving(false)
+    }
+  }
 
   // Resubscribe when device changes
   useEffect(() => {
@@ -599,6 +659,151 @@ export default function DeviceDetail() {
     )
   }
 
+  // Threshold Config Tab Content
+  const ThresholdTabContent = () => {
+    if (thresholdLoading) {
+      return (
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <Spin size="large" />
+        </div>
+      )
+    }
+
+    return (
+      <div>
+        <Card title="指标告警阈值配置" style={{ marginBottom: 16 }}>
+          <p style={{ marginBottom: 16, color: '#666' }}>
+            配置设备性能指标的告警阈值。当指标超过阈值时，系统会触发相应级别的告警通知。
+          </p>
+          <Form
+            form={thresholdForm}
+            layout="vertical"
+            onFinish={handleSaveThreshold}
+            initialValues={thresholdConfig || undefined}
+          >
+            <Row gutter={24}>
+              {/* CPU Thresholds */}
+              <Col span={12}>
+                <Card size="small" title={<><FundOutlined /> CPU 使用率</>} style={{ marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="cpu_warning"
+                        label="警告阈值 (%)"
+                        rules={[{ required: true, message: '请输入警告阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="cpu_critical"
+                        label="严重阈值 (%)"
+                        rules={[{ required: true, message: '请输入严重阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
+              </Col>
+
+              {/* Memory Thresholds */}
+              <Col span={12}>
+                <Card size="small" title={<><CloudOutlined /> 内存使用率</>} style={{ marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="memory_warning"
+                        label="警告阈值 (%)"
+                        rules={[{ required: true, message: '请输入警告阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="memory_critical"
+                        label="严重阈值 (%)"
+                        rules={[{ required: true, message: '请输入严重阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
+              </Col>
+
+              {/* Battery Thresholds */}
+              <Col span={12}>
+                <Card size="small" title={<><ThunderboltOutlined /> 电池电量</>} style={{ marginBottom: 16 }}>
+                  <p style={{ fontSize: 12, color: '#999', marginBottom: 8 }}>
+                    注意：电池阈值为下限值，低于阈值时触发告警
+                  </p>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="battery_warning"
+                        label="警告阈值 (%)"
+                        rules={[{ required: true, message: '请输入警告阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="battery_critical"
+                        label="严重阈值 (%)"
+                        rules={[{ required: true, message: '请输入严重阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
+              </Col>
+
+              {/* Temperature Thresholds */}
+              <Col span={12}>
+                <Card size="small" title={<><FireOutlined /> 设备温度</>} style={{ marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        name="temperature_warning"
+                        label="警告阈值 (°C)"
+                        rules={[{ required: true, message: '请输入警告阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        name="temperature_critical"
+                        label="严重阈值 (°C)"
+                        rules={[{ required: true, message: '请输入严重阈值' }]}
+                      >
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
+              </Col>
+            </Row>
+
+            <Space>
+              <Button type="primary" htmlType="submit" loading={thresholdSaving}>
+                保存配置
+              </Button>
+              <Button icon={<ReloadOutlined />} onClick={handleResetThreshold} loading={thresholdSaving}>
+                重置为默认
+              </Button>
+            </Space>
+          </Form>
+        </Card>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div style={{ padding: 24, textAlign: 'center' }}>
@@ -630,6 +835,15 @@ export default function DeviceDetail() {
         </span>
       ),
       children: MetricsTabContent(),
+    },
+    {
+      key: 'thresholds',
+      label: (
+        <span>
+          <SettingOutlined /> 阈值配置
+        </span>
+      ),
+      children: ThresholdTabContent(),
     },
     {
       key: 'history',

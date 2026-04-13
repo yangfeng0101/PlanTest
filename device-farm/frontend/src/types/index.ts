@@ -20,6 +20,75 @@ export interface Device {
   thumbnail?: string
 }
 
+// 设备指标
+export interface DeviceMetrics {
+  device_id: string
+  timestamp: string
+  cpu_usage: number
+  cpu_cores?: number
+  memory_usage: number
+  memory_total_mb?: number
+  memory_used_mb?: number
+  memory_free_mb?: number
+  network_rx_bytes: number
+  network_tx_bytes: number
+  network_rx_speed_kbps: number
+  network_tx_speed_kbps: number
+  battery_level: number
+  battery_status: string
+  battery_temperature?: number
+  cpu_temperature?: number
+  device_temperature?: number
+  uptime_seconds?: number
+}
+
+// 指标聚合
+export interface MetricsAggregation {
+  device_id: string
+  start_time: string
+  end_time: string
+  cpu_usage_avg?: number
+  cpu_usage_max?: number
+  cpu_usage_min?: number
+  memory_usage_avg?: number
+  memory_usage_max?: number
+  memory_usage_min?: number
+  network_rx_total_mb?: number
+  network_tx_total_mb?: number
+  network_rx_avg_kbps?: number
+  network_tx_avg_kbps?: number
+  battery_level_avg?: number
+  battery_level_min?: number
+  temperature_avg?: number
+  temperature_max?: number
+  sample_count: number
+}
+
+// 设备指标阈值配置
+export interface DeviceThresholdConfig {
+  device_id: string
+  cpu_warning: number
+  cpu_critical: number
+  memory_warning: number
+  memory_critical: number
+  battery_warning: number
+  battery_critical: number
+  temperature_warning: number
+  temperature_critical: number
+}
+
+// 指标告警
+export interface MetricAlert {
+  id: string
+  device_id: string
+  metric_type: string
+  severity: 'warning' | 'critical'
+  value: number
+  threshold: number
+  timestamp: string
+  acknowledged: boolean
+}
+
 // 脚本类型
 export interface Script {
   id: string

@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     METRICS_HISTORY_RETENTION_HOURS: int = 24  # hours to retain metrics history
     METRICS_PUSH_INTERVAL: int = 5  # seconds between WebSocket metrics push
 
+    # Service URLs
+    REPORT_SVC_URL: str = os.getenv("REPORT_SVC_URL", "http://localhost:8004")
+
     # CORS - comma-separated origins from environment
     CORS_ORIGINS: List[str] = [
         origin.strip()

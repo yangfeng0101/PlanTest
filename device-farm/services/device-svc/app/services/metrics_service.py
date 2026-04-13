@@ -27,6 +27,7 @@ class MetricsCollector:
         self._redis: Optional[redis.Redis] = None
         self._previous_network: Dict[str, Dict[str, int]] = {}  # Track previous network values for speed calculation
         self._previous_time: Dict[str, datetime] = {}  # Track previous collection time
+        self._alerts_cache: Dict[str, List[Any]] = {}  # Cache recent alerts by device_id
 
     async def _get_redis(self) -> redis.Redis:
         """Get Redis connection"""
@@ -566,6 +567,18 @@ class MetricsCollector:
     def get_all_current_metrics(self) -> Dict[str, DeviceMetrics]:
         """Get all current cached metrics"""
         return self._metrics_cache.copy()
+
+    def add_alert(self, device_id: str, alert: Any):
+        """Add an alert to the cache for a device"""
+        if device_id not in self._alerts_cache:
+            self._alerts_cache[device_id] = []
+        self._alerts_cache[device_id].insert(0, alert)
+        # Keep only last 100 alerts per device
+        self._alerts_cache[device_id] = self._alerts_cache[device_id][:100]
+
+    def get_device_alerts(self, device_id: str) -> List[Any]:
+        """Get cached alerts for a device"""
+        return self._alerts_cache.get(device_id, [])
 
 
 # Global instance

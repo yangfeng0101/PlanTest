@@ -1,8 +1,9 @@
 # Metrics API Routes
 from fastapi import APIRouter, HTTPException, Query, Depends
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 import logging
+import httpx
 
 from app.models import (
     DeviceMetrics,
@@ -13,10 +14,19 @@ from app.models import (
 from app.services.metrics_service import metrics_collector
 from app.services import device_service
 from app.middleware.auth import get_current_user
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# In-memory threshold configs (in production, use database)
+_threshold_configs: Dict[str, DeviceThresholdConfig] = {}
+
+
+def get_default_threshold(device_id: str) -> DeviceThresholdConfig:
+    """Get default threshold configuration"""
+    return DeviceThresholdConfig(device_id=device_id)
 
 
 @router.get("/{device_id}", response_model=DeviceMetrics)
@@ -222,4 +232,234 @@ async def collect_device_metrics_now(
     # Store metrics
     await metrics_collector.store_metrics(metrics)
 
+    # Check thresholds and trigger alerts if needed
+    await check_thresholds_and_alert(metrics, device_id)
+
     return metrics
+
+
+# === Threshold Configuration API ===
+
+@router.get("/{device_id}/thresholds", response_model=DeviceThresholdConfig)
+async def get_device_thresholds(device_id: str):
+    """
+    Get threshold configuration for a device.
+
+    Returns warning and critical thresholds for CPU, memory, battery, and temperature.
+    """
+    # Check if device exists
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Return stored config or default
+    return _threshold_configs.get(device_id, get_default_threshold(device_id))
+
+
+@router.put("/{device_id}/thresholds", response_model=DeviceThresholdConfig)
+async def update_device_thresholds(
+    device_id: str,
+    config: DeviceThresholdConfig,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update threshold configuration for a device.
+
+    Allows setting custom warning and critical thresholds for performance metrics.
+    Requires authentication.
+    """
+    # Check if device exists
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Validate thresholds
+    if config.cpu_warning >= config.cpu_critical:
+        raise HTTPException(
+            status_code=400,
+            detail="CPU warning threshold must be less than critical threshold"
+        )
+    if config.memory_warning >= config.memory_critical:
+        raise HTTPException(
+            status_code=400,
+            detail="Memory warning threshold must be less than critical threshold"
+        )
+    if config.battery_warning <= config.battery_critical:
+        raise HTTPException(
+            status_code=400,
+            detail="Battery warning threshold must be greater than critical threshold"
+        )
+    if config.temperature_warning >= config.temperature_critical:
+        raise HTTPException(
+            status_code=400,
+            detail="Temperature warning threshold must be less than critical threshold"
+        )
+
+    # Store configuration
+    config.device_id = device_id
+    _threshold_configs[device_id] = config
+
+    logger.info(f"Updated threshold config for device {device_id} by {current_user.get('username', 'unknown')}")
+
+    return config
+
+
+@router.post("/{device_id}/thresholds/reset", response_model=DeviceThresholdConfig)
+async def reset_device_thresholds(
+    device_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Reset threshold configuration to defaults.
+
+    Requires authentication.
+    """
+    # Check if device exists
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Reset to default
+    default_config = get_default_threshold(device_id)
+    _threshold_configs[device_id] = default_config
+
+    logger.info(f"Reset threshold config for device {device_id} by {current_user.get('username', 'unknown')}")
+
+    return default_config
+
+
+@router.get("/{device_id}/alerts", response_model=List[MetricAlert])
+async def get_device_metric_alerts(
+    device_id: str,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """
+    Get recent metric alerts for a device.
+
+    Returns alerts triggered by threshold violations.
+    """
+    # Check if device exists
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Get cached alerts from metrics collector
+    alerts = metrics_collector.get_device_alerts(device_id)
+
+    return alerts[:limit]
+
+
+async def check_thresholds_and_alert(metrics: DeviceMetrics, device_id: str):
+    """
+    Check metrics against thresholds and trigger alerts if exceeded.
+
+    Integrates with the existing alert system in report-svc.
+    """
+    config = _threshold_configs.get(device_id, get_default_threshold(device_id))
+    alerts_to_trigger = []
+
+    # CPU check
+    if metrics.cpu_usage >= config.cpu_critical:
+        alerts_to_trigger.append({
+            "metric_type": "cpu",
+            "severity": "critical",
+            "value": metrics.cpu_usage,
+            "threshold": config.cpu_critical,
+        })
+    elif metrics.cpu_usage >= config.cpu_warning:
+        alerts_to_trigger.append({
+            "metric_type": "cpu",
+            "severity": "warning",
+            "value": metrics.cpu_usage,
+            "threshold": config.cpu_warning,
+        })
+
+    # Memory check
+    if metrics.memory_usage >= config.memory_critical:
+        alerts_to_trigger.append({
+            "metric_type": "memory",
+            "severity": "critical",
+            "value": metrics.memory_usage,
+            "threshold": config.memory_critical,
+        })
+    elif metrics.memory_usage >= config.memory_warning:
+        alerts_to_trigger.append({
+            "metric_type": "memory",
+            "severity": "warning",
+            "value": metrics.memory_usage,
+            "threshold": config.memory_warning,
+        })
+
+    # Battery check (low battery is bad)
+    if metrics.battery_level <= config.battery_critical:
+        alerts_to_trigger.append({
+            "metric_type": "battery",
+            "severity": "critical",
+            "value": metrics.battery_level,
+            "threshold": config.battery_critical,
+        })
+    elif metrics.battery_level <= config.battery_warning:
+        alerts_to_trigger.append({
+            "metric_type": "battery",
+            "severity": "warning",
+            "value": metrics.battery_level,
+            "threshold": config.battery_warning,
+        })
+
+    # Temperature check
+    device_temp = metrics.device_temperature or metrics.cpu_temperature
+    if device_temp:
+        if device_temp >= config.temperature_critical:
+            alerts_to_trigger.append({
+                "metric_type": "temperature",
+                "severity": "critical",
+                "value": device_temp,
+                "threshold": config.temperature_critical,
+            })
+        elif device_temp >= config.temperature_warning:
+            alerts_to_trigger.append({
+                "metric_type": "temperature",
+                "severity": "warning",
+                "value": device_temp,
+                "threshold": config.temperature_warning,
+            })
+
+    # Trigger alerts
+    for alert_data in alerts_to_trigger:
+        await trigger_metric_alert(device_id, alert_data)
+
+
+async def trigger_metric_alert(device_id: str, alert_data: dict):
+    """
+    Trigger an alert by calling the report-svc alert API.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            # Create alert payload
+            metric_type = alert_data["metric_type"]
+            severity = alert_data["severity"]
+            value = alert_data["value"]
+            threshold = alert_data["threshold"]
+
+            title = f"设备 {device_id} {metric_type.upper()} {'严重告警' if severity == 'critical' else '警告'}"
+            message = f"{metric_type.upper()} 使用率 {value:.1f}% 超过{'严重' if severity == 'critical' else '警告'}阈值 {threshold}%"
+
+            # Call alert service
+            response = await client.post(
+                f"{settings.REPORT_SVC_URL}/api/v1/alerts/trigger",
+                params={
+                    "rule_id": f"metric_{metric_type}_{severity}",
+                    "title": title,
+                    "message": message,
+                    "device_id": device_id,
+                },
+                timeout=5.0,
+            )
+
+            if response.status_code == 200:
+                logger.info(f"Triggered {severity} alert for {device_id} {metric_type}: {value:.1f}%")
+            else:
+                logger.warning(f"Failed to trigger alert: {response.status_code}")
+
+    except Exception as e:
+        logger.error(f"Error triggering metric alert: {e}")
