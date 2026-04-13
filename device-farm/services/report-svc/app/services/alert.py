@@ -17,6 +17,7 @@ from app.models.alert import (
     AlertSeverity,
     NotificationChannel,
 )
+from app.services.alert_db_service import alert_db_service
 from app.services.notification import (
     notification_service,
     NotificationMessage,
@@ -25,14 +26,36 @@ from app.services.notification import (
 
 logger = logging.getLogger(__name__)
 
-# In-memory storage (in production, use database)
-_alert_rules: Dict[str, AlertRule] = {}
-_active_alerts: Dict[str, Alert] = {}
-_alert_history: List[AlertHistory] = []
-
 
 class AlertService:
-    """Service for managing alerts and notifications"""
+    """Service for managing alerts and notifications with database persistence"""
+
+    def __init__(self):
+        # In-memory cache for performance
+        self._rules_cache: Dict[str, AlertRule] = {}
+        self._alerts_cache: Dict[str, Alert] = {}
+        self._initialized = False
+
+    async def initialize(self):
+        """Load data from database into memory cache"""
+        if self._initialized:
+            return
+
+        try:
+            # Load rules from database
+            rules = await alert_db_service.get_all_rules()
+            for rule in rules:
+                self._rules_cache[rule.id] = rule
+
+            # Load active alerts from database
+            alerts = await alert_db_service.get_all_alerts(limit=1000)
+            for alert in alerts:
+                self._alerts_cache[alert.id] = alert
+
+            self._initialized = True
+            logger.info(f"Loaded {len(rules)} rules and {len(alerts)} alerts from database")
+        except Exception as e:
+            logger.error(f"Error loading from database: {e}")
 
     def create_rule(
         self,
@@ -59,9 +82,21 @@ class AlertService:
             created_by=user_id,
         )
 
-        _alert_rules[rule_id] = new_rule
+        # Update cache
+        self._rules_cache[rule_id] = new_rule
+
+        # Persist to database
+        asyncio.create_task(self._persist_rule(new_rule))
+
         logger.info(f"Created alert rule: {rule_id} - {rule.name}")
         return new_rule
+
+    async def _persist_rule(self, rule: AlertRule):
+        """Persist rule to database"""
+        try:
+            await alert_db_service.create_rule(rule)
+        except Exception as e:
+            logger.error(f"Error persisting rule {rule.id}: {e}")
 
     def update_rule(
         self,
@@ -69,7 +104,7 @@ class AlertService:
         update: AlertUpdate,
     ) -> Optional[AlertRule]:
         """Update an alert rule"""
-        rule = _alert_rules.get(rule_id)
+        rule = self._rules_cache.get(rule_id)
         if not rule:
             return None
 
@@ -94,27 +129,35 @@ class AlertService:
             rule.enabled = update.enabled
 
         rule.updated_at = datetime.utcnow()
+
+        # Persist to database
+        asyncio.create_task(alert_db_service.update_rule(rule_id, update))
+
         logger.info(f"Updated alert rule: {rule_id}")
         return rule
 
     def delete_rule(self, rule_id: str) -> bool:
         """Delete an alert rule"""
-        if rule_id in _alert_rules:
-            del _alert_rules[rule_id]
+        if rule_id in self._rules_cache:
+            del self._rules_cache[rule_id]
+
+            # Persist to database
+            asyncio.create_task(alert_db_service.delete_rule(rule_id))
+
             logger.info(f"Deleted alert rule: {rule_id}")
             return True
         return False
 
     def get_rule(self, rule_id: str) -> Optional[AlertRule]:
         """Get a specific alert rule"""
-        return _alert_rules.get(rule_id)
+        return self._rules_cache.get(rule_id)
 
     def list_rules(
         self,
         enabled_only: bool = False,
     ) -> List[AlertRule]:
         """List all alert rules"""
-        rules = list(_alert_rules.values())
+        rules = list(self._rules_cache.values())
         if enabled_only:
             rules = [r for r in rules if r.enabled]
         return rules
@@ -129,13 +172,13 @@ class AlertService:
         task_id: Optional[str] = None,
     ) -> Optional[Alert]:
         """Trigger an alert"""
-        rule = _alert_rules.get(rule_id)
+        rule = self._rules_cache.get(rule_id)
         if not rule or not rule.enabled:
             return None
 
         # Check cooldown
         existing_alerts = [
-            a for a in _active_alerts.values()
+            a for a in self._alerts_cache.values()
             if a.rule_id == rule_id and a.status == AlertStatus.ACTIVE
         ]
         if existing_alerts:
@@ -160,10 +203,14 @@ class AlertService:
             triggered_at=datetime.utcnow(),
         )
 
-        _active_alerts[alert_id] = alert
+        # Update cache
+        self._alerts_cache[alert_id] = alert
+
+        # Persist to database
+        await alert_db_service.create_alert(alert)
 
         # Record history
-        self._record_history(
+        await self._record_history(
             alert_id=alert_id,
             action="triggered",
             details={"title": title, "message": message},
@@ -181,19 +228,24 @@ class AlertService:
         user_id: Optional[str] = None,
     ) -> Optional[Alert]:
         """Resolve an alert"""
-        alert = _active_alerts.get(alert_id)
+        alert = self._alerts_cache.get(alert_id)
         if not alert:
             return None
 
         alert.status = AlertStatus.RESOLVED
         alert.resolved_at = datetime.utcnow()
 
+        # Persist to database
+        asyncio.create_task(alert_db_service.update_alert_status(
+            alert_id, AlertStatus.RESOLVED
+        ))
+
         # Record history
-        self._record_history(
+        asyncio.create_task(self._record_history(
             alert_id=alert_id,
             action="resolved",
             user_id=user_id,
-        )
+        ))
 
         logger.info(f"Resolved alert: {alert_id}")
         return alert
@@ -204,7 +256,7 @@ class AlertService:
         user_id: str,
     ) -> Optional[Alert]:
         """Acknowledge an alert"""
-        alert = _active_alerts.get(alert_id)
+        alert = self._alerts_cache.get(alert_id)
         if not alert:
             return None
 
@@ -212,12 +264,17 @@ class AlertService:
         alert.acknowledged_at = datetime.utcnow()
         alert.acknowledged_by = user_id
 
+        # Persist to database
+        asyncio.create_task(alert_db_service.update_alert_status(
+            alert_id, AlertStatus.ACKNOWLEDGED, user_id
+        ))
+
         # Record history
-        self._record_history(
+        asyncio.create_task(self._record_history(
             alert_id=alert_id,
             action="acknowledged",
             user_id=user_id,
-        )
+        ))
 
         logger.info(f"Acknowledged alert: {alert_id} by {user_id}")
         return alert
@@ -229,7 +286,7 @@ class AlertService:
         limit: int = 100,
     ) -> List[Alert]:
         """List alerts with optional filtering"""
-        alerts = list(_active_alerts.values())
+        alerts = list(self._alerts_cache.values())
 
         if status:
             alerts = [a for a in alerts if a.status == status]
@@ -240,20 +297,13 @@ class AlertService:
         alerts.sort(key=lambda a: a.triggered_at, reverse=True)
         return alerts[:limit]
 
-    def get_history(
+    async def get_history(
         self,
         alert_id: Optional[str] = None,
         limit: int = 100,
     ) -> List[AlertHistory]:
         """Get alert history"""
-        history = _alert_history
-
-        if alert_id:
-            history = [h for h in history if h.alert_id == alert_id]
-
-        # Sort by timestamp descending
-        history.sort(key=lambda h: h.timestamp, reverse=True)
-        return history[:limit]
+        return await alert_db_service.get_history(alert_id=alert_id, limit=limit)
 
     async def send_feishu_notification(
         self,
@@ -354,13 +404,16 @@ class AlertService:
         alert.notifications_sent += 1
         alert.last_notification_at = datetime.utcnow()
 
-        self._record_history(
+        # Update notification count in database
+        await alert_db_service.increment_notifications(alert.id)
+
+        await self._record_history(
             alert_id=alert.id,
             action="notification_sent",
             details={"channels": [c.value for c in rule.channels]},
         )
 
-    def _record_history(
+    async def _record_history(
         self,
         alert_id: str,
         action: str,
@@ -376,7 +429,8 @@ class AlertService:
             user_id=user_id,
             details=details or {},
         )
-        _alert_history.append(history)
+
+        await alert_db_service.create_history(history)
 
 
 # Global instance
