@@ -110,3 +110,21 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - test-svc uses a different connect signature (takes task_id parameter)
   - Both services can call super().connect() and super().disconnect() for base functionality
 ---
+
+## 2026/04/13 16:30 - PERF-001
+- Added batch_get_devices() method to device_service for efficient batch queries
+- Refactored groups.py to use batch queries instead of N+1 loop queries
+- Affected endpoints:
+  - POST /groups - validate device IDs in batch
+  - GET /groups/{id} - calculate device stats with single batch query
+  - PUT /groups/{id} - validate device IDs in batch
+  - POST /groups/{id}/devices - validate device IDs in batch
+  - GET /groups/{id}/devices - fetch all device details in single query
+- Files changed:
+  - services/device-svc/app/services/device_service.py - Added batch_get_devices method
+  - services/device-svc/app/routes/groups.py - Refactored to use batch queries
+- **Learnings for future iterations:**
+  - batch_get_devices returns Dict[str, Device] for O(1) lookup by ID
+  - Use set operations to find missing IDs: `set(request_ids) - set(found_devices.keys())`
+  - Error messages now list all missing IDs instead of just the first one
+---

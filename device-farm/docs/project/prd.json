@@ -97,7 +97,7 @@
         "使用 batch_get_devices 替代循环查询",
         "减少数据库/内存查询次数"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "DATA-003",
