@@ -168,6 +168,13 @@ export const metricsApi = {
   // 获取设备指标告警
   getAlerts: (deviceId: string, limit?: number) =>
     api.get<MetricAlert[]>(`/metrics/${deviceId}/alerts`, { params: { limit } }),
+
+  // 导出指标数据
+  export: (params?: { deviceIds?: string[]; startTime?: string; endTime?: string; hours?: number; format?: 'json' | 'csv' }) =>
+    api.post('/metrics/export', null, {
+      params,
+      responseType: 'blob',
+    }),
 }
 
 export default api

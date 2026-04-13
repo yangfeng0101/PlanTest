@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Card, Row, Col, Select, Spin, Statistic, Progress, Tag, Empty, Tooltip, Typography } from 'antd'
+import { Card, Row, Col, Select, Spin, Statistic, Progress, Tag, Empty, Tooltip, Typography, Button, Modal, DatePicker, Checkbox, message } from 'antd'
 import {
   DashboardOutlined,
   MobileOutlined,
@@ -10,6 +10,7 @@ import {
   CloudOutlined,
   ThunderboltOutlined,
   FireOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
@@ -18,6 +19,7 @@ import type { Device, DeviceMetrics } from '@/types'
 import './Monitoring.css'
 
 const { Title, Text } = Typography
+const { RangePicker } = DatePicker
 
 // Metrics thresholds
 const THRESHOLDS = {
@@ -42,6 +44,11 @@ export default function MonitoringPage() {
   const [metricsHistory, setMetricsHistory] = useState<DeviceMetrics[]>([])
   const [loading, setLoading] = useState(true)
   const [wsConnected, setWsConnected] = useState(false)
+  const [exportModalVisible, setExportModalVisible] = useState(false)
+  const [exportDeviceIds, setExportDeviceIds] = useState<string[]>([])
+  const [exportFormat, setExportFormat] = useState<'json' | 'csv'>('json')
+  const [exportTimeRange, setExportTimeRange] = useState<[string, string] | null>(null)
+  const [exporting, setExporting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const metricsHistoryRef = useRef<DeviceMetrics[]>([])
 
@@ -399,6 +406,47 @@ export default function MonitoringPage() {
     }
   }
 
+  // Handle export
+  const handleExport = async () => {
+    try {
+      setExporting(true)
+      const params: { deviceIds?: string[]; startTime?: string; endTime?: string; hours?: number; format?: 'json' | 'csv' } = {
+        format: exportFormat,
+      }
+
+      if (exportDeviceIds.length > 0) {
+        params.deviceIds = exportDeviceIds
+      }
+
+      if (exportTimeRange) {
+        params.startTime = exportTimeRange[0]
+        params.endTime = exportTimeRange[1]
+      } else {
+        params.hours = 1
+      }
+
+      const response = await metricsApi.export(params)
+
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `metrics_export_${new Date().toISOString().slice(0, 10)}.${exportFormat}`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+
+      message.success('数据导出成功')
+      setExportModalVisible(false)
+    } catch (error) {
+      console.error('Export failed:', error)
+      message.error('数据导出失败')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const stats = getDeviceStats()
 
   if (loading) {
@@ -419,6 +467,12 @@ export default function MonitoringPage() {
           <Tag color={wsConnected ? 'green' : 'red'}>
             {wsConnected ? 'WebSocket 已连接' : 'WebSocket 断开'}
           </Tag>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => setExportModalVisible(true)}
+          >
+            导出数据
+          </Button>
           <Select
             style={{ width: 250 }}
             placeholder="选择设备"
@@ -671,6 +725,63 @@ export default function MonitoringPage() {
           />
         </Card>
       )}
+
+      {/* Export Modal */}
+      <Modal
+        title="导出监控数据"
+        open={exportModalVisible}
+        onCancel={() => setExportModalVisible(false)}
+        onOk={handleExport}
+        confirmLoading={exporting}
+        okText="导出"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text>选择设备（不选则导出全部）：</Text>
+          <Checkbox.Group
+            style={{ width: '100%', marginTop: 8 }}
+            value={exportDeviceIds}
+            onChange={(values) => setExportDeviceIds(values as string[])}
+          >
+            <Row>
+              {devices.map(device => (
+                <Col span={12} key={device.id}>
+                  <Checkbox value={device.id}>{device.name}</Checkbox>
+                </Col>
+              ))}
+            </Row>
+          </Checkbox.Group>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <Text>时间范围（不选则默认最近1小时）：</Text>
+          <div style={{ marginTop: 8 }}>
+            <RangePicker
+              showTime
+              style={{ width: '100%' }}
+              onChange={(_, dateStrings) => {
+                if (dateStrings[0] && dateStrings[1]) {
+                  setExportTimeRange([dateStrings[0], dateStrings[1]])
+                } else {
+                  setExportTimeRange(null)
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        <div>
+          <Text>导出格式：</Text>
+          <Select
+            style={{ width: 120, marginLeft: 8 }}
+            value={exportFormat}
+            onChange={setExportFormat}
+          >
+            <Select.Option value="json">JSON</Select.Option>
+            <Select.Option value="csv">CSV</Select.Option>
+          </Select>
+        </div>
+      </Modal>
     </div>
   )
 }

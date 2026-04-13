@@ -1,9 +1,13 @@
 # Metrics API Routes
 from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 import logging
 import httpx
+import csv
+import io
+import json
 
 from app.models import (
     DeviceMetrics,
@@ -463,3 +467,110 @@ async def trigger_metric_alert(device_id: str, alert_data: dict):
 
     except Exception as e:
         logger.error(f"Error triggering metric alert: {e}")
+
+
+# === Export API ===
+
+@router.post("/export")
+async def export_metrics(
+    device_ids: Optional[List[str]] = Query(None, description="Device IDs to export (empty for all)"),
+    start_time: Optional[datetime] = Query(None, description="Start time (ISO format)"),
+    end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
+    hours: Optional[int] = Query(1, description="Hours to look back (default 1)"),
+    format: str = Query("json", description="Export format: json or csv"),
+):
+    """
+    Export metrics data in JSON or CSV format.
+
+    Supports filtering by device IDs and time range.
+    """
+    # Determine time range
+    if not end_time:
+        end_time = datetime.utcnow()
+    if not start_time:
+        start_time = end_time - timedelta(hours=hours)
+
+    # Validate time range
+    if start_time >= end_time:
+        raise HTTPException(
+            status_code=400,
+            detail="start_time must be before end_time"
+        )
+
+    # Get all devices or specified ones
+    if device_ids:
+        devices = []
+        for device_id in device_ids:
+            device = await device_service.get_device(device_id)
+            if device:
+                devices.append(device)
+    else:
+        devices = await device_service.get_all_devices()
+
+    if not devices:
+        raise HTTPException(status_code=404, detail="No devices found")
+
+    # Collect metrics for each device
+    all_metrics = []
+    for device in devices:
+        metrics_history = await metrics_collector.get_metrics_history(
+            device.id, start_time, end_time
+        )
+        for m in metrics_history:
+            all_metrics.append({
+                "device_id": m.device_id,
+                "device_name": device.name,
+                "timestamp": m.timestamp.isoformat(),
+                "cpu_usage": m.cpu_usage,
+                "cpu_cores": m.cpu_cores,
+                "memory_usage": m.memory_usage,
+                "memory_total_mb": m.memory_total_mb,
+                "memory_used_mb": m.memory_used_mb,
+                "memory_free_mb": m.memory_free_mb,
+                "network_rx_bytes": m.network_rx_bytes,
+                "network_tx_bytes": m.network_tx_bytes,
+                "network_rx_speed_kbps": m.network_rx_speed_kbps,
+                "network_tx_speed_kbps": m.network_tx_speed_kbps,
+                "battery_level": m.battery_level,
+                "battery_status": m.battery_status,
+                "battery_temperature": m.battery_temperature,
+                "cpu_temperature": m.cpu_temperature,
+                "device_temperature": m.device_temperature,
+                "uptime_seconds": m.uptime_seconds,
+            })
+
+    if not all_metrics:
+        raise HTTPException(
+            status_code=404,
+            detail="No metrics data found for the specified criteria"
+        )
+
+    # Generate export file
+    if format.lower() == "csv":
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=all_metrics[0].keys())
+        writer.writeheader()
+        writer.writerows(all_metrics)
+
+        # Generate filename
+        filename = f"metrics_export_{start_time.strftime('%Y%m%d_%H%M')}_{end_time.strftime('%Y%m%d_%H%M')}.csv"
+
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    else:
+        # Return JSON
+        filename = f"metrics_export_{start_time.strftime('%Y%m%d_%H%M')}_{end_time.strftime('%Y%m%d_%H%M')}.json"
+
+        return StreamingResponse(
+            iter([json.dumps(all_metrics, indent=2)]),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )

@@ -106,3 +106,20 @@ Started: 2026年 4月13日 星期一 09时56分20秒 CST
   - WebSocket subscription for metrics uses `subscribe_metrics` message type with `device_ids` array
   - The DeviceCard component already had metrics prop support but wasn't receiving data from parent
 ---
+## 2026年 4月13日 星期一 21时00分00秒 CST - MON-008
+- Implemented metrics data export functionality
+- **Files modified:**
+  - `services/device-svc/app/routes/metrics.py` - Added POST /metrics/export endpoint with CSV/JSON support
+  - `frontend/src/services/api.ts` - Added metricsApi.export method
+  - `frontend/src/pages/monitoring/index.tsx` - Added export button and modal dialog
+- **Features implemented:**
+  - Backend export API with StreamingResponse for CSV and JSON formats
+  - Support for filtering by device IDs and time range
+  - Frontend export modal with device selection, time range picker, and format selector
+  - Automatic file download with timestamp in filename
+- **Learnings for future iterations:**
+  - FastAPI StreamingResponse is used for file downloads with `Content-Disposition` header
+  - CSV export uses Python's csv.DictWriter with fieldnames from first data item
+  - Frontend uses `responseType: 'blob'` for file download API calls
+  - Ant Design Modal with Checkbox.Group for multi-select and RangePicker for time range
+---
