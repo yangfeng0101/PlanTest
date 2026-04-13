@@ -324,13 +324,6 @@ def execute_python_script(content: str, context: dict):
         os.unlink(temp_path)
 
 
-def execute_javascript_script(content: str, context: dict):
-    """Execute JavaScript test script (using Node.js)"""
-    # For now, this is a placeholder
-    # In production, you would use a JavaScript interpreter or Node.js subprocess
-    raise NotImplementedError("JavaScript execution not yet implemented")
-
-
 def cleanup_driver(driver):
     """Cleanup Appium driver"""
     try:
