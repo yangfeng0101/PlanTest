@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from app.tasks.executor import execute_test_task
 from app.config import settings
+from app.services.parallel_task_service import parallel_task_service
+from app.models.parallel_task_db import ParallelTaskStatus, DeviceSelectionStrategy as DBDeviceSelectionStrategy
 
 
 class DeviceSelectionStrategy(str, Enum):
@@ -94,8 +96,6 @@ class ParallelExecutorService:
 
     def __init__(self, max_concurrency: int = DEFAULT_MAX_CONCURRENCY):
         self.max_concurrency = max_concurrency
-        # In-memory storage for parallel tasks (in production, use database)
-        self._parallel_tasks: Dict[str, ParallelTask] = {}
 
     async def get_available_devices(
         self,
@@ -207,6 +207,8 @@ class ParallelExecutorService:
         Returns:
             Created parallel task
         """
+        from app.database import get_db_session
+
         # Get available devices
         available_devices = await self.get_available_devices(
             platform=request.device_platform,
@@ -227,28 +229,40 @@ class ParallelExecutorService:
         if not selected_devices:
             raise ValueError("No devices selected for execution")
 
-        # Create parallel task
-        parallel_task = ParallelTask(
-            script_id=request.script_id,
-            selection_strategy=request.selection_strategy,
-            max_concurrency=request.max_concurrency,
-            parameters=request.parameters,
-            device_capabilities=request.device_capabilities,
-            total_devices=len(selected_devices),
-        )
-
         # Create sub-tasks for each device
+        sub_tasks_data = []
         for device_id in selected_devices:
-            sub_task = SubTaskInfo(
-                task_id=str(uuid4()),
-                device_id=device_id,
+            sub_tasks_data.append({
+                "task_id": str(uuid4()),
+                "device_id": device_id,
+                "status": "pending",
+                "created_at": datetime.utcnow().isoformat(),
+                "started_at": None,
+                "finished_at": None,
+                "result": None,
+                "error": None
+            })
+
+        # Map strategy enum to database enum
+        strategy_map = {
+            DeviceSelectionStrategy.ALL: DBDeviceSelectionStrategy.ALL,
+            DeviceSelectionStrategy.RANDOM: DBDeviceSelectionStrategy.RANDOM,
+            DeviceSelectionStrategy.SPECIFIC: DBDeviceSelectionStrategy.SPECIFIC,
+        }
+
+        # Store in database
+        async with get_db_session() as db:
+            task_db = await parallel_task_service.create_task(
+                db=db,
+                script_id=request.script_id,
+                selection_strategy=strategy_map[request.selection_strategy],
+                max_concurrency=request.max_concurrency,
+                parameters=request.parameters,
+                device_capabilities=request.device_capabilities,
+                sub_tasks=sub_tasks_data,
+                total_devices=len(selected_devices)
             )
-            parallel_task.sub_tasks.append(sub_task)
-
-        # Store the parallel task
-        self._parallel_tasks[parallel_task.id] = parallel_task
-
-        return parallel_task
+            return parallel_task_service._to_pydantic(task_db)
 
     async def execute_parallel_task(self, parallel_task_id: str) -> ParallelTask:
         """Execute a parallel task across multiple devices
@@ -259,12 +273,21 @@ class ParallelExecutorService:
         Returns:
             Updated parallel task
         """
-        parallel_task = self._parallel_tasks.get(parallel_task_id)
-        if not parallel_task:
-            raise ValueError(f"Parallel task {parallel_task_id} not found")
+        from app.database import get_db_session
 
-        parallel_task.status = ParallelTaskStatus.RUNNING
-        parallel_task.started_at = datetime.utcnow()
+        async with get_db_session() as db:
+            task_db = await parallel_task_service.get_task(db, parallel_task_id)
+            if not task_db:
+                raise ValueError(f"Parallel task {parallel_task_id} not found")
+
+            parallel_task = parallel_task_service._to_pydantic(task_db)
+
+            # Update status to running
+            await parallel_task_service.update_task_status(
+                db, parallel_task_id,
+                status=ParallelTaskStatus.RUNNING,
+                started_at=datetime.utcnow()
+            )
 
         # Execute sub-tasks with concurrency control
         semaphore = asyncio.Semaphore(parallel_task.max_concurrency)
@@ -340,23 +363,45 @@ class ParallelExecutorService:
         await asyncio.gather(*tasks)
 
         # Update final status
-        parallel_task.finished_at = datetime.utcnow()
+        finished_at = datetime.utcnow()
         completed = sum(1 for st in parallel_task.sub_tasks if st.status == "success")
         failed = sum(1 for st in parallel_task.sub_tasks if st.status in ["failed", "timeout"])
 
-        parallel_task.completed_devices = completed
-        parallel_task.failed_devices = failed
-
+        # Determine final status
         if failed == 0:
-            parallel_task.status = ParallelTaskStatus.COMPLETED
+            final_status = ParallelTaskStatus.COMPLETED
         elif completed == 0:
-            parallel_task.status = ParallelTaskStatus.FAILED
+            final_status = ParallelTaskStatus.FAILED
         else:
-            parallel_task.status = ParallelTaskStatus.PARTIAL
+            final_status = ParallelTaskStatus.PARTIAL
 
-        return parallel_task
+        # Update in database
+        async with get_db_session() as db:
+            sub_tasks_data = [st.model_dump() for st in parallel_task.sub_tasks]
+            # Convert datetime objects to ISO format strings
+            for st in sub_tasks_data:
+                if st.get('created_at'):
+                    st['created_at'] = st['created_at'].isoformat() if hasattr(st['created_at'], 'isoformat') else st['created_at']
+                if st.get('started_at'):
+                    st['started_at'] = st['started_at'].isoformat() if hasattr(st['started_at'], 'isoformat') else st['started_at']
+                if st.get('finished_at'):
+                    st['finished_at'] = st['finished_at'].isoformat() if hasattr(st['finished_at'], 'isoformat') else st['finished_at']
 
-    def get_parallel_task(self, parallel_task_id: str) -> Optional[ParallelTask]:
+            await parallel_task_service.update_task_progress(
+                db, parallel_task_id,
+                completed_devices=completed,
+                failed_devices=failed,
+                sub_tasks=sub_tasks_data
+            )
+            await parallel_task_service.update_task_status(
+                db, parallel_task_id,
+                status=final_status,
+                finished_at=finished_at
+            )
+            task_db = await parallel_task_service.get_task(db, parallel_task_id)
+            return parallel_task_service._to_pydantic(task_db)
+
+    async def get_parallel_task(self, parallel_task_id: str) -> Optional[ParallelTask]:
         """Get a parallel task by ID
 
         Args:
@@ -365,9 +410,15 @@ class ParallelExecutorService:
         Returns:
             Parallel task or None
         """
-        return self._parallel_tasks.get(parallel_task_id)
+        from app.database import get_db_session
 
-    def list_parallel_tasks(
+        async with get_db_session() as db:
+            task_db = await parallel_task_service.get_task(db, parallel_task_id)
+            if not task_db:
+                return None
+            return parallel_task_service._to_pydantic(task_db)
+
+    async def list_parallel_tasks(
         self,
         status: Optional[ParallelTaskStatus] = None,
         limit: int = 20,
@@ -383,17 +434,20 @@ class ParallelExecutorService:
         Returns:
             List of parallel tasks
         """
-        tasks = list(self._parallel_tasks.values())
+        from app.database import get_db_session
 
+        # Map status enum to database enum
+        db_status = None
         if status:
-            tasks = [t for t in tasks if t.status == status]
+            db_status = ParallelTaskStatus(status.value)
 
-        # Sort by created_at descending
-        tasks.sort(key=lambda t: t.created_at, reverse=True)
+        async with get_db_session() as db:
+            tasks_db = await parallel_task_service.list_tasks(
+                db, status=db_status, limit=limit, offset=offset
+            )
+            return [parallel_task_service._to_pydantic(t) for t in tasks_db]
 
-        return tasks[offset:offset + limit]
-
-    def get_parallel_task_summary(
+    async def get_parallel_task_summary(
         self,
         parallel_task_id: str
     ) -> Optional[ParallelTaskSummary]:
@@ -405,7 +459,7 @@ class ParallelExecutorService:
         Returns:
             Summary or None
         """
-        parallel_task = self.get_parallel_task(parallel_task_id)
+        parallel_task = await self.get_parallel_task(parallel_task_id)
         if not parallel_task:
             return None
 

@@ -2,7 +2,7 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Set
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -32,8 +32,10 @@ from app.services.result_aggregator import (
     AggregatedResult,
     ParallelReportSummary,
 )
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # Convert between enum types
@@ -67,29 +69,191 @@ def _task_db_to_pydantic(task_db: TaskDB) -> Task:
 
 # WebSocket connection manager for logs
 class ConnectionManager:
+    """WebSocket connection manager with timeout detection, heartbeat, and cleanup"""
+
     def __init__(self):
-        self.active_connections: dict = {}
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+        self._connection_times: Dict[WebSocket, datetime] = {}
+        self._last_heartbeat: Dict[WebSocket, datetime] = {}
+        self._running = False
+        self._cleanup_task = None
+        self._heartbeat_task = None
+
+        # Configuration
+        self._connection_timeout = getattr(settings, 'WS_CONNECTION_TIMEOUT', 300)  # 5 minutes default
+        self._heartbeat_interval = getattr(settings, 'WS_HEARTBEAT_INTERVAL', 30)  # 30 seconds
+        self._ping_timeout = getattr(settings, 'WS_PING_TIMEOUT', 10)  # 10 seconds
 
     async def connect(self, websocket: WebSocket, task_id: str):
+        """Accept new WebSocket connection with timeout tracking"""
         await websocket.accept()
+        now = datetime.utcnow()
+
         if task_id not in self.active_connections:
             self.active_connections[task_id] = []
         self.active_connections[task_id].append(websocket)
+        self._connection_times[websocket] = now
+        self._last_heartbeat[websocket] = now
+
+        logger.info(f"WebSocket connected for task {task_id}. Total connections: {self._get_total_connections()}")
 
     def disconnect(self, websocket: WebSocket, task_id: str):
+        """Handle WebSocket disconnection and cleanup"""
         if task_id in self.active_connections:
             if websocket in self.active_connections[task_id]:
                 self.active_connections[task_id].remove(websocket)
             if not self.active_connections[task_id]:
                 del self.active_connections[task_id]
 
+        # Clean up tracking data
+        self._connection_times.pop(websocket, None)
+        self._last_heartbeat.pop(websocket, None)
+
+        logger.info(f"WebSocket disconnected from task {task_id}. Total connections: {self._get_total_connections()}")
+
+    def _get_total_connections(self) -> int:
+        """Get total number of active connections"""
+        return sum(len(conns) for conns in self.active_connections.values())
+
     async def broadcast_log(self, task_id: str, log_entry: TaskLogEntry):
-        if task_id in self.active_connections:
-            for connection in self.active_connections[task_id]:
+        """Broadcast log entry to all connections for a task"""
+        if task_id not in self.active_connections:
+            return
+
+        disconnected = []
+        for connection in self.active_connections[task_id]:
+            try:
+                await connection.send_json(log_entry.model_dump())
+                self._last_heartbeat[connection] = datetime.utcnow()
+            except Exception as e:
+                logger.warning(f"Failed to send log to connection: {e}")
+                disconnected.append((connection, task_id))
+
+        # Clean up failed connections
+        for conn, tid in disconnected:
+            self.disconnect(conn, tid)
+
+    async def start_cleanup_task(self):
+        """Start background cleanup and heartbeat tasks"""
+        if self._running:
+            return
+
+        self._running = True
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        logger.info("WebSocket cleanup and heartbeat tasks started")
+
+    async def stop_cleanup_task(self):
+        """Stop background tasks"""
+        self._running = False
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("WebSocket cleanup and heartbeat tasks stopped")
+
+    async def _cleanup_loop(self):
+        """Periodically clean up stale connections"""
+        while self._running:
+            try:
+                await self._cleanup_stale_connections()
+            except Exception as e:
+                logger.error(f"Cleanup loop error: {e}")
+
+            await asyncio.sleep(60)  # Run every minute
+
+    async def _cleanup_stale_connections(self):
+        """Remove connections that have timed out"""
+        now = datetime.utcnow()
+        stale_connections = []
+
+        for task_id, connections in list(self.active_connections.items()):
+            for conn in list(connections):
+                # Check connection timeout
+                conn_time = self._connection_times.get(conn)
+                if conn_time:
+                    age = (now - conn_time).total_seconds()
+                    if age > self._connection_timeout:
+                        logger.warning(f"Connection for task {task_id} timed out after {age:.0f}s")
+                        stale_connections.append((conn, task_id, "timeout"))
+                        continue
+
+                # Check heartbeat timeout
+                last_heartbeat = self._last_heartbeat.get(conn)
+                if last_heartbeat:
+                    silence = (now - last_heartbeat).total_seconds()
+                    if silence > self._connection_timeout:
+                        logger.warning(f"Connection for task {task_id} silent for {silence:.0f}s")
+                        stale_connections.append((conn, task_id, "silent"))
+
+        # Close and remove stale connections
+        for conn, task_id, reason in stale_connections:
+            try:
+                await conn.close(code=1001, reason=f"Connection {reason}")
+            except Exception:
+                pass
+            self.disconnect(conn, task_id)
+
+        if stale_connections:
+            logger.info(f"Cleaned up {len(stale_connections)} stale connections")
+
+    async def _heartbeat_loop(self):
+        """Send periodic heartbeats to all connections"""
+        while self._running:
+            try:
+                await self._send_heartbeats()
+            except Exception as e:
+                logger.error(f"Heartbeat loop error: {e}")
+
+            await asyncio.sleep(self._heartbeat_interval)
+
+    async def _send_heartbeats(self):
+        """Send ping to all connections and track responses"""
+        ping_msg = json.dumps({"type": "ping", "timestamp": datetime.utcnow().isoformat()})
+
+        for task_id, connections in list(self.active_connections.items()):
+            for conn in list(connections):
                 try:
-                    await connection.send_json(log_entry.model_dump())
-                except Exception:
-                    pass
+                    await conn.send_text(ping_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to send heartbeat to task {task_id}: {e}")
+                    self.disconnect(conn, task_id)
+
+    def handle_pong(self, websocket: WebSocket):
+        """Handle pong response from client"""
+        if websocket in self._last_heartbeat:
+            self._last_heartbeat[websocket] = datetime.utcnow()
+
+    def get_connection_stats(self) -> dict:
+        """Get connection statistics for monitoring"""
+        total = self._get_total_connections()
+        now = datetime.utcnow()
+
+        stats = {
+            "total_connections": total,
+            "tasks_with_connections": len(self.active_connections),
+            "connections_per_task": {
+                task_id: len(conns)
+                for task_id, conns in self.active_connections.items()
+            },
+            "oldest_connection_age": None,
+            "avg_connection_age": None,
+        }
+
+        if self._connection_times:
+            ages = [(now - t).total_seconds() for t in self._connection_times.values()]
+            stats["oldest_connection_age"] = max(ages) if ages else None
+            stats["avg_connection_age"] = sum(ages) / len(ages) if ages else None
+
+        return stats
 
 
 manager = ConnectionManager()
@@ -257,13 +421,26 @@ async def task_logs_websocket(websocket: WebSocket, task_id: str):
             # Keep connection alive and wait for client messages
             data = await websocket.receive_text()
 
-            # Client can send ping to keep connection alive
-            if data == "ping":
-                await websocket.send_json({"type": "pong"})
+            # Handle different message types
+            try:
+                message = json.loads(data)
+                msg_type = message.get("type")
+
+                if msg_type == "ping":
+                    # Client sends ping, respond with pong
+                    await websocket.send_json({"type": "pong", "timestamp": datetime.utcnow().isoformat()})
+                elif msg_type == "pong":
+                    # Client responds to our ping, update heartbeat
+                    manager.handle_pong(websocket)
+            except json.JSONDecodeError:
+                # Legacy: simple ping string
+                if data == "ping":
+                    await websocket.send_json({"type": "pong", "timestamp": datetime.utcnow().isoformat()})
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, task_id)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"WebSocket error for task {task_id}: {e}")
         manager.disconnect(websocket, task_id)
 
 
@@ -409,7 +586,7 @@ async def get_parallel_task(
     Returns:
         Parallel task with all sub-task statuses
     """
-    parallel_task = parallel_executor_service.get_parallel_task(parallel_task_id)
+    parallel_task = await parallel_executor_service.get_parallel_task(parallel_task_id)
 
     if not parallel_task:
         raise HTTPException(
@@ -438,7 +615,7 @@ async def get_parallel_task_summary(
     Returns:
         Summary with aggregated metrics
     """
-    summary = parallel_executor_service.get_parallel_task_summary(parallel_task_id)
+    summary = await parallel_executor_service.get_parallel_task_summary(parallel_task_id)
 
     if not summary:
         raise HTTPException(
@@ -466,7 +643,7 @@ async def list_parallel_tasks(
     Returns:
         List of parallel tasks
     """
-    return parallel_executor_service.list_parallel_tasks(
+    return await parallel_executor_service.list_parallel_tasks(
         status=status_filter,
         limit=limit,
         offset=offset
@@ -485,7 +662,7 @@ async def cancel_parallel_task(
     Args:
         parallel_task_id: ID of the parallel task to cancel
     """
-    parallel_task = parallel_executor_service.get_parallel_task(parallel_task_id)
+    parallel_task = await parallel_executor_service.get_parallel_task(parallel_task_id)
 
     if not parallel_task:
         raise HTTPException(
@@ -642,3 +819,20 @@ async def get_aggregated_result(
         )
 
     return result
+
+
+@router.get("/ws/stats")
+async def get_websocket_stats(
+    _: str = Depends(verify_api_key),
+):
+    """Get WebSocket connection statistics
+
+    Returns information about active WebSocket connections including:
+    - Total number of connections
+    - Connections per task
+    - Connection ages
+
+    Returns:
+        Connection statistics
+    """
+    return manager.get_connection_stats()
