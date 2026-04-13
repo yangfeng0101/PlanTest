@@ -73,7 +73,7 @@
         "WebSocket 连接获取实时更新",
         "页面离开时断开 WebSocket 订阅"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "MON-006",

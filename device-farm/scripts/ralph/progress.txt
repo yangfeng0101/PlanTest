@@ -51,3 +51,20 @@ Started: 2026年 4月13日 星期一 09时56分20秒 CST
   - The monitoring page uses ECharts for real-time charts with WebSocket updates
   - TypeScript type assertions need `unknown` intermediate for incompatible types
 ---
+## 2026年 4月13日 星期日 18时20分00秒 CST - MON-005
+- Implemented device detail page metrics tab with real-time performance display
+- **Files modified:**
+  - `frontend/src/pages/devices/Detail.tsx` - Complete rewrite with Tabs component, Metrics tab with real-time data
+- **Features implemented:**
+  - Added Tabs component with "设备信息", "性能指标", "操作历史" tabs
+  - Metrics tab shows real-time CPU, memory, battery, network indicators with dashboard-style progress circles
+  - Added mini trend charts for CPU/memory and battery (last 5 minutes)
+  - WebSocket subscription for real-time metrics updates
+  - Proper cleanup: WebSocket unsubscribe and close on component unmount
+  - Device temperature display with threshold-based color coding
+- **Learnings for future iterations:**
+  - The monitoring page uses ECharts for charts - same pattern used in device detail
+  - WebSocket cleanup is done in useEffect return function
+  - Metrics history is stored in a ref to avoid stale state in WebSocket callback
+  - TypeScript build (`tsc --noEmit`) passes, but ESLint config is missing in this project
+---
