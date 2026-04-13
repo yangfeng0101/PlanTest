@@ -83,7 +83,7 @@ def require_role(*allowed_roles: str):
     """Dependency that requires user to have one of the specified roles.
 
     Args:
-        *allowed_roles: Roles that are allowed to access
+        *allowed_roles: Roles that are allowed to access (e.g., "admin", "user", "viewer")
 
     Returns:
         Dependency function
@@ -92,7 +92,10 @@ def require_role(*allowed_roles: str):
         user: dict = Depends(get_current_user),
     ) -> dict:
         user_role = user.get("role", "")
-        if user_role not in allowed_roles:
+        # Case-insensitive role comparison
+        user_role_lower = user_role.lower()
+        allowed_roles_lower = [r.lower() for r in allowed_roles]
+        if user_role_lower not in allowed_roles_lower:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Role '{user_role}' not authorized. Required: {allowed_roles}",
