@@ -30,6 +30,16 @@ from app.models.group import (
     GroupListResponse,
     GroupDetail,
 )
+from app.models.metrics import (
+    MetricType,
+    DeviceMetrics,
+    MetricsThreshold,
+    DeviceThresholdConfig,
+    MetricAlert,
+    MetricsHistoryQuery,
+    MetricsAggregation,
+    MetricsSubscription,
+)
 
 __all__ = [
     "Device",
@@ -55,4 +65,12 @@ __all__ = [
     "GroupDeviceOperation",
     "GroupListResponse",
     "GroupDetail",
+    "MetricType",
+    "DeviceMetrics",
+    "MetricsThreshold",
+    "DeviceThresholdConfig",
+    "MetricAlert",
+    "MetricsHistoryQuery",
+    "MetricsAggregation",
+    "MetricsSubscription",
 ]

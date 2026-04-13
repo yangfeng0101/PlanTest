@@ -36,7 +36,15 @@ class Settings(BaseSettings):
     DEVICE_SCAN_INTERVAL: int = 30
 
     # WebSocket config
-    WS_HEARTBEAT_INTERVAL: int = 30
+    WS_HEARTBEAT_INTERVAL: int = 30  # seconds between heartbeats
+    WS_CONNECTION_TIMEOUT: int = 60  # seconds before connection is considered stale
+    WS_PING_TIMEOUT: int = 10  # seconds to wait for pong response
+    WS_CLEANUP_INTERVAL: int = 60  # seconds between cleanup runs
+
+    # Metrics collection config
+    METRICS_COLLECTION_INTERVAL: int = 30  # seconds between metrics collection
+    METRICS_HISTORY_RETENTION_HOURS: int = 24  # hours to retain metrics history
+    METRICS_PUSH_INTERVAL: int = 5  # seconds between WebSocket metrics push
 
     # CORS - comma-separated origins from environment
     CORS_ORIGINS: List[str] = [

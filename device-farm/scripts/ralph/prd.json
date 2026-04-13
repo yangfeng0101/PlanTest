@@ -1,141 +1,119 @@
 {
-  "projectName": "缺陷修复 - 功能完善",
-  "branchName": "main",
+  "projectName": "设备监控增强 - Phase 2",
+  "branchName": "feature/device-monitoring-enhancement",
+  "description": "为设备农场添加实时性能指标采集和监控仪表板功能，提升设备运维效率",
   "userStories": [
     {
-      "id": "FIX-FUNC-001",
-      "title": "并行执行器集成设备服务 API",
-      "priority": 1,
-      "passes": true,
+      "id": "MON-001",
+      "title": "后端添加设备性能指标采集服务",
+      "priority": "high",
+      "description": "实现设备性能指标的实时采集，包括 CPU、内存、网络、电池、温度等关键指标",
       "acceptanceCriteria": [
-        "parallel_executor.py 实现与 device-svc 的 HTTP 调用",
-        "设备选择策略 ALL/RANDOM/SPECIFIC 正常工作",
-        "获取真实设备列表并验证设备可用性",
-        "Typecheck passes"
+        "创建 metrics 服务模块，支持 Android/iOS/HarmonyOS 设备",
+        "Android 使用 ADB shell dumpsys 采集指标",
+        "iOS 使用 pymobiledevice3 developer 命令采集指标",
+        "HarmonyOS 使用 hdc shell 采集指标",
+        "指标数据结构包含：CPU使用率、内存使用率、网络流量、电池状态、设备温度",
+        "支持配置采集间隔（默认 30 秒）",
+        "提供 REST API 查询当前指标和历史指标"
       ],
-      "files": [
-        "services/test-svc/app/services/parallel_executor.py"
-      ]
+      "passes": true
     },
     {
-      "id": "FIX-FUNC-002",
-      "title": "预约通知服务集成",
-      "priority": 2,
-      "passes": true,
+      "id": "MON-002",
+      "title": "WebSocket 实时指标推送",
+      "priority": "high",
+      "description": "通过 WebSocket 实时推送设备性能指标到前端",
       "acceptanceCriteria": [
-        "reservation_tasks.py 实现通知发送",
-        "支持飞书/钉钉/邮件通知",
-        "预约开始前5分钟发送提醒",
-        "Typecheck passes"
+        "扩展现有 WebSocket 管理器支持指标订阅",
+        "客户端可订阅单个或多个设备的指标推送",
+        "指标推送频率可配置（默认 5 秒）",
+        "支持取消订阅",
+        "WebSocket 断开时自动停止指标推送"
       ],
-      "files": [
-        "services/device-svc/app/tasks/reservation_tasks.py",
-        "services/device-svc/app/services/notification_service.py"
-      ]
+      "passes": false
     },
     {
-      "id": "FIX-FUNC-003",
-      "title": "前端添加 AI 功能入口",
-      "priority": 3,
-      "passes": true,
+      "id": "MON-003",
+      "title": "指标数据存储与历史查询",
+      "priority": "medium",
+      "description": "实现指标数据的持久化存储和历史查询功能",
       "acceptanceCriteria": [
-        "添加 AI 工具菜单项",
-        "创建 OCR 页面（上传图片识别文字）",
-        "创建元素定位页面",
-        "创建用例生成页面",
-        "TypeScript passes"
+        "使用 Redis 存储近期指标（默认保留 24 小时）",
+        "提供历史指标查询 API，支持时间范围筛选",
+        "支持按设备 ID 查询指标历史",
+        "支持查询聚合统计（平均值、最大值、最小值）"
       ],
-      "files": [
-        "frontend/src/App.tsx",
-        "frontend/src/pages/ai/OCR.tsx",
-        "frontend/src/pages/ai/Locate.tsx",
-        "frontend/src/pages/ai/Generate.tsx"
-      ]
+      "passes": false
     },
     {
-      "id": "FIX-FUNC-004",
-      "title": "前端添加用户管理页面",
-      "priority": 4,
-      "passes": true,
+      "id": "MON-004",
+      "title": "前端监控仪表板页面",
+      "priority": "high",
+      "description": "创建设备监控仪表板页面，展示实时性能数据",
       "acceptanceCriteria": [
-        "创建用户列表页面（admin 角色）",
-        "支持创建/编辑/删除用户",
-        "支持修改用户角色",
-        "TypeScript passes"
+        "创建 /monitoring 路由和菜单入口",
+        "仪表板展示设备概览卡片（总数、在线、离线、异常）",
+        "支持选择单个设备查看详细指标",
+        "使用图表组件展示 CPU、内存、网络、电池趋势",
+        "图表支持实时更新（通过 WebSocket）",
+        "异常指标（如 CPU > 90%）使用红色高亮显示"
       ],
-      "files": [
-        "frontend/src/App.tsx",
-        "frontend/src/pages/admin/Users.tsx"
-      ]
+      "passes": false
     },
     {
-      "id": "FIX-FUNC-005",
-      "title": "前端添加告警配置页面",
-      "priority": 5,
-      "passes": true,
+      "id": "MON-005",
+      "title": "设备详情页指标展示",
+      "priority": "medium",
+      "description": "在设备详情页添加实时性能指标展示区域",
       "acceptanceCriteria": [
-        "创建告警规则列表页面",
-        "支持创建/编辑/删除告警规则",
-        "支持启用/禁用告警",
-        "显示告警历史记录",
-        "TypeScript passes"
+        "设备详情页添加性能指标 Tab",
+        "展示当前 CPU、内存、电池、温度等实时数据",
+        "使用小图表展示最近 5 分钟趋势",
+        "WebSocket 连接获取实时更新",
+        "页面离开时断开 WebSocket 订阅"
       ],
-      "files": [
-        "frontend/src/App.tsx",
-        "frontend/src/pages/alerts/index.tsx"
-      ]
+      "passes": false
     },
     {
-      "id": "FIX-FUNC-006",
-      "title": "告警通知服务完善",
-      "priority": 6,
-      "passes": true,
+      "id": "MON-006",
+      "title": "异常阈值配置与告警",
+      "priority": "medium",
+      "description": "支持配置性能指标异常阈值，触发告警通知",
       "acceptanceCriteria": [
-        "实现飞书 Webhook 调用",
-        "实现钉钉 Webhook 调用",
-        "实现邮件发送（SMTP）",
-        "添加通知发送日志",
-        "Typecheck passes"
+        "添加指标阈值配置 API",
+        "支持配置 CPU、内存、电池、温度的警告和危险阈值",
+        "指标超过阈值时触发告警事件",
+        "告警集成到现有告警系统",
+        "前端提供阈值配置界面"
       ],
-      "files": [
-        "services/report-svc/app/services/alert.py",
-        "services/report-svc/app/services/notification.py"
-      ]
+      "passes": false
     },
     {
-      "id": "FIX-FUNC-007",
-      "title": "Token 存储迁移到 HTTP-only Cookie",
-      "priority": 7,
-      "passes": true,
+      "id": "MON-007",
+      "title": "设备列表页增强",
+      "priority": "low",
+      "description": "在设备列表页添加性能指标快速预览",
       "acceptanceCriteria": [
-        "后端登录接口设置 HTTP-only Cookie",
-        "前端不再存储 Token 到 localStorage",
-        "Cookie 设置 Secure、SameSite 属性",
-        "支持 CSRF 保护",
-        "Typecheck passes"
+        "设备卡片/列表添加 CPU、内存使用率迷你指示器",
+        "异常状态设备高亮显示",
+        "支持按性能状态筛选设备",
+        "添加快速排序（按 CPU/内存使用率）"
       ],
-      "files": [
-        "services/test-svc/app/api/auth.py",
-        "frontend/src/stores/authStore.ts",
-        "frontend/src/api/client.ts"
-      ]
+      "passes": false
     },
     {
-      "id": "FIX-FUNC-008",
-      "title": "WebSocket 连接清理机制",
-      "priority": 8,
-      "passes": false,
+      "id": "MON-008",
+      "title": "监控数据导出",
+      "priority": "low",
+      "description": "支持监控数据的导出功能",
       "acceptanceCriteria": [
-        "添加连接超时检测",
-        "实现心跳检查机制",
-        "定期清理断开的连接",
-        "添加连接状态监控",
-        "Typecheck passes"
+        "提供指标数据导出 API",
+        "支持 CSV 和 JSON 格式导出",
+        "支持选择时间范围和设备",
+        "前端添加导出按钮和配置选项"
       ],
-      "files": [
-        "services/test-svc/app/api/tasks.py",
-        "services/device-svc/app/routes/devices.py"
-      ]
+      "passes": false
     }
   ]
 }

@@ -43,6 +43,10 @@ class HarmonyDeviceService:
             logger.error(f"Error executing HDC command: {e}")
             raise
 
+    async def execute_hdc(self, *args: str, device_id: Optional[str] = None) -> str:
+        """Public method to execute HDC command (wrapper for _execute_hdc)"""
+        return await self._execute_hdc(*args, device_id=device_id)
+
     async def discover_devices(self) -> List[Dict[str, Any]]:
         """
         Discover HarmonyOS devices via HDC.

@@ -5,8 +5,9 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.config import settings
-from app.routes import devices_router, reservations_router, groups_router
+from app.routes import devices_router, reservations_router, groups_router, metrics_router
 from app.services import device_service
+from app.services.metrics_service import metrics_collector
 from app.websocket import ws_manager
 from app.tasks import reservation_tasks
 
@@ -31,7 +32,12 @@ async def lifespan(app: FastAPI):
     # Start WebSocket heartbeat
     await ws_manager.start_heartbeat()
     await ws_manager.start_device_updates()
+    await ws_manager.start_metrics_push()
     logger.info("WebSocket services started")
+
+    # Start metrics collection
+    await metrics_collector.start_collection()
+    logger.info("Metrics collection started")
 
     # Start reservation background tasks
     await reservation_tasks.start()
@@ -44,6 +50,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down Device Service...")
+    await metrics_collector.stop_collection()
+    await ws_manager.stop_metrics_push()
     await device_service.stop_scanning()
     await ws_manager.stop_heartbeat()
     await reservation_tasks.stop()
@@ -83,6 +91,11 @@ app.include_router(
     groups_router,
     prefix=f"{settings.API_PREFIX}/groups",
     tags=["Device Groups"]
+)
+app.include_router(
+    metrics_router,
+    prefix=f"{settings.API_PREFIX}/metrics",
+    tags=["Metrics"]
 )
 
 

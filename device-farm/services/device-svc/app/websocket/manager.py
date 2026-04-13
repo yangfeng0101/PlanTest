@@ -1,5 +1,5 @@
 # WebSocket Connection Manager
-from typing import Dict, Set, Optional
+from typing import Dict, Set, Optional, List
 from fastapi import WebSocket
 import asyncio
 import json
@@ -8,7 +8,8 @@ from datetime import datetime
 
 from app.config import settings
 from app.services import device_service
-from app.models import DeviceStatus
+from app.services.metrics_service import metrics_collector
+from app.models import DeviceStatus, DeviceMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,15 @@ class ConnectionManager:
     def __init__(self):
         self._connections: Set[WebSocket] = set()
         self._device_subscribers: Dict[str, Set[WebSocket]] = {}
+        self._metrics_subscribers: Dict[str, Set[WebSocket]] = {}  # device_id -> set of websockets
+        self._all_metrics_subscribers: Set[WebSocket] = set()  # subscribers for all devices metrics
         self._connection_times: Dict[WebSocket, datetime] = {}
         self._last_heartbeat: Dict[WebSocket, datetime] = {}
         self._running = False
         self._cleanup_task: Optional[asyncio.Task] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._device_update_task: Optional[asyncio.Task] = None
+        self._metrics_push_task: Optional[asyncio.Task] = None
 
     async def connect(self, websocket: WebSocket):
         """Accept new WebSocket connection with timeout tracking"""
@@ -42,6 +46,13 @@ class ConnectionManager:
         # Remove from all device subscriptions
         for device_id in list(self._device_subscribers.keys()):
             self._device_subscribers[device_id].discard(websocket)
+
+        # Remove from all metrics subscriptions
+        for device_id in list(self._metrics_subscribers.keys()):
+            self._metrics_subscribers[device_id].discard(websocket)
+
+        # Remove from all-metrics subscribers
+        self._all_metrics_subscribers.discard(websocket)
 
         # Clean up tracking data
         self._connection_times.pop(websocket, None)
@@ -262,6 +273,146 @@ class ConnectionManager:
                 logger.error(f"Device update broadcast error: {e}")
 
             await asyncio.sleep(settings.DEVICE_SCAN_INTERVAL)
+
+    # ==================== Metrics Subscription Methods ====================
+
+    async def subscribe_metrics(self, websocket: WebSocket, device_ids: Optional[List[str]] = None):
+        """
+        Subscribe to metrics updates.
+
+        Args:
+            websocket: WebSocket connection
+            device_ids: List of device IDs to subscribe to. If None, subscribes to all devices.
+        """
+        if device_ids is None or len(device_ids) == 0:
+            # Subscribe to all devices metrics
+            self._all_metrics_subscribers.add(websocket)
+            logger.info(f"Subscribed to all devices metrics")
+        else:
+            # Subscribe to specific devices
+            for device_id in device_ids:
+                if device_id not in self._metrics_subscribers:
+                    self._metrics_subscribers[device_id] = set()
+                self._metrics_subscribers[device_id].add(websocket)
+            logger.info(f"Subscribed to metrics for devices: {device_ids}")
+
+    async def unsubscribe_metrics(self, websocket: WebSocket, device_ids: Optional[List[str]] = None):
+        """
+        Unsubscribe from metrics updates.
+
+        Args:
+            websocket: WebSocket connection
+            device_ids: List of device IDs to unsubscribe from. If None, unsubscribes from all.
+        """
+        if device_ids is None or len(device_ids) == 0:
+            # Unsubscribe from all metrics
+            self._all_metrics_subscribers.discard(websocket)
+            for device_id in list(self._metrics_subscribers.keys()):
+                self._metrics_subscribers[device_id].discard(websocket)
+            logger.info(f"Unsubscribed from all metrics")
+        else:
+            # Unsubscribe from specific devices
+            for device_id in device_ids:
+                if device_id in self._metrics_subscribers:
+                    self._metrics_subscribers[device_id].discard(websocket)
+            logger.info(f"Unsubscribed from metrics for devices: {device_ids}")
+
+    async def start_metrics_push(self):
+        """Start metrics push background task"""
+        if self._metrics_push_task:
+            return
+
+        self._metrics_push_task = asyncio.create_task(self._metrics_push_loop())
+        logger.info("Metrics push task started")
+
+    async def stop_metrics_push(self):
+        """Stop metrics push task"""
+        if self._metrics_push_task:
+            self._metrics_push_task.cancel()
+            try:
+                await self._metrics_push_task
+            except asyncio.CancelledError:
+                pass
+            self._metrics_push_task = None
+            logger.info("Metrics push task stopped")
+
+    async def _metrics_push_loop(self):
+        """Periodically push metrics to subscribers"""
+        while self._running:
+            try:
+                await self._push_metrics_updates()
+            except Exception as e:
+                logger.error(f"Metrics push error: {e}")
+
+            await asyncio.sleep(settings.METRICS_PUSH_INTERVAL)
+
+    async def _push_metrics_updates(self):
+        """Push metrics updates to subscribers"""
+        now = datetime.utcnow()
+
+        # Get all current metrics
+        all_metrics = metrics_collector.get_all_current_metrics()
+
+        if not all_metrics:
+            return
+
+        # Push to all-metrics subscribers
+        if self._all_metrics_subscribers:
+            message = {
+                "type": "metrics_update",
+                "metrics": {device_id: m.model_dump() for device_id, m in all_metrics.items()},
+                "timestamp": now.isoformat()
+            }
+            message_json = json.dumps(message)
+
+            disconnected = set()
+            for conn in self._all_metrics_subscribers:
+                try:
+                    await conn.send_text(message_json)
+                    self._last_heartbeat[conn] = now
+                except Exception as e:
+                    logger.error(f"Error sending metrics update: {e}")
+                    disconnected.add(conn)
+
+            for conn in disconnected:
+                await self.disconnect(conn)
+
+        # Push to device-specific subscribers
+        for device_id, metrics in all_metrics.items():
+            subscribers = self._metrics_subscribers.get(device_id, set())
+            if not subscribers:
+                continue
+
+            message = {
+                "type": "metrics_update",
+                "device_id": device_id,
+                "metrics": metrics.model_dump(),
+                "timestamp": now.isoformat()
+            }
+            message_json = json.dumps(message)
+
+            disconnected = set()
+            for conn in subscribers:
+                try:
+                    await conn.send_text(message_json)
+                    self._last_heartbeat[conn] = now
+                except Exception as e:
+                    logger.error(f"Error sending device metrics update: {e}")
+                    disconnected.add(conn)
+
+            for conn in disconnected:
+                await self.disconnect(conn)
+
+    def get_metrics_subscribers_stats(self) -> dict:
+        """Get metrics subscription statistics"""
+        return {
+            "all_metrics_subscribers": len(self._all_metrics_subscribers),
+            "device_metrics_subscribers": {
+                device_id: len(subs)
+                for device_id, subs in self._metrics_subscribers.items()
+                if subs
+            }
+        }
 
 
 # Global instance

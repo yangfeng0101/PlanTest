@@ -283,6 +283,24 @@ async def websocket_endpoint(websocket: WebSocket):
                             "device_id": device_id
                         }))
 
+                elif msg_type == "subscribe_metrics":
+                    # Subscribe to metrics updates
+                    device_ids = message.get("device_ids")  # List of device IDs or None for all
+                    await ws_manager.subscribe_metrics(websocket, device_ids)
+                    await websocket.send_text(json.dumps({
+                        "type": "subscribed_metrics",
+                        "device_ids": device_ids
+                    }))
+
+                elif msg_type == "unsubscribe_metrics":
+                    # Unsubscribe from metrics updates
+                    device_ids = message.get("device_ids")
+                    await ws_manager.unsubscribe_metrics(websocket, device_ids)
+                    await websocket.send_text(json.dumps({
+                        "type": "unsubscribed_metrics",
+                        "device_ids": device_ids
+                    }))
+
                 elif msg_type == "ping":
                     await websocket.send_text(json.dumps({
                         "type": "pong",
