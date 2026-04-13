@@ -89,3 +89,20 @@ Started: 2026年 4月13日 星期一 09时56分20秒 CST
   - Battery threshold is inverted (low is bad) compared to other metrics
   - The frontend uses Ant Design Form with InputNumber for threshold inputs
 ---
+## 2026年 4月13日 星期一 20时30分00秒 CST - MON-007
+- Enhanced device list page with performance metrics preview and filtering
+- **Files modified:**
+  - `frontend/src/pages/devices/index.tsx` - Added metrics fetching, WebSocket subscription, performance filter, sort options
+  - `frontend/src/components/DeviceCard/DeviceCard.css` - Added warning/critical card styles
+- **Features implemented:**
+  - Device cards now show real-time CPU/memory indicators via WebSocket
+  - Performance warning/critical summary banner at top of page
+  - Filter dropdown for performance status (normal/warning/critical)
+  - Sort dropdown to sort by name/CPU/memory/battery
+  - Table view now includes CPU/memory columns with color coding
+  - Warning/critical cards have distinct styling with animations
+- **Learnings for future iterations:**
+  - Use `ReturnType<typeof setTimeout>` instead of `NodeJS.Timeout` for timeout refs in React
+  - WebSocket subscription for metrics uses `subscribe_metrics` message type with `device_ids` array
+  - The DeviceCard component already had metrics prop support but wasn't receiving data from parent
+---

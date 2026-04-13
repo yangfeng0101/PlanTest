@@ -7,6 +7,34 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.device-card-warning {
+  border-color: #faad14 !important;
+  background: linear-gradient(135deg, #fffbe6 0%, #fff7e6 100%);
+}
+
+.device-card-warning:hover {
+  box-shadow: 0 4px 12px rgba(250, 173, 20, 0.3);
+}
+
+.device-card-critical {
+  border-color: #ff4d4f !important;
+  background: linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%);
+  animation: pulse-critical 2s ease-in-out infinite;
+}
+
+.device-card-critical:hover {
+  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.4);
+}
+
+@keyframes pulse-critical {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 77, 79, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 8px 4px rgba(255, 77, 79, 0.1);
+  }
+}
+
 .device-cover {
   height: 120px;
   display: flex;
