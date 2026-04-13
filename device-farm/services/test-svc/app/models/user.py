@@ -27,12 +27,13 @@ class UserDB(Base):
     """User database model"""
     __tablename__ = "users"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    username = Column(String(100), unique=True, nullable=False, index=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.USER, nullable=False)
-    status = Column(SQLEnum(UserStatus), default=UserStatus.ACTIVE, nullable=False)
+    id = Column(String(64), primary_key=True)
+    username = Column(String(64), unique=True, nullable=False, index=True)
+    email = Column(String(128), unique=True, nullable=False, index=True)
+    display_name = Column(String(128), nullable=True)
+    role = Column(String(16), default="user", nullable=False)
+    password_hash = Column(String(255), nullable=True)
+    status = Column(String(20), default="active", nullable=True)
     full_name = Column(String(255), nullable=True)
     avatar_url = Column(String(500), nullable=True)
     last_login_at = Column(DateTime, nullable=True)
@@ -44,8 +45,8 @@ class UserDB(Base):
 
     def is_active(self) -> bool:
         """Check if user is active"""
-        return self.status == UserStatus.ACTIVE
+        return self.status == UserStatus.ACTIVE.value
 
     def is_admin(self) -> bool:
         """Check if user is admin"""
-        return self.role == UserRole.ADMIN
+        return self.role == UserRole.ADMIN.value

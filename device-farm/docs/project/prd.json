@@ -110,6 +110,17 @@
         "服务重启后任务状态可恢复"
       ],
       "passes": true
+    },
+    {
+      "id": "AUTH-001",
+      "title": "修复 User 模型与数据库表结构不匹配",
+      "priority": "critical",
+      "description": "修复 SQLAlchemy UserDB 模型与数据库 users 表结构不匹配导致登录 API 失败的问题",
+      "acceptanceCriteria": [
+        "UserDB 模型与数据库表结构完全匹配",
+        "登录 API POST /api/v1/auth/login 正常工作"
+      ],
+      "passes": true
     }
   ]
 }

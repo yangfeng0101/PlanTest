@@ -9,6 +9,7 @@ from app.database import get_db
 from app.services.auth_service import (
     auth_service,
     UserCreate,
+    UserLogin,
     UserResponse,
     LoginResponse,
     RefreshTokenRequest,
@@ -240,8 +241,8 @@ async def register(
             id=user.id,
             username=user.username,
             email=user.email,
-            role=user.role.value,
-            status=user.status.value,
+            role=user.role,
+            status=user.status,
             full_name=user.full_name,
             avatar_url=user.avatar_url,
             created_at=user.created_at,
@@ -256,7 +257,7 @@ async def register(
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
-    credentials: UserCreate,
+    credentials: UserLogin,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
@@ -455,8 +456,8 @@ async def get_me(
         id=current_user.id,
         username=current_user.username,
         email=current_user.email,
-        role=current_user.role.value,
-        status=current_user.status.value,
+        role=current_user.role,
+        status=current_user.status,
         full_name=current_user.full_name,
         avatar_url=current_user.avatar_url,
         created_at=current_user.created_at,

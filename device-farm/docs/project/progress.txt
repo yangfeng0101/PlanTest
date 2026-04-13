@@ -148,3 +148,20 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - When updating parallel task status, must use parallel_task_service.update_task_status()
   - cancel_parallel_task now properly persists the FAILED status to database
 ---
+
+## 2026/04/13 18:30 - AUTH-001
+- 修复 SQLAlchemy UserDB 模型与数据库 users 表结构不匹配问题
+- UserDB 模型改用 String 类型匹配数据库 VARCHAR 类型（role, status）
+- password_hash 改为 nullable=True 匹配数据库结构
+- 添加 display_name 字段
+- 调整 is_active() 和 is_admin() 方法使用 .value 比较
+- 修复 login 端点使用 UserLogin 模型而非 UserCreate
+- Files changed:
+  - services/test-svc/app/models/user.py - 模型字段与数据库对齐
+  - services/test-svc/app/api/auth.py - 修复 login 端点参数模型
+- **Learnings for future iterations:**
+  - 本地 Homebrew PostgreSQL (端口 5432) 与 Docker PostgreSQL 冲突，运行前需停止: `brew services stop postgresql@15`
+  - test-svc 的 PYTHONPATH 必须设置为 device-farm/services 目录以找到 shared 模块
+  - 数据库 users 表使用 VARCHAR 而非 ENUM 类型存储 role 和 status 字段
+  - ralph 配置在 device-farm/docs/project/ 目录，不要在根目录重新初始化
+---
