@@ -10,39 +10,28 @@ from app.config import settings
 from app.services import device_service
 from app.services.metrics_service import metrics_collector
 from app.models import DeviceStatus, DeviceMetrics
+from shared.websocket_manager import BaseConnectionManager
 
 logger = logging.getLogger(__name__)
 
 
-class ConnectionManager:
-    """WebSocket connection manager with timeout detection, heartbeat, and cleanup"""
+class ConnectionManager(BaseConnectionManager):
+    """WebSocket connection manager with device/metrics subscription support"""
 
     def __init__(self):
-        self._connections: Set[WebSocket] = set()
+        super().__init__(
+            connection_timeout=settings.WS_CONNECTION_TIMEOUT,
+            heartbeat_interval=settings.WS_HEARTBEAT_INTERVAL,
+            cleanup_interval=settings.WS_CLEANUP_INTERVAL,
+        )
         self._device_subscribers: Dict[str, Set[WebSocket]] = {}
         self._metrics_subscribers: Dict[str, Set[WebSocket]] = {}  # device_id -> set of websockets
         self._all_metrics_subscribers: Set[WebSocket] = set()  # subscribers for all devices metrics
-        self._connection_times: Dict[WebSocket, datetime] = {}
-        self._last_heartbeat: Dict[WebSocket, datetime] = {}
-        self._running = False
-        self._cleanup_task: Optional[asyncio.Task] = None
-        self._heartbeat_task: Optional[asyncio.Task] = None
         self._device_update_task: Optional[asyncio.Task] = None
         self._metrics_push_task: Optional[asyncio.Task] = None
 
-    async def connect(self, websocket: WebSocket):
-        """Accept new WebSocket connection with timeout tracking"""
-        await websocket.accept()
-        now = datetime.utcnow()
-        self._connections.add(websocket)
-        self._connection_times[websocket] = now
-        self._last_heartbeat[websocket] = now
-        logger.info(f"New WebSocket connection. Total: {len(self._connections)}")
-
     async def disconnect(self, websocket: WebSocket):
-        """Handle WebSocket disconnection and cleanup"""
-        self._connections.discard(websocket)
-
+        """Handle WebSocket disconnection and cleanup subscriptions"""
         # Remove from all device subscriptions
         for device_id in list(self._device_subscribers.keys()):
             self._device_subscribers[device_id].discard(websocket)
@@ -54,11 +43,8 @@ class ConnectionManager:
         # Remove from all-metrics subscribers
         self._all_metrics_subscribers.discard(websocket)
 
-        # Clean up tracking data
-        self._connection_times.pop(websocket, None)
-        self._last_heartbeat.pop(websocket, None)
-
-        logger.info(f"WebSocket disconnected. Total: {len(self._connections)}")
+        # Call parent disconnect
+        await super().disconnect(websocket)
 
     async def subscribe_device(self, websocket: WebSocket, device_id: str):
         """Subscribe to device updates"""
@@ -72,27 +58,6 @@ class ConnectionManager:
         if device_id in self._device_subscribers:
             self._device_subscribers[device_id].discard(websocket)
 
-    async def broadcast(self, message: dict):
-        """Broadcast message to all connections"""
-        if not self._connections:
-            return
-
-        message_json = json.dumps(message)
-        disconnected = set()
-
-        for connection in self._connections:
-            try:
-                await connection.send_text(message_json)
-                # Update heartbeat on successful send
-                self._last_heartbeat[connection] = datetime.utcnow()
-            except Exception as e:
-                logger.error(f"Error sending message: {e}")
-                disconnected.add(connection)
-
-        # Clean up disconnected
-        for conn in disconnected:
-            await self.disconnect(conn)
-
     async def broadcast_device_update(self, device_id: str, data: dict):
         """Broadcast device update to subscribers"""
         if device_id not in self._device_subscribers:
@@ -104,16 +69,13 @@ class ConnectionManager:
             "data": data,
             "timestamp": datetime.utcnow().isoformat()
         }
-        message_json = json.dumps(message)
 
-        disconnected = set()
         subscribers = self._device_subscribers.get(device_id, set())
+        disconnected = set()
 
         for connection in subscribers:
             try:
-                await connection.send_text(message_json)
-                # Update heartbeat on successful send
-                self._last_heartbeat[connection] = datetime.utcnow()
+                await self.send_to_connection(connection, message)
             except Exception as e:
                 logger.error(f"Error sending device update: {e}")
                 disconnected.add(connection)
@@ -121,137 +83,13 @@ class ConnectionManager:
         for conn in disconnected:
             await self.disconnect(conn)
 
-    async def start_heartbeat(self):
-        """Start heartbeat and cleanup background tasks"""
-        if self._running:
-            return
-
-        self._running = True
-        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-        logger.info("WebSocket heartbeat and cleanup tasks started")
-
-    async def stop_heartbeat(self):
-        """Stop heartbeat and cleanup tasks"""
-        self._running = False
-
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
-            try:
-                await self._heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
-
-        if self._device_update_task:
-            self._device_update_task.cancel()
-            try:
-                await self._device_update_task
-            except asyncio.CancelledError:
-                pass
-
-        logger.info("WebSocket heartbeat and cleanup tasks stopped")
-
-    async def _heartbeat_loop(self):
-        """Heartbeat loop to keep connections alive"""
-        while self._running:
-            try:
-                await self._send_heartbeats()
-            except Exception as e:
-                logger.error(f"Heartbeat error: {e}")
-
-            await asyncio.sleep(settings.WS_HEARTBEAT_INTERVAL)
-
-    async def _send_heartbeats(self):
-        """Send ping to all connections"""
-        ping_msg = json.dumps({"type": "ping", "timestamp": datetime.utcnow().isoformat()})
-        disconnected = []
-
-        for conn in list(self._connections):
-            try:
-                await conn.send_text(ping_msg)
-            except Exception as e:
-                logger.warning(f"Failed to send heartbeat: {e}")
-                disconnected.append(conn)
-
-        # Clean up failed connections
-        for conn in disconnected:
-            await self.disconnect(conn)
-
-    async def _cleanup_loop(self):
-        """Periodically clean up stale connections"""
-        while self._running:
-            try:
-                await self._cleanup_stale_connections()
-            except Exception as e:
-                logger.error(f"Cleanup loop error: {e}")
-
-            await asyncio.sleep(settings.WS_CLEANUP_INTERVAL)
-
-    async def _cleanup_stale_connections(self):
-        """Remove connections that have timed out"""
-        now = datetime.utcnow()
-        stale_connections = []
-
-        for conn in list(self._connections):
-            # Check connection timeout
-            conn_time = self._connection_times.get(conn)
-            if conn_time:
-                age = (now - conn_time).total_seconds()
-                if age > settings.WS_CONNECTION_TIMEOUT:
-                    logger.warning(f"Connection timed out after {age:.0f}s")
-                    stale_connections.append((conn, "timeout"))
-                    continue
-
-            # Check heartbeat timeout
-            last_heartbeat = self._last_heartbeat.get(conn)
-            if last_heartbeat:
-                silence = (now - last_heartbeat).total_seconds()
-                if silence > settings.WS_CONNECTION_TIMEOUT:
-                    logger.warning(f"Connection silent for {silence:.0f}s")
-                    stale_connections.append((conn, "silent"))
-
-        # Close and remove stale connections
-        for conn, reason in stale_connections:
-            try:
-                await conn.close(code=1001, reason=f"Connection {reason}")
-            except Exception:
-                pass
-            await self.disconnect(conn)
-
-        if stale_connections:
-            logger.info(f"Cleaned up {len(stale_connections)} stale connections")
-
-    def handle_pong(self, websocket: WebSocket):
-        """Handle pong response from client"""
-        if websocket in self._last_heartbeat:
-            self._last_heartbeat[websocket] = datetime.utcnow()
-
     def get_connection_stats(self) -> dict:
         """Get connection statistics for monitoring"""
-        now = datetime.utcnow()
-
-        stats = {
-            "total_connections": len(self._connections),
-            "device_subscribers": {
-                device_id: len(subs)
-                for device_id, subs in self._device_subscribers.items()
-            },
-            "oldest_connection_age": None,
-            "avg_connection_age": None,
+        stats = super().get_connection_stats()
+        stats["device_subscribers"] = {
+            device_id: len(subs)
+            for device_id, subs in self._device_subscribers.items()
         }
-
-        if self._connection_times:
-            ages = [(now - t).total_seconds() for t in self._connection_times.values()]
-            stats["oldest_connection_age"] = max(ages) if ages else None
-            stats["avg_connection_age"] = sum(ages) / len(ages) if ages else None
-
         return stats
 
     async def start_device_updates(self):
@@ -363,13 +201,11 @@ class ConnectionManager:
                 "metrics": {device_id: m.model_dump() for device_id, m in all_metrics.items()},
                 "timestamp": now.isoformat()
             }
-            message_json = json.dumps(message)
 
             disconnected = set()
             for conn in self._all_metrics_subscribers:
                 try:
-                    await conn.send_text(message_json)
-                    self._last_heartbeat[conn] = now
+                    await self.send_to_connection(conn, message)
                 except Exception as e:
                     logger.error(f"Error sending metrics update: {e}")
                     disconnected.add(conn)
@@ -389,13 +225,11 @@ class ConnectionManager:
                 "metrics": metrics.model_dump(),
                 "timestamp": now.isoformat()
             }
-            message_json = json.dumps(message)
 
             disconnected = set()
             for conn in subscribers:
                 try:
-                    await conn.send_text(message_json)
-                    self._last_heartbeat[conn] = now
+                    await self.send_to_connection(conn, message)
                 except Exception as e:
                     logger.error(f"Error sending device metrics update: {e}")
                     disconnected.add(conn)
