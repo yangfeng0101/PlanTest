@@ -10,6 +10,7 @@ from app.services import device_service
 from app.services.metrics_service import metrics_collector
 from app.websocket import ws_manager
 from app.tasks import reservation_tasks
+from app.database import init_db, check_db_connection
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +25,16 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
     logger.info("Starting Device Service...")
+
+    # Initialize database
+    try:
+        if await check_db_connection():
+            await init_db()
+            logger.info("Database initialized successfully")
+        else:
+            logger.warning("Database connection failed, running without persistence")
+    except Exception as e:
+        logger.error(f"Database initialization error: {e}")
 
     # Start device scanning
     await device_service.start_scanning()

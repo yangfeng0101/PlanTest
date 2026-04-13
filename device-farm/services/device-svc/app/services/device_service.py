@@ -7,16 +7,18 @@ import json
 
 from app.config import settings
 from app.models import Device, DeviceStatus, DeviceCreate, DeviceUpdate, DeviceFilter
+from app.models.device_db import DeviceStatusDB
 from app.services.adb_service import adb_service
+from app.services.device_db_service import device_db_service
 
 logger = logging.getLogger(__name__)
 
 
 class DeviceService:
-    """Device management service"""
+    """Device management service with database persistence"""
 
     def __init__(self):
-        self._devices: Dict[str, Device] = {}
+        self._devices: Dict[str, Device] = {}  # In-memory cache
         self._redis = None  # Will be set when Redis is available
         self._running = False
 
@@ -24,6 +26,9 @@ class DeviceService:
         """Start device scanning background task"""
         if self._running:
             return
+
+        # Load devices from database first
+        await self._load_from_database()
 
         self._running = True
         asyncio.create_task(self._scan_loop())
@@ -33,6 +38,16 @@ class DeviceService:
         """Stop device scanning"""
         self._running = False
         logger.info("Device scanning stopped")
+
+    async def _load_from_database(self):
+        """Load existing devices from database into memory"""
+        try:
+            devices = await device_db_service.get_all_devices()
+            for device in devices:
+                self._devices[device.id] = device
+            logger.info(f"Loaded {len(devices)} devices from database")
+        except Exception as e:
+            logger.error(f"Error loading devices from database: {e}")
 
     async def _scan_loop(self):
         """Background device scanning loop"""
@@ -57,6 +72,11 @@ class DeviceService:
                 # Update existing device status
                 self._devices[device_id].status = device_info["status"]
                 self._devices[device_id].last_active_at = datetime.now()
+                # Persist status update to database
+                await device_db_service.update_device_status(
+                    device_id,
+                    DeviceStatus(device_info["status"])
+                )
             else:
                 # New device - get full info
                 try:
@@ -77,14 +97,20 @@ class DeviceService:
                         last_active_at=datetime.now(),
                     )
                     self._devices[device_id] = device
-                    logger.info(f"New device discovered: {device_id}")
+                    # Persist to database
+                    await device_db_service.upsert_device(device)
+                    logger.info(f"New device discovered and saved: {device_id}")
                 except Exception as e:
                     logger.error(f"Error getting info for device {device_id}: {e}")
 
         # Mark offline for devices not in current list
-        for device_id in self._devices:
-            if device_id not in current_ids:
-                self._devices[device_id].status = DeviceStatus.OFFLINE
+        offline_ids = [did for did in self._devices if did not in current_ids]
+        for device_id in offline_ids:
+            self._devices[device_id].status = DeviceStatus.OFFLINE
+
+        # Batch update offline status in database
+        if offline_ids:
+            await device_db_service.set_devices_offline(offline_ids)
 
         return list(self._devices.values())
 
@@ -133,6 +159,14 @@ class DeviceService:
         device.occupied_at = datetime.now()
         device.updated_at = datetime.now()
 
+        # Persist to database
+        await device_db_service.update_device_status(
+            device_id,
+            DeviceStatus.BUSY,
+            user_id,
+            device.occupied_at
+        )
+
         logger.info(f"Device {device_id} occupied by {user_id}")
         return device
 
@@ -146,6 +180,12 @@ class DeviceService:
         device.occupied_by = None
         device.occupied_at = None
         device.updated_at = datetime.now()
+
+        # Persist to database
+        await device_db_service.update_device_status(
+            device_id,
+            DeviceStatus.ONLINE
+        )
 
         logger.info(f"Device {device_id} released")
         return device
@@ -164,6 +204,15 @@ class DeviceService:
             device.tags = update.tags
 
         device.updated_at = datetime.now()
+
+        # Persist to database
+        await device_db_service.update_device_info(
+            device_id,
+            name=update.name,
+            tags=update.tags,
+            status=update.status
+        )
+
         return device
 
     async def get_screenshot(self, device_id: str) -> Optional[bytes]:
