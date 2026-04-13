@@ -92,3 +92,21 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - Middleware added after CORS middleware in the stack
   - For distributed deployments, consider Redis-based rate limiting like test-svc
 ---
+
+## 2026/04/13 16:15 - REFACTOR-001
+- Created shared/websocket_manager.py with BaseConnectionManager base class
+- Base class provides: connection tracking, heartbeat/ping-pong, cleanup, stats
+- device-svc ConnectionManager extends base with device/metrics subscriptions
+- test-svc ConnectionManager extends base with per-task log subscriptions
+- Reduced ~150 lines of duplicate code
+- Files changed:
+  - services/shared/__init__.py - New package init
+  - services/shared/websocket_manager.py - New base class
+  - services/device-svc/app/websocket/manager.py - Refactored to use base
+  - services/test-svc/app/api/tasks.py - Refactored to use base
+- **Learnings for future iterations:**
+  - BaseConnectionManager uses composition pattern for service-specific extensions
+  - Services import from `shared.websocket_manager` (relative to services directory)
+  - test-svc uses a different connect signature (takes task_id parameter)
+  - Both services can call super().connect() and super().disconnect() for base functionality
+---

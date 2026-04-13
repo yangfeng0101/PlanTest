@@ -86,7 +86,7 @@
         "device-svc 和 test-svc 使用共享模块",
         "删除重复代码"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "PERF-001",
