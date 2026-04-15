@@ -1,0 +1,6 @@
+# Local IDE and tool configurations
+.claude/*.local.json
+.DS_Store
+node_modules/
+venv/
+.venv/

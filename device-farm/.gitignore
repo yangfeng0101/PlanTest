@@ -9,6 +9,7 @@ __pycache__/
 .Python
 venv/
 .venv/
+.venv_audit/
 ENV/
 
 # Node

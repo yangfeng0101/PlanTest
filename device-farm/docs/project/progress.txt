@@ -177,4 +177,19 @@ Started: 2026年 4月13日 星期一 15时08分39秒 CST
   - 前端使用 HTTP-only Cookie 存储访问令牌，中间件必须检查 request.cookies
   - curl 测试 Cookie 认证使用 --cookie "access_token=$TOKEN"
   - 验证完整登录流程：登录 -> Cookie 认证 -> /me 端点
+
+---
+
+## 2026/04/15 21:00 - FIX-BATCH-001
+- 解决了 UserDB 模型与数据库的 schema 不匹配问题（full_name 长度从 255 修正为 128）
+- 实现了用户信息返回的回退逻辑：若 full_name 为空则自动取 display_name，修复了前端显示为 null 的问题
+- 整合并正式提交了所有 WebRTC 相关的 Go 代码修复（包括 NAL 解析、RTP 打包等逻辑修正）
+- 更新了前端代理配置，统一了 API 路由分发（device: 8001, screen: 8002, test: 8003）
+- 修正了 device-svc 中的设备型号映射逻辑，使其能正确显示市场名称（如 "iQOO 11 Pro"）
+- 创建了详细的 TROUBLESHOOTING.md 运维文档
+- Files changed: 29 files (frontend, test-svc, device-svc, screen-svc)
+- **Learnings for future iterations:**
+  - 即使 SQLAlchemy 模型定义了字段，也要严格校验数据库实际长度，避免 Data Truncation 风险
+  - 微服务环境下，前端代理（Vite proxy）的端口配置需与 uvicorn/go 启动参数严格对齐
+  - 在处理 legacy 数据时，Service 层的字段 Fallback 机制是保证 UI 体验最快捷的方式
 ---
