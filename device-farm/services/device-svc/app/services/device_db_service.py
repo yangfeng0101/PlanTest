@@ -67,7 +67,7 @@ class DeviceDatabaseService:
             if not db_device:
                 return None
 
-            db_device.status = DeviceStatusDB(status.value)
+            db_device.status = status.value if hasattr(status, 'value') else status
             db_device.occupied_by = occupied_by
             db_device.occupied_at = occupied_at
             db_device.updated_at = datetime.utcnow()
@@ -100,7 +100,7 @@ class DeviceDatabaseService:
             if battery_level is not None:
                 db_device.battery_level = battery_level
             if status is not None:
-                db_device.status = DeviceStatusDB(status.value)
+                db_device.status = status.value if hasattr(status, 'value') else status
 
             db_device.updated_at = datetime.utcnow()
 
@@ -193,7 +193,7 @@ class DeviceDatabaseService:
             brand=db_device.brand,
             os=db_device.os,
             os_version=db_device.os_version,
-            status=DeviceStatus(db_device.status.value),
+            status=DeviceStatus(db_device.status if isinstance(db_device.status, str) else db_device.status.value),
             screen_resolution=db_device.screen_resolution,
             screen_size=db_device.screen_size,
             cpu=db_device.cpu,
@@ -218,7 +218,7 @@ class DeviceDatabaseService:
             brand=device.brand,
             os=device.os,
             os_version=device.os_version,
-            status=DeviceStatusDB(device.status.value),
+            status=device.status.value if hasattr(device.status, 'value') else device.status,
             screen_resolution=device.screen_resolution,
             screen_size=device.screen_size,
             cpu=device.cpu,

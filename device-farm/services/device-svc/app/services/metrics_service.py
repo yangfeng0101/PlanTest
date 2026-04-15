@@ -144,27 +144,36 @@ class MetricsCollector:
             result = {}
             total_mem = 0
             used_mem = 0
+            free_mem = 0
 
-            # Look for "Total PSS by process" section
-            in_pss_section = False
             for line in output.split('\n'):
-                if 'Total PSS:' in line:
-                    # Example: "Total PSS: 1,234,567 kB"
-                    match = re.search(r'(\d+(?:,\d+)*)\s*kB', line)
-                    if match:
-                        used_mem = int(match.group(1).replace(',', ''))
-
-                if 'RAM:' in line:
-                    # Example: "RAM: 3,836,204K total, 1,234,567K free"
-                    match = re.search(r'(\d+(?:,\d+)*)K total', line)
+                # Match: "Total RAM: 7,701,716K (status normal)"
+                if 'Total RAM:' in line:
+                    match = re.search(r'(\d+(?:,\d+)*)K', line)
                     if match:
                         total_mem = int(match.group(1).replace(',', ''))
 
-            if total_mem > 0 and used_mem > 0:
-                result["usage"] = (used_mem / total_mem) * 100
+                # Match: "Free RAM: 3,840,614K ..."
+                if 'Free RAM:' in line:
+                    match = re.search(r'(\d+(?:,\d+)*)K', line)
+                    if match:
+                        free_mem = int(match.group(1).replace(',', ''))
+
+                # Match: "Used RAM: 5,412,310K ..."
+                if 'Used RAM:' in line:
+                    match = re.search(r'(\d+(?:,\d+)*)K', line)
+                    if match:
+                        used_mem = int(match.group(1).replace(',', ''))
+
+            if total_mem > 0:
+                # If Used RAM not found, calculate from Total - Free
+                if used_mem == 0 and free_mem > 0:
+                    used_mem = total_mem - free_mem
+
+                result["usage"] = (used_mem / total_mem) * 100 if used_mem > 0 else 0.0
                 result["total_mb"] = total_mem // 1024
                 result["used_mb"] = used_mem // 1024
-                result["free_mb"] = (total_mem - used_mem) // 1024
+                result["free_mb"] = free_mem // 1024
 
             return result
         except Exception:

@@ -22,8 +22,29 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
   fetchDevices: async () => {
     set({ loading: true })
     try {
-      const { data } = await fetch('/api/v1/devices').then((res) => res.json())
-      set({ devices: data || [], loading: false })
+      const response = await fetch('/api/v1/devices').then((res) => res.json())
+      // Convert snake_case to camelCase for frontend
+      const devices = (response.devices || []).map((d: Record<string, unknown>) => ({
+        id: d.id,
+        name: d.name,
+        model: d.model,
+        brand: d.brand,
+        os: d.os,
+        osVersion: d.os_version,
+        status: d.status,
+        screenResolution: d.screen_resolution,
+        screenSize: d.screen_size,
+        cpu: d.cpu,
+        memory: d.memory,
+        storage: d.storage,
+        batteryLevel: d.battery_level,
+        occupiedBy: d.occupied_by,
+        occupiedAt: d.occupied_at,
+        lastActiveAt: d.last_active_at,
+        tags: d.tags || [],
+        thumbnail: d.thumbnail,
+      }))
+      set({ devices, loading: false })
     } catch (error) {
       console.error('Failed to fetch devices:', error)
       set({ loading: false })

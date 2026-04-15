@@ -21,7 +21,7 @@ interface SignalingMessage {
   }
 }
 
-const DEFAULT_WS_URL = 'ws://localhost:8082/ws/webrtc'
+const DEFAULT_WS_URL = '/ws/signaling'
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5
 const DEFAULT_RECONNECT_DELAY = 1000
 const MAX_RECONNECT_DELAY = 30000

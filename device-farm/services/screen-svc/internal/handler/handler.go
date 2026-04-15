@@ -263,7 +263,7 @@ func (h *Handler) Text(c *gin.Context) {
 
 // Scroll sends scroll event to device
 func (h *Handler) Scroll(c *gin.Context) {
-	deviceID := c.Param("device_id")
+	_ = c.Param("device_id")
 
 	var req struct {
 		X  int `json:"x"`

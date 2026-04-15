@@ -188,7 +188,7 @@ class AuthService:
                 email=user.email,
                 role=user.role,
                 status=user.status,
-                full_name=user.full_name,
+                full_name=user.full_name or user.display_name,
                 avatar_url=user.avatar_url,
                 created_at=user.created_at,
                 last_login_at=user.last_login_at,

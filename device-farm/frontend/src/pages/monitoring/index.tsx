@@ -238,7 +238,11 @@ export default function MonitoringPage() {
 
   // Chart options for CPU/Memory
   const getCpuMemoryChartOption = (): EChartsOption => {
-    const times = metricsHistory.map(m => new Date(m.timestamp).toLocaleTimeString())
+    // Convert UTC timestamp to local time
+    const times = metricsHistory.map(m => {
+      const date = new Date(m.timestamp + 'Z') // Append Z to treat as UTC
+      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    })
     const cpuData = metricsHistory.map(m => m.cpu_usage?.toFixed(1) || 0)
     const memoryData = metricsHistory.map(m => m.memory_usage?.toFixed(1) || 0)
 
@@ -297,7 +301,10 @@ export default function MonitoringPage() {
 
   // Chart options for Network
   const getNetworkChartOption = (): EChartsOption => {
-    const times = metricsHistory.map(m => new Date(m.timestamp).toLocaleTimeString())
+    const times = metricsHistory.map(m => {
+      const date = new Date(m.timestamp + 'Z')
+      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    })
     const rxData = metricsHistory.map(m => (m.network_rx_speed_kbps / 1024).toFixed(2))
     const txData = metricsHistory.map(m => (m.network_tx_speed_kbps / 1024).toFixed(2))
 
@@ -349,7 +356,10 @@ export default function MonitoringPage() {
 
   // Chart options for Battery
   const getBatteryChartOption = (): EChartsOption => {
-    const times = metricsHistory.map(m => new Date(m.timestamp).toLocaleTimeString())
+    const times = metricsHistory.map(m => {
+      const date = new Date(m.timestamp + 'Z')
+      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    })
     const batteryData = metricsHistory.map(m => m.battery_level)
 
     return {

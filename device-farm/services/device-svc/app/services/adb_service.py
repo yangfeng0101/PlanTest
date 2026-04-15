@@ -8,6 +8,7 @@ import logging
 
 from app.config import settings
 from app.models import Device, DeviceStatus
+from app.models.device_model_map import get_market_name
 
 logger = logging.getLogger(__name__)
 
@@ -90,12 +91,9 @@ class ADBService:
             )
             info["brand"] = brand or "Unknown"
 
-            # Get device name
-            name = await self.execute_adb(
-                "shell", "getprop", "ro.product.device",
-                device_id=device_id
-            )
-            info["name"] = name or model or device_id
+            # Get device name (market name from model mapping)
+            market_name = get_market_name(model) if model else model
+            info["name"] = market_name or model or device_id
 
             # Get OS version
             os_version = await self.execute_adb(

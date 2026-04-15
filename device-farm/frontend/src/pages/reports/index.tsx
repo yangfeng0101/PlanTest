@@ -119,7 +119,7 @@ export default function ReportsPage() {
       width: 100,
     },
     {
-      title: '设备名称',
+      title: '设备型号',
       dataIndex: 'deviceName',
       key: 'deviceName',
     },
@@ -272,7 +272,7 @@ export default function ReportsPage() {
             <Descriptions bordered column={2} style={{ marginBottom: 16 }}>
               <Descriptions.Item label="报告ID">{currentReport.id}</Descriptions.Item>
               <Descriptions.Item label="任务ID">{currentReport.taskId}</Descriptions.Item>
-              <Descriptions.Item label="设备名称">{currentReport.deviceName}</Descriptions.Item>
+              <Descriptions.Item label="设备型号">{currentReport.deviceName}</Descriptions.Item>
               <Descriptions.Item label="脚本名称">{currentReport.scriptName}</Descriptions.Item>
               <Descriptions.Item label="执行状态">
                 <Tag color={currentReport.status === 'success' ? 'green' : 'red'}>

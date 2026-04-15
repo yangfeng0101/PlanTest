@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v3"
 	"github.com/sirupsen/logrus"
 
 	"screen-svc/internal/config"

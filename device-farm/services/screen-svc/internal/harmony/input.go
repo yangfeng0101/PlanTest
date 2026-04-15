@@ -108,10 +108,6 @@ func (im *InputManager) Pinch(centerX, centerY int, startDistance, endDistance i
 	// This is complex to implement with shell commands
 	// For now, we'll use a simplified approach
 
-	// Calculate start and end points for two fingers
-	halfStart := startDistance / 2
-	halfEnd := endDistance / 2
-
 	// Finger 1: moves from (centerX - halfStart) to (centerX - halfEnd)
 	// Finger 2: moves from (centerX + halfStart) to (centerX + halfEnd)
 

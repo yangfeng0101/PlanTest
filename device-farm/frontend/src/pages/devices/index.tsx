@@ -59,7 +59,7 @@ export default function DevicesPage() {
   const connectWebSocket = useCallback(() => {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsHost = window.location.host
-    const wsUrl = `${wsProtocol}//${wsHost}/api/v1/ws`
+    const wsUrl = `${wsProtocol}//${wsHost}/api/v1/devices/ws`
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
@@ -247,7 +247,7 @@ export default function DevicesPage() {
 
   const columns = [
     {
-      title: '设备名称',
+      title: '设备型号',
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: Device) => (

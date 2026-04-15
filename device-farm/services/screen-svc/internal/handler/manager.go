@@ -152,9 +152,9 @@ func (m *ScreenManager) startAndroidSession(ctx context.Context, cancel context.
 	}
 
 	// Get screen dimensions
-	width, height, err := process.GetScreenSize()
-	if err != nil {
-		m.logger.Warnf("Failed to get screen size for %s: %v", deviceID, err)
+	width, height := process.GetScreenSize()
+	if width == 0 || height == 0 {
+		m.logger.Warnf("Failed to get screen size for %s", deviceID)
 		width, height = 1080, 1920 // default
 	}
 
@@ -421,7 +421,7 @@ func (m *ScreenManager) handleAndroidControlMessage(session *ScreenSession, msgT
 	case "home":
 		session.Scrcpy.SendHome()
 	case "rotate":
-		session.Scrcpy.SendRotate()
+		session.Scrcpy.SendRotateDevice()
 	}
 }
 

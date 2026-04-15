@@ -2,7 +2,6 @@ package webrtc
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -19,7 +18,7 @@ import (
 // Manager manages WebRTC connections
 type Manager struct {
 	peerConnection *webrtc.PeerConnection
-	videoTrack     *webrtc.TrackLocalStaticSample
+	videoTrack     *webrtc.TrackLocalStaticRTP
 	rtpPacker      *video.RTPPacker
 	nalParser      *video.NALParser
 	logger         *logrus.Logger
@@ -157,10 +156,11 @@ func (m *Manager) AddICECandidate(candidate, sdpMid string, sdpMLineIndex int) e
 		return fmt.Errorf("peer connection not initialized")
 	}
 
+	sdpMLineIndexUint16 := uint16(sdpMLineIndex)
 	return m.peerConnection.AddICECandidate(webrtc.ICECandidateInit{
 		Candidate:     candidate,
 		SDPMid:        &sdpMid,
-		SDPMLineIndex: &sdpMLineIndex,
+		SDPMLineIndex: &sdpMLineIndexUint16,
 	})
 }
 
@@ -242,7 +242,7 @@ func (m *Manager) sendRTPPacket(pkt *rtp.Packet) error {
 		return fmt.Errorf("video track not initialized")
 	}
 
-	_, err := m.videoTrack.WriteRTP(pkt)
+	err := m.videoTrack.WriteRTP(pkt)
 	return err
 }
 
@@ -316,7 +316,7 @@ func (m *Manager) initializePeerConnection() error {
 	}
 
 	// Create MediaEngine
-	mediaEngine := webrtc.NewMediaEngine()
+	mediaEngine := &webrtc.MediaEngine{}
 	if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
 			MimeType:     webrtc.MimeTypeH264,
@@ -324,9 +324,9 @@ func (m *Manager) initializePeerConnection() error {
 			Channels:     0,
 			SDPFmtpLine:  "profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1",
 			RTCPFeedback: []webrtc.RTCPFeedback{
-				{Type: webrtc.TypeRTCPFBNACK},
-				{Type: webrtc.TypeRTCPFBNACKPLI},
-				{Type: "fir"},
+				{Type: "nack"},
+				{Type: "nack", Parameter: "pli"},
+				{Type: "ccm", Parameter: "fir"},
 			},
 		},
 		PayloadType: video.DefaultPayloadType,
@@ -358,7 +358,7 @@ func (m *Manager) initializePeerConnection() error {
 	}
 
 	// Create video track
-	videoTrack, err := webrtc.NewTrackLocalStaticSample(
+	videoTrack, err := webrtc.NewTrackLocalStaticRTP(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
 		"video",
 		"screen",
@@ -407,13 +407,6 @@ func (m *Manager) initializePeerConnection() error {
 	m.videoTrack = videoTrack
 
 	return nil
-}
-
-// SignalingMessage represents a WebRTC signaling message
-type SignalingMessage struct {
-	Type      string          `json:"type"`
-	SDP       string          `json:"sdp,omitempty"`
-	Candidate json.RawMessage `json:"candidate,omitempty"`
 }
 
 // HandleSignaling handles WebRTC signaling over WebSocket (deprecated, use SignalingHandler)

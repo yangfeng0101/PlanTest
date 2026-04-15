@@ -34,7 +34,7 @@ class UserDB(Base):
     role = Column(String(16), default="user", nullable=False)
     password_hash = Column(String(255), nullable=True)
     status = Column(String(20), default="active", nullable=True)
-    full_name = Column(String(255), nullable=True)
+    full_name = Column(String(128), nullable=True)
     avatar_url = Column(String(500), nullable=True)
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

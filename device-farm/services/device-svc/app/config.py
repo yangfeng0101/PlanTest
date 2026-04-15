@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     # API config
     API_PREFIX: str = "/api/v1"
 
-    # Database
-    DATABASE_URL: str = "postgresql://admin@localhost:5432/device_farm"
+    # Database (use asyncpg for async SQLAlchemy)
+    DATABASE_URL: str = "postgresql+asyncpg://admin@localhost:5432/device_farm"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

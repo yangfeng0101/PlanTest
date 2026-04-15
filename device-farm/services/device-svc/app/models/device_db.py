@@ -25,12 +25,7 @@ class DeviceDB(Base):
     brand = Column(String(100), nullable=False, index=True)
     os = Column(String(20), default="android", nullable=False)
     os_version = Column(String(50), nullable=False)
-    status = Column(
-        SQLEnum(DeviceStatusDB),
-        default=DeviceStatusDB.ONLINE,
-        nullable=False,
-        index=True
-    )
+    status = Column(String(20), default="online", nullable=False, index=True)
 
     # Hardware info
     screen_resolution = Column(String(50), nullable=False)

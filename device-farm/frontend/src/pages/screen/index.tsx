@@ -16,8 +16,9 @@ import './ScreenPage.css'
 const { Option } = Select
 
 // Screen service URLs - configurable via environment variables
-const SCREEN_WS_URL = import.meta.env.VITE_SCREEN_WS_URL || 'ws://localhost:8080'
-const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || 'http://localhost:8080'
+// Use relative URLs when served through Vite dev server proxy
+const SCREEN_WS_URL = import.meta.env.VITE_SCREEN_WS_URL || ''
+const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || 'http://localhost:8002'
 
 // Player type
 type PlayerType = 'webrtc' | 'mjpeg'
@@ -48,7 +49,7 @@ export default function ScreenPage() {
       try {
         const res = await fetch('/api/v1/devices')
         const data = await res.json()
-        setDevices(data.data || [])
+        setDevices(data.devices || [])
       } catch (e) {
         console.error('Failed to fetch devices:', e)
       }
@@ -112,7 +113,13 @@ export default function ScreenPage() {
   const connectMjpegWebSocket = useCallback(() => {
     if (!selectedDevice) return
 
-    const wsUrl = `${SCREEN_WS_URL}/ws/${selectedDevice}`
+    // Use relative URL for Vite dev server proxy, or construct WebSocket URL from window.location
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsHost = window.location.host
+    const wsUrl = SCREEN_WS_URL
+      ? `${SCREEN_WS_URL}/ws/${selectedDevice}/stream`
+      : `${wsProtocol}//${wsHost}/ws/${selectedDevice}/stream`
+
     console.log('Connecting to MJPEG WebSocket:', wsUrl)
 
     const ws = new WebSocket(wsUrl)
@@ -337,7 +344,7 @@ export default function ScreenPage() {
                   >
                     <WebrtcPlayer
                       deviceId={selectedDevice}
-                      wsUrl={`${SCREEN_WS_URL}/ws/webrtc`}
+                      wsUrl={`${SCREEN_WS_URL}/ws/signaling`}
                       onConnectionStateChange={handleConnectionStateChange}
                       onStats={handleWebRTCStats}
                     />

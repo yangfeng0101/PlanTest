@@ -10,6 +10,7 @@ class DeviceStatus(str, Enum):
     OFFLINE = "offline"
     BUSY = "busy"
     MAINTAINING = "maintaining"
+    MAINTENANCE = "maintenance"  # Legacy alias
 
 
 class Device(BaseModel):

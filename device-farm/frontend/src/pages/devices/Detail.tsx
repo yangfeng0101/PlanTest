@@ -108,7 +108,29 @@ export default function DeviceDetail() {
       try {
         setLoading(true)
         const response = await deviceApi.getDetail(deviceId)
-        setDevice(response.data)
+        // Convert snake_case to camelCase
+        const d = response.data as unknown as Record<string, unknown>
+        const device: Device = {
+          id: d.id as string,
+          name: d.name as string,
+          model: d.model as string,
+          brand: d.brand as string,
+          os: (d.os as string) || 'android',
+          osVersion: (d.os_version as string) || '',
+          status: d.status as 'online' | 'offline' | 'busy' | 'maintaining',
+          screenResolution: (d.screen_resolution as string) || '',
+          screenSize: (d.screen_size as number) || 5.5,
+          cpu: (d.cpu as string) || '',
+          memory: (d.memory as string) || '',
+          storage: (d.storage as string) || '',
+          batteryLevel: (d.battery_level as number) || 100,
+          occupiedBy: d.occupied_by as string | undefined,
+          occupiedAt: d.occupied_at as string | undefined,
+          lastActiveAt: (d.last_active_at as string) || '',
+          tags: (d.tags as string[]) || [],
+          thumbnail: d.thumbnail as string | undefined,
+        }
+        setDevice(device)
       } catch (error) {
         console.error('Failed to fetch device:', error)
       } finally {

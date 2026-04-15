@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Screen Service - Low-latency screen streaming via scrcpy + WebSocket
-Frame rate: 30-60 FPS, Latency: <100ms
+Screen Service - Low-latency screen streaming via WebSocket + MJPEG
+Frame rate: 20-30 FPS, Latency: <200ms
 """
 
 import asyncio
@@ -10,12 +10,11 @@ import subprocess
 import time
 import os
 import signal
-from urllib.parse import urlparse
-import websockets
-from websockets.server import serve
+import base64
+from aiohttp import web, WSMsgType
 
 # Configuration
-PORT = 8080
+PORT = 8002
 ADB_PATH = "/opt/homebrew/bin/adb"
 SCRCPY_PATH = "/opt/homebrew/bin/scrcpy"
 FFMPEG_PATH = "/opt/homebrew/bin/ffmpeg"
@@ -43,44 +42,12 @@ def get_connected_devices():
         return []
 
 
-async def start_scrcpy_stream(device_id, width=720, bitrate='2M'):
-    """Start scrcpy + ffmpeg pipeline for streaming"""
+async def start_scrcpy_stream(device_id, width=720):
+    """Start screen capture stream for device"""
     if device_id in active_streams:
         return active_streams[device_id]
 
-    print(f"Starting scrcpy stream for {device_id}...")
-
-    # Create pipe for video data
-    pipe_path = f'/tmp/scrcpy_{device_id}.h264'
-
-    # scrcpy command - output H.264 to stdout
-    scrcpy_cmd = [
-        SCRCPY_PATH,
-        '-s', device_id,
-        '--no-audio',
-        '--no-display',
-        '-b', bitrate,
-        '-m', str(width),
-        '--video-codec=h264',
-        '--no-control',
-        '--record-format=h264',
-        '--record', pipe_path,
-    ]
-
-    # Alternative: use scrcpy to capture screen and pipe to ffmpeg
-    # ffmpeg converts to JPEG frames and outputs to stdout
-    # We then send frames via WebSocket
-
-    # Let's use a simpler approach:
-    # adb exec-out screencap -> ffmpeg -> JPEG -> WebSocket
-    # But for low latency, we need continuous capture
-
-    # Best approach: Use ffmpeg to read from scrcpy's v4l2 output
-    # But that requires v4l2loopback
-
-    # Simplest low-latency approach:
-    # Continuous screenshot capture with ffmpeg scaling
-    # Targeting 20-30 FPS
+    print(f"Starting stream for {device_id}...")
 
     stream_info = {
         'device_id': device_id,
@@ -105,14 +72,14 @@ async def capture_frames_task(device_id, width=720):
         return
 
     stream = active_streams[device_id]
-    target_fps = 30
+    target_fps = 20
     frame_interval = 1.0 / target_fps
 
     while stream.get('running', False):
         try:
             loop_start = time.time()
 
-            # Capture frame using ffmpeg (faster than screencap -p)
+            # Capture frame using adb screencap
             proc = await asyncio.create_subprocess_exec(
                 ADB_PATH, '-s', device_id, 'exec-out',
                 'screencap', '-p',
@@ -127,8 +94,8 @@ async def capture_frames_task(device_id, width=720):
                 ffmpeg_proc = await asyncio.create_subprocess_exec(
                     FFMPEG_PATH,
                     '-i', '-',
-                    '-vf', f'scale={width}:-1:fast=1',
-                    '-q:v', '3',
+                    '-vf', f'scale={width}:-1',
+                    '-q:v', '5',
                     '-f', 'mjpeg',
                     '-',
                     stdin=asyncio.subprocess.PIPE,
@@ -146,16 +113,16 @@ async def capture_frames_task(device_id, width=720):
                     stream['frame_count'] += 1
 
                     # Broadcast to all connected clients for this device
-                    message = json.dumps({
-                        'type': 'frame',
-                        'data': list(jpeg_data),
-                    })
-
-                    # Send to clients
+                    # Send as JSON with base64 encoded image
                     disconnected = set()
                     for client in stream.get('clients', set()):
                         try:
-                            await client.send(message)
+                            # Send as JSON message with base64 encoded image
+                            message = json.dumps({
+                                'type': 'frame',
+                                'data': base64.b64encode(jpeg_data).decode('utf-8')
+                            })
+                            await client.send_str(message)
                         except:
                             disconnected.add(client)
 
@@ -180,46 +147,6 @@ async def stop_scrcpy_stream(device_id):
         active_streams[device_id]['running'] = False
         del active_streams[device_id]
         print(f"Stopped stream for {device_id}")
-
-
-async def handle_websocket(websocket, path):
-    """Handle WebSocket connections"""
-    parsed = urlparse(path)
-    path_parts = parsed.path.strip('/').split('/')
-
-    # Expected path: /ws/{device_id}/stream
-    if len(path_parts) >= 3 and path_parts[0] == 'ws':
-        device_id = path_parts[1]
-
-        print(f"Client connected for device: {device_id}")
-
-        # Start stream if not already running
-        if device_id not in active_streams:
-            await start_scrcpy_stream(device_id)
-
-        # Add client to stream
-        if device_id in active_streams:
-            active_streams[device_id]['clients'].add(websocket)
-
-        try:
-            async for message in websocket:
-                # Handle client messages (ping/pong, control)
-                try:
-                    data = json.loads(message)
-                    if data.get('type') == 'ping':
-                        await websocket.send(json.dumps({'type': 'pong'}))
-                except:
-                    pass
-        except websockets.exceptions.ConnectionClosed:
-            pass
-        finally:
-            # Remove client
-            if device_id in active_streams:
-                active_streams[device_id]['clients'].discard(websocket)
-            print(f"Client disconnected for device: {device_id}")
-
-    else:
-        await websocket.close()
 
 
 async def send_input(device_id, input_data):
@@ -255,88 +182,124 @@ async def send_input(device_id, input_data):
     return "ok"
 
 
-async def http_handler(reader, writer):
-    """Handle HTTP requests"""
-    data = await reader.read(1024)
-    request = data.decode()
-    lines = request.split('\r\n')
+# HTTP Handlers
+async def handle_health(request):
+    """Health check endpoint"""
+    return web.json_response({"status": "ok"})
 
-    if not lines:
-        writer.close()
-        return
 
-    method, path, _ = lines[0].split(' ')
+async def handle_screenshot(request):
+    """Screenshot endpoint"""
+    device_id = request.match_info.get('device_id')
 
-    # Parse path
-    parsed = urlparse(path)
-    path_parts = parsed.path.strip('/').split('/')
+    proc = await asyncio.create_subprocess_exec(
+        ADB_PATH, '-s', device_id, 'exec-out', 'screencap', '-p',
+        stdout=asyncio.subprocess.PIPE
+    )
+    stdout, _ = await proc.communicate()
 
-    def send_response(status, content_type, body):
-        response = f"HTTP/1.1 {status}\r\n"
-        response += f"Content-Type: {content_type}\r\n"
-        response += "Access-Control-Allow-Origin: *\r\n"
-        response += "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-        response += "Access-Control-Allow-Headers: Content-Type\r\n"
-        response += f"Content-Length: {len(body)}\r\n"
-        response += "\r\n"
-        writer.write(response.encode() + body)
-
-    if method == 'OPTIONS':
-        send_response(200, 'application/json', b'{}')
-    elif path == '/health':
-        send_response(200, 'application/json', json.dumps({"status": "ok"}).encode())
-    elif path.startswith('/api/v1/devices/') and path.endswith('/screenshot'):
-        device_id = path_parts[3]
-        # Capture screenshot
-        proc = await asyncio.create_subprocess_exec(
-            ADB_PATH, '-s', device_id, 'exec-out', 'screencap', '-p',
-            stdout=asyncio.subprocess.PIPE
-        )
-        stdout, _ = await proc.communicate()
-        if stdout:
-            send_response(200, 'image/png', stdout)
-        else:
-            send_response(500, 'application/json', json.dumps({"error": "Screenshot failed"}).encode())
-    elif path.startswith('/api/v1/devices/') and '/screen/session' in path:
-        device_id = path_parts[3]
-        response = {
-            "deviceId": device_id,
-            "wsUrl": f"ws://localhost:{PORT}/ws/{device_id}/stream",
-            "status": "available"
-        }
-        send_response(200, 'application/json', json.dumps(response).encode())
-    elif method == 'POST' and path.startswith('/api/v1/devices/') and path.endswith('/input'):
-        device_id = path_parts[3]
-        body_start = request.find('\r\n\r\n') + 4
-        body = request[body_start:]
-        try:
-            input_data = json.loads(body)
-            result = await send_input(device_id, input_data)
-            send_response(200, 'application/json', json.dumps({"success": True, "result": result}).encode())
-        except Exception as e:
-            send_response(500, 'application/json', json.dumps({"error": str(e)}).encode())
+    if stdout:
+        return web.Response(body=stdout, content_type='image/png')
     else:
-        send_response(404, 'application/json', json.dumps({"error": "Not found"}).encode())
-
-    await writer.drain()
-    writer.close()
+        return web.json_response({"error": "Screenshot failed"}, status=500)
 
 
-async def main():
-    print(f"Starting Screen Service on port {PORT}...")
-    print(f"WebSocket: ws://localhost:{PORT}/ws/{{device_id}}/stream")
+async def handle_session(request):
+    """Get screen session info"""
+    device_id = request.match_info.get('device_id')
 
-    # Start WebSocket server
-    async with serve(handle_websocket, "", PORT):
-        print(f"Server running at http://localhost:{PORT}")
-        print("Press Ctrl+C to stop")
+    response = {
+        "deviceId": device_id,
+        "wsUrl": f"ws://localhost:{PORT}/ws/{device_id}/stream",
+        "status": "available"
+    }
+    return web.json_response(response)
 
-        # Keep running
-        await asyncio.Future()
+
+async def handle_input(request):
+    """Handle touch/key input"""
+    device_id = request.match_info.get('device_id')
+
+    try:
+        input_data = await request.json()
+        result = await send_input(device_id, input_data)
+        return web.json_response({"success": True, "result": result})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+# WebSocket Handler
+async def handle_websocket(request):
+    """Handle WebSocket connections for screen streaming"""
+    device_id = request.match_info.get('device_id')
+
+    print(f"WebSocket client connected for device: {device_id}")
+
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    # Start stream if not already running
+    if device_id not in active_streams:
+        await start_scrcpy_stream(device_id)
+
+    # Add client to stream
+    if device_id in active_streams:
+        active_streams[device_id]['clients'].add(ws)
+
+    try:
+        async for msg in ws:
+            if msg.type == WSMsgType.TEXT:
+                try:
+                    data = json.loads(msg.data)
+                    if data.get('type') == 'ping':
+                        await ws.send_json({'type': 'pong'})
+                except:
+                    pass
+            elif msg.type == WSMsgType.ERROR:
+                print(f"WebSocket error: {ws.exception()}")
+    finally:
+        # Remove client
+        if device_id in active_streams:
+            active_streams[device_id]['clients'].discard(ws)
+        print(f"WebSocket client disconnected for device: {device_id}")
+
+    return ws
+
+
+def create_app():
+    """Create aiohttp application"""
+    app = web.Application()
+
+    # CORS middleware
+    @web.middleware
+    async def cors_middleware(request, handler):
+        if request.method == 'OPTIONS':
+            response = web.Response()
+        else:
+            response = await handler(request)
+
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+
+    app = web.Application(middlewares=[cors_middleware])
+
+    # Routes
+    app.router.add_get('/health', handle_health)
+    app.router.add_get('/api/v1/devices/{device_id}/screenshot', handle_screenshot)
+    app.router.add_get('/api/v1/devices/{device_id}/screen/session', handle_session)
+    app.router.add_post('/api/v1/devices/{device_id}/input', handle_input)
+    app.router.add_get('/ws/{device_id}/stream', handle_websocket)
+
+    return app
 
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nShutting down...")
+    print(f"Starting Screen Service on port {PORT}...")
+    print(f"WebSocket: ws://localhost:{PORT}/ws/{{device_id}}/stream")
+    print(f"HTTP API: http://localhost:{PORT}/api/v1/...")
+    print(f"Health: http://localhost:{PORT}/health")
+
+    app = create_app()
+    web.run_app(app, host='0.0.0.0', port=PORT, print=None)
