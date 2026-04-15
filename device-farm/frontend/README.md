@@ -32,34 +32,27 @@ npm run dev
 在另一个终端中：
 
 ```bash
-cd mock-server
+cd infra/mock
 npm install
 npm start
 ```
 
-Mock 服务将在 http://localhost:3001 启动
+Mock 服务将在 http://localhost:3000 启动
 
 ## 项目结构
 
 ```
 frontend/
 ├── src/
-│   ├── pages/              # 页面组件
-│   │   ├── devices/        # 设备管理
-│   │   ├── screen/         # 投屏控制
-│   │   ├── scripts/        # 脚本管理
-│   │   └── reports/        # 报告中心
-│   ├── components/         # 公共组件
-│   │   ├── ScreenPlayer/   # WebRTC播放器
-│   │   ├── DeviceCard/     # 设备卡片
-│   │   └── CodeEditor/     # 代码编辑器
-│   ├── services/           # API调用
-│   ├── stores/             # Zustand状态
+│   ├── pages/              # 页面组件 (devices, screen, scripts, reports, auth, ai-lab 等)
+│   ├── components/         # 公共组件 (WebrtcPlayer, DeviceCard, CodeEditor 等)
+│   ├── services/           # API 调用 (封装 axios)
+│   ├── stores/             # Zustand 状态 (authStore, deviceStore 等)
 │   ├── types/              # 类型定义
-│   ├── App.tsx             # 主应用
+│   ├── App.tsx             # 主应用路由与守卫
 │   └── main.tsx            # 入口文件
 ├── package.json
-├── vite.config.ts
+├── vite.config.ts          # 代理配置 (8001/8002/8003)
 └── tsconfig.json
 ```
 
@@ -68,43 +61,34 @@ frontend/
 ### 设备管理
 - 设备列表展示 (卡片/列表视图)
 - 设备详情查看
-- 设备占用/释放
-- 设备筛选和搜索
+- 设备占用/释放、设备预约
+- 设备分组管理
 
 ### 投屏控制
-- WebRTC 实时投屏
-- 触控交互
-- 快捷操作
-- 手势模拟
+- WebRTC/MJPEG 双模式实时投屏
+- 低延迟触控交互 (ADB/WDA/HDC)
+- 手势模拟、文件传输、Shell 终端
+- 截图与视频录制
 
 ### 脚本管理
-- 脚本列表
-- 脚本编辑 (Monaco Editor)
-- 脚本运行
+- 脚本列表与编辑 (Monaco Editor)
+- 测试任务调度 (支持并行执行、定时任务)
 - 多语言支持 (Python/JavaScript/Shell)
 
-### 测试报告
-- 报告列表
-- 报告详情
-- 统计分析
-- 报告下载
+### AI 实验室
+- 自然语言用例生成
+- AI 元素智能定位
+- 智能断言
 
 ## API 代理
 
-开发环境 API 请求会自动代理到 Mock 服务 (http://localhost:3001)
+开发环境通过 Vite 代理访问服务，配置在 `vite.config.ts` 中：
 
-配置在 `vite.config.ts` 中：
-
-```typescript
-server: {
-  proxy: {
-    '/api': {
-      target: 'http://localhost:3001',
-      changeOrigin: true,
-    },
-  },
-}
-```
+| 模块 | 处理端口 | 代理路径 |
+|------|----------|----------|
+| **device-svc** | `8001` | `/api/v1/devices`, `/api/v1/groups` |
+| **screen-svc** | `8002` | `/ws`, `/api/v1/devices/:id/screen` |
+| **test-svc** | `8003` | `/api/v1/auth`, `/api/v1/scripts`, `/api/v1/tasks` |
 
 ## 构建生产版本
 
