@@ -20,6 +20,7 @@ import {
   CloseCircleOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
+import { useAuthenticatedFetch } from '@/stores'
 
 const { TextArea } = Input
 const { Title, Text, Paragraph } = Typography
@@ -42,9 +43,10 @@ interface LocateResult {
   found: boolean
 }
 
-const AI_LOCATE_SERVICE_URL = 'http://localhost:8003/api/v1/locate'
+const AI_LOCATE_SERVICE_URL = '/api/v1/locate'
 
 export default function LocatePage() {
+  const fetchWithAuth = useAuthenticatedFetch()
   const [fileList, setFileList] = useState<UploadFile[]>([])
   const [imagePreview, setImagePreview] = useState<string>('')
   const [imageBase64, setImageBase64] = useState<string>('')
@@ -79,7 +81,7 @@ export default function LocatePage() {
 
     setLoading(true)
     try {
-      const response = await fetch(`${AI_LOCATE_SERVICE_URL}/locate`, {
+      const response = await fetchWithAuth(`${AI_LOCATE_SERVICE_URL}/locate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

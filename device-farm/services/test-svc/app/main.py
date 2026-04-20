@@ -53,6 +53,11 @@ app.include_router(
     prefix=f"{settings.API_PREFIX}/auth",
     tags=["Auth"]
 )
+app.include_router(
+    users.router,
+    prefix=f"{settings.API_PREFIX}/users",
+    tags=["Users"]
+)
 
 
 @app.on_event("startup")

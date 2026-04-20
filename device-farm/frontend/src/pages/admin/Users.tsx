@@ -25,7 +25,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { useAuthStore, hasPermission, type UserRole, type UserStatus } from '@/stores/authStore'
+import { useAuthStore, hasPermission, useAuthenticatedFetch, type UserRole, type UserStatus } from '@/stores'
 
 interface UserListItem {
   id: string
@@ -71,6 +71,7 @@ const getStatusBadge = (status: UserStatus) => {
 
 export default function UsersPage() {
   const { user: currentUser } = useAuthStore()
+  const fetchWithAuth = useAuthenticatedFetch()
   const [users, setUsers] = useState<UserListItem[]>([])
   const [loading, setLoading] = useState(false)
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
@@ -90,31 +91,6 @@ export default function UsersPage() {
   // Check admin permission
   const canManageUsers = hasPermission(currentUser, 'user:write')
 
-  const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}) => {
-    // Get CSRF token for state-changing requests
-    const method = (options.method || 'GET').toUpperCase()
-    const requiresCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
-    const csrfMatch = document.cookie.match(/csrf_token=([^;]+)/)
-    const csrfToken = csrfMatch ? csrfMatch[1] : null
-
-    const headers = new Headers(options.headers)
-    headers.set('Content-Type', 'application/json')
-    if (requiresCsrf && csrfToken) {
-      headers.set('X-CSRF-Token', csrfToken)
-    }
-
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: 'include',
-    })
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}))
-      throw new Error(error.detail || 'Request failed')
-    }
-    return response
-  }, [])
-
   const fetchUsers = useCallback(async () => {
     if (!canManageUsers) {
       message.error('Access denied')
@@ -130,7 +106,11 @@ export default function UsersPage() {
       if (filters.status) params.set('status', filters.status)
       if (filters.keyword) params.set('keyword', filters.keyword)
 
-      const response = await fetchWithAuth(`${API_BASE}/users?${params}`)
+      const response = await fetchWithAuth(`${API_BASE}/users?${params}`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
       const data = await response.json()
       setUsers(data.items || [])
       setPagination(prev => ({ ...prev, total: data.total || 0 }))
@@ -150,6 +130,9 @@ export default function UsersPage() {
     try {
       await fetchWithAuth(`${API_BASE}/users`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(values),
       })
       message.success('User created successfully')
@@ -168,6 +151,9 @@ export default function UsersPage() {
     try {
       await fetchWithAuth(`${API_BASE}/users/${selectedUser.id}`, {
         method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(values),
       })
       message.success('User updated successfully')
@@ -186,6 +172,9 @@ export default function UsersPage() {
     try {
       await fetchWithAuth(`${API_BASE}/users/${selectedUser.id}/role`, {
         method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(values),
       })
       message.success('Role updated successfully')
@@ -204,6 +193,9 @@ export default function UsersPage() {
     try {
       await fetchWithAuth(`${API_BASE}/users/${selectedUser.id}/reset-password`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(values),
       })
       message.success('Password reset successfully')
@@ -219,6 +211,9 @@ export default function UsersPage() {
     try {
       await fetchWithAuth(`${API_BASE}/users/${userId}`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       })
       message.success('User deleted successfully')
       fetchUsers()

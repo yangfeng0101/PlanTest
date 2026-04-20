@@ -40,22 +40,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Get Authorization header
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
+        cookie_token = request.cookies.get("access_token")
+
+        if not auth_header.startswith("Bearer ") and not cookie_token:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Authentication required. Provide Authorization: Bearer token."},
+                content={"detail": "Authentication required. Provide Authorization: Bearer token or login cookie."},
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        token = auth_header[7:]
+        token = auth_header[7:] if auth_header.startswith("Bearer ") else cookie_token
 
         # Validate token with test-svc
         try:
             async with httpx.AsyncClient() as client:
+                request_kwargs = {"timeout": 10.0}
+                if auth_header.startswith("Bearer "):
+                    request_kwargs["headers"] = {"Authorization": f"Bearer {token}"}
+                else:
+                    request_kwargs["cookies"] = {"access_token": token}
+
                 response = await client.get(
                     f"{TEST_SVC_URL}/api/v1/auth/me",
-                    headers={"Authorization": f"Bearer {token}"},
-                    timeout=10.0
+                    **request_kwargs,
                 )
 
             if response.status_code != 200:

@@ -7,7 +7,7 @@ interface ScriptState {
   loading: boolean
   fetchScripts: () => Promise<void>
   setCurrentScript: (script: Script | null) => void
-  createScript: (script: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  createScript: (script: Omit<Script, 'id' | 'created_at' | 'updated_at'>) => Promise<void>
   updateScript: (id: string, script: Partial<Script>) => Promise<void>
   deleteScript: (id: string) => Promise<void>
 }
@@ -21,7 +21,7 @@ export const useScriptStore = create<ScriptState>((set, get) => ({
     set({ loading: true })
     try {
       const data = await fetch('/api/v1/scripts').then((res) => res.json())
-      set({ scripts: data || [], loading: false })
+      set({ scripts: data?.items || data || [], loading: false })
     } catch (error) {
       console.error('Failed to fetch scripts:', error)
       set({ loading: false })

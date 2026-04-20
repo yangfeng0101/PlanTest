@@ -232,10 +232,10 @@ export default function ScreenPage() {
   const sendTextToDevice = async () => {
     if (!inputText.trim() || !selectedDevice) return
     try {
-      await fetch(`${SCREEN_HTTP_URL}/api/v1/devices/${selectedDevice}/input`, {
+      await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'text', text: inputText }),
+        body: JSON.stringify({ text: inputText }),
       })
       setInputText('')
       message.success('文本已发送')

@@ -65,7 +65,11 @@ async def get_device(device_id: str):
 
 
 @router.patch("/{device_id}", response_model=Device)
-async def update_device(device_id: str, update: DeviceUpdate):
+async def update_device(
+    device_id: str,
+    update: DeviceUpdate,
+    current_user: dict = Depends(get_current_user),
+):
     """Update device information"""
     device = await device_service.update_device(device_id, update)
     if not device:
@@ -251,73 +255,6 @@ async def cancel_device_reservation(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time device updates"""
-    await ws_manager.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-
-            # Parse message
-            try:
-                import json
-                message = json.loads(data)
-                msg_type = message.get("type")
-
-                if msg_type == "subscribe":
-                    device_id = message.get("device_id")
-                    if device_id:
-                        await ws_manager.subscribe_device(websocket, device_id)
-                        await websocket.send_text(json.dumps({
-                            "type": "subscribed",
-                            "device_id": device_id
-                        }))
-
-                elif msg_type == "unsubscribe":
-                    device_id = message.get("device_id")
-                    if device_id:
-                        await ws_manager.unsubscribe_device(websocket, device_id)
-                        await websocket.send_text(json.dumps({
-                            "type": "unsubscribed",
-                            "device_id": device_id
-                        }))
-
-                elif msg_type == "subscribe_metrics":
-                    # Subscribe to metrics updates
-                    device_ids = message.get("device_ids")  # List of device IDs or None for all
-                    await ws_manager.subscribe_metrics(websocket, device_ids)
-                    await websocket.send_text(json.dumps({
-                        "type": "subscribed_metrics",
-                        "device_ids": device_ids
-                    }))
-
-                elif msg_type == "unsubscribe_metrics":
-                    # Unsubscribe from metrics updates
-                    device_ids = message.get("device_ids")
-                    await ws_manager.unsubscribe_metrics(websocket, device_ids)
-                    await websocket.send_text(json.dumps({
-                        "type": "unsubscribed_metrics",
-                        "device_ids": device_ids
-                    }))
-
-                elif msg_type == "ping":
-                    await websocket.send_text(json.dumps({
-                        "type": "pong",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }))
-
-                elif msg_type == "pong":
-                    # Client responds to our ping, update heartbeat
-                    ws_manager.handle_pong(websocket)
-
-            except json.JSONDecodeError:
-                pass
-
-    except WebSocketDisconnect:
-        await ws_manager.disconnect(websocket)
-
-
 @router.get("/ws/stats")
 async def get_websocket_stats():
     """Get WebSocket connection statistics
@@ -331,3 +268,4 @@ async def get_websocket_stats():
         Connection statistics
     """
     return ws_manager.get_connection_stats()
+

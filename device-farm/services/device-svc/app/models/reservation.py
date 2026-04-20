@@ -26,7 +26,7 @@ class DeviceReservation(Base):
     start_time = Column(DateTime, nullable=False, index=True)
     end_time = Column(DateTime, nullable=False, index=True)
     status = Column(
-        SQLEnum(ReservationStatus),
+        SQLEnum(ReservationStatus, native_enum=False),
         default=ReservationStatus.PENDING,
         nullable=False,
         index=True

@@ -1,5 +1,5 @@
 # Report Service Main Application
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
@@ -7,6 +7,7 @@ import logging
 from app.config import settings
 from app.api import reports, statistics, alerts, export
 from app.database import init_db, check_db_connection
+from app.middleware.auth import get_current_user
 
 # Configure logging
 logging.basicConfig(
@@ -66,12 +67,14 @@ app.add_middleware(
 app.include_router(
     reports.router,
     prefix=f"{settings.API_PREFIX}/reports",
-    tags=["Reports"]
+    tags=["Reports"],
+    dependencies=[Depends(get_current_user)]
 )
 app.include_router(
     statistics.router,
     prefix=f"{settings.API_PREFIX}/statistics",
-    tags=["Statistics"]
+    tags=["Statistics"],
+    dependencies=[Depends(get_current_user)]
 )
 app.include_router(
     alerts.router,

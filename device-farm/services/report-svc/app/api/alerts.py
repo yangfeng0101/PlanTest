@@ -19,7 +19,7 @@ from app.models.alert import (
     AlertStatus,
     AlertType,
 )
-from app.middleware import get_current_user, get_current_user_id, require_role
+from app.middleware.auth import get_current_user, get_current_user_id, require_role, require_csrf_token
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ async def create_alert_rule(
 async def list_alert_rules(
     enabled_only: bool = Query(False, description="Only return enabled rules"),
     _: dict = Depends(get_current_user),
+    __: str = Depends(require_csrf_token),
 ):
     """List all alert rules (authenticated users)"""
     return alert_service.list_rules(enabled_only=enabled_only)
@@ -50,6 +51,7 @@ async def list_alert_rules(
 async def get_alert_rule(
     rule_id: str,
     _: dict = Depends(get_current_user),
+    __: str = Depends(require_csrf_token),
 ):
     """Get a specific alert rule (authenticated users)"""
     rule = alert_service.get_rule(rule_id)
@@ -116,6 +118,7 @@ async def trigger_alert(
     device_id: Optional[str] = None,
     task_id: Optional[str] = None,
     _: dict = Depends(get_current_user),
+    __: str = Depends(require_csrf_token),
 ):
     """Manually trigger an alert (authenticated users)"""
     alert = await alert_service.trigger_alert(
@@ -139,6 +142,7 @@ async def list_alerts(
     alert_type: Optional[AlertType] = Query(None, description="Filter by type"),
     limit: int = Query(100, ge=1, le=500, description="Max results"),
     _: dict = Depends(get_current_user),
+    __: str = Depends(require_csrf_token),
 ):
     """List alerts with optional filtering (authenticated users)"""
     return alert_service.list_alerts(
@@ -152,6 +156,7 @@ async def list_alerts(
 async def get_alert(
     alert_id: str,
     _: dict = Depends(get_current_user),
+    __: str = Depends(require_csrf_token),
 ):
     """Get a specific alert (authenticated users)"""
     alert = alert_service.list_alerts()
@@ -192,6 +197,7 @@ async def get_alert_history(
     alert_id: Optional[str] = Query(None, description="Filter by alert ID"),
     limit: int = Query(100, ge=1, le=500, description="Max results"),
     _: dict = Depends(get_current_user),
+    __: str = Depends(require_csrf_token),
 ):
     """Get alert history (authenticated users)"""
     return alert_service.get_history(alert_id=alert_id, limit=limit)
@@ -205,6 +211,7 @@ async def get_notification_logs(
     success_only: bool = Query(False, description="Only return successful notifications"),
     limit: int = Query(100, ge=1, le=500, description="Max results"),
     _: dict = Depends(get_current_user),
+    __: str = Depends(require_csrf_token),
 ):
     """Get notification logs (authenticated users)"""
     return notification_service.get_logs(

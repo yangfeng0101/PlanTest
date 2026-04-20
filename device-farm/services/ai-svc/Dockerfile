@@ -2,29 +2,27 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
-    android-tools-adb \
     gcc \
     python3-dev \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
-COPY device-svc/requirements.txt .
+COPY ai-svc/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Copy shared modules
 COPY shared/ ./shared/
 
 # Copy application
-COPY device-svc/app/ ./app/
+COPY ai-svc/app/ ./app/
 
-# Set PYTHONPATH to include the current directory so 'app' and 'shared' can be found
+# Set PYTHONPATH
 ENV PYTHONPATH=/app
 
 # Expose port
-EXPOSE 8001
+EXPOSE 8005
 
 # Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8005"]

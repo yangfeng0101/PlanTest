@@ -12,6 +12,7 @@ from app.websocket import ws_manager
 from app.tasks import reservation_tasks
 from app.database import init_db, check_db_connection
 from app.middleware import RateLimitMiddleware
+from fastapi import WebSocket, WebSocketDisconnect
 
 # Configure logging
 logging.basicConfig(
@@ -132,6 +133,18 @@ async def root():
         "version": settings.SERVICE_VERSION,
         "docs": f"{settings.API_PREFIX}/docs"
     }
+
+
+@app.websocket("/api/v1/devices/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time device updates"""
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Handle messages if needed
+    except WebSocketDisconnect:
+        await ws_manager.disconnect(websocket)
 
 
 if __name__ == "__main__":

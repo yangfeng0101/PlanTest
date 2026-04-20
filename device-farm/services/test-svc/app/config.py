@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # API
     API_PREFIX: str = "/api/v1"
     HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8001"))
+    PORT: int = int(os.getenv("PORT", "8003"))
 
     # Database
     DATABASE_URL: str = os.getenv(
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # Report Service
     REPORT_SERVICE_URL: str = os.getenv(
         "REPORT_SERVICE_URL",
-        "http://localhost:8002"
+        "http://localhost:8004"
     )
 
     # Device Service

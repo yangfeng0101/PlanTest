@@ -76,11 +76,21 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def check_db_connection() -> bool:
-    """Check if database connection is working"""
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
-    except Exception as e:
-        logger.error(f"Database connection check failed: {e}")
-        return False
+    """Check if database connection is working with retries"""
+    import asyncio
+    max_retries = 5
+    retry_interval = 2
+    
+    for i in range(max_retries):
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            return True
+        except Exception as e:
+            if i < max_retries - 1:
+                logger.warning(f"Database connection attempt {i+1} failed, retrying in {retry_interval}s...")
+                await asyncio.sleep(retry_interval)
+            else:
+                logger.error(f"Database connection check failed after {max_retries} attempts: {e}")
+                return False
+    return False

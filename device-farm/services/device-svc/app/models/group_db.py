@@ -23,7 +23,7 @@ class DeviceGroupDB(Base):
     name = Column(String(100), nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)
     type = Column(
-        SQLEnum(GroupType),
+        SQLEnum(GroupType, native_enum=False),
         default=GroupType.CUSTOM,
         nullable=False,
         index=True

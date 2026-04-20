@@ -19,6 +19,7 @@ import {
   FileImageOutlined,
 } from '@ant-design/icons'
 import type { UploadFile } from 'antd/es/upload/interface'
+import { useAuthenticatedFetch } from '@/stores'
 
 const { TextArea } = Input
 const { Title, Text, Paragraph } = Typography
@@ -37,9 +38,10 @@ interface OCRResult {
   processing_time_ms: number
 }
 
-const AI_OCR_SERVICE_URL = 'http://localhost:8003/api/v1/ocr'
+const AI_OCR_SERVICE_URL = '/api/v1/ocr'
 
 export default function OCRPage() {
+  const fetchWithAuth = useAuthenticatedFetch()
   const [fileList, setFileList] = useState<UploadFile[]>([])
   const [imagePreview, setImagePreview] = useState<string>('')
   const [imageBase64, setImageBase64] = useState<string>('')
@@ -71,7 +73,7 @@ export default function OCRPage() {
 
     setLoading(true)
     try {
-      const response = await fetch(`${AI_OCR_SERVICE_URL}/recognize`, {
+      const response = await fetchWithAuth(`${AI_OCR_SERVICE_URL}/recognize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,7 +110,7 @@ export default function OCRPage() {
 
     setLoading(true)
     try {
-      const response = await fetch(`${AI_OCR_SERVICE_URL}/find`, {
+      const response = await fetchWithAuth(`${AI_OCR_SERVICE_URL}/find`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

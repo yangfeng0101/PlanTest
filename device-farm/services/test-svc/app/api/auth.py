@@ -21,7 +21,7 @@ from app.config import settings
 
 
 router = APIRouter()
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 def _get_cookie_settings() -> dict:
@@ -105,12 +105,14 @@ async def require_csrf_token(
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> UserDB:
-    """Get current authenticated user from JWT token
+    """Get current authenticated user from Bearer token or cookie
 
     Args:
+        request: FastAPI request object
         credentials: HTTP Bearer credentials
         db: Database session
 
@@ -120,7 +122,14 @@ async def get_current_user(
     Raises:
         HTTPException: If token is invalid or user not found
     """
-    token = credentials.credentials
+    token = credentials.credentials if credentials else request.cookies.get("access_token")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Check blacklist
     if await token_blacklist.is_blacklisted(token):

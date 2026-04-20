@@ -21,7 +21,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apk add --no-cache scrcpy android-tools-adb
+RUN apk add --no-cache scrcpy android-tools
 
 # Copy binary from builder
 COPY --from=builder /app/main .

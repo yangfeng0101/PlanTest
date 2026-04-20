@@ -19,30 +19,51 @@ class ADBService:
     def __init__(self):
         self.adb_path = settings.ADB_PATH
         self._devices_cache: Dict[str, Device] = {}
+        self._lock = asyncio.Lock()
 
     async def execute_adb(self, *args: str, device_id: Optional[str] = None) -> str:
         """Execute ADB command"""
-        cmd = [self.adb_path]
-        if device_id:
-            cmd.extend(["-s", device_id])
-        cmd.extend(args)
+        async with self._lock:
+            cmd = [self.adb_path]
+            
+            # Add host and port if configured
+            if settings.ADB_SERVER_HOST and settings.ADB_SERVER_HOST != "localhost":
+                cmd.extend(["-H", settings.ADB_SERVER_HOST])
+            if settings.ADB_SERVER_PORT:
+                cmd.extend(["-P", str(settings.ADB_SERVER_PORT)])
+                
+            if device_id:
+                cmd.extend(["-s", device_id])
+            cmd.extend(args)
 
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
 
-            if process.returncode != 0:
-                logger.error(f"ADB command failed: {stderr.decode()}")
-                raise Exception(f"ADB command failed: {stderr.decode()}")
+                if process.returncode != 0:
+                    # If it's a daemon not running error, try one more time as ADB might have just started
+                    if "daemon not running" in stderr.decode():
+                        await asyncio.sleep(1)
+                        process = await asyncio.create_subprocess_exec(
+                            *cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        stdout, stderr = await process.communicate()
+                        if process.returncode == 0:
+                            return stdout.decode().strip()
 
-            return stdout.decode().strip()
-        except Exception as e:
-            logger.error(f"Error executing ADB command: {e}")
-            raise
+                    logger.error(f"ADB command failed: {stderr.decode()}")
+                    raise Exception(f"ADB command failed: {stderr.decode()}")
+
+                return stdout.decode().strip()
+            except Exception as e:
+                logger.error(f"Error executing ADB command: {e}")
+                raise
 
     async def list_devices(self) -> List[Dict[str, str]]:
         """List all connected devices"""

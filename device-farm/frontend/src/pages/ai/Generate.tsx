@@ -21,6 +21,7 @@ import {
   DownloadOutlined,
   BulbOutlined,
 } from '@ant-design/icons'
+import { useAuthenticatedFetch } from '@/stores'
 
 const { TextArea } = Input
 const { Title, Text, Paragraph } = Typography
@@ -60,9 +61,10 @@ interface Suggestion {
   step_index: number | null
 }
 
-const AI_GENERATE_SERVICE_URL = 'http://localhost:8003/api/v1/generate'
+const AI_GENERATE_SERVICE_URL = '/api/v1/generate'
 
 export default function GeneratePage() {
+  const fetchWithAuth = useAuthenticatedFetch()
   const [loading, setLoading] = useState(false)
   const [description, setDescription] = useState('')
   const [testType, setTestType] = useState('functional_test')
@@ -83,7 +85,7 @@ export default function GeneratePage() {
 
     setLoading(true)
     try {
-      const response = await fetch(`${AI_GENERATE_SERVICE_URL}/generate`, {
+      const response = await fetchWithAuth(`${AI_GENERATE_SERVICE_URL}/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -114,7 +116,7 @@ export default function GeneratePage() {
   // Load templates
   const handleLoadTemplates = async () => {
     try {
-      const response = await fetch(`${AI_GENERATE_SERVICE_URL}/templates`)
+      const response = await fetchWithAuth(`${AI_GENERATE_SERVICE_URL}/templates`)
       if (!response.ok) {
         throw new Error('Failed to load templates')
       }
@@ -134,7 +136,7 @@ export default function GeneratePage() {
 
     setLoading(true)
     try {
-      const response = await fetch(`${AI_GENERATE_SERVICE_URL}/generate/from-template`, {
+      const response = await fetchWithAuth(`${AI_GENERATE_SERVICE_URL}/generate/from-template`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -169,7 +171,7 @@ export default function GeneratePage() {
 
     setLoading(true)
     try {
-      const response = await fetch(`${AI_GENERATE_SERVICE_URL}/suggest`, {
+      const response = await fetchWithAuth(`${AI_GENERATE_SERVICE_URL}/suggest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -199,7 +201,7 @@ export default function GeneratePage() {
 
     setLoading(true)
     try {
-      const response = await fetch(`${AI_GENERATE_SERVICE_URL}/export?format=${exportFormat}`, {
+      const response = await fetchWithAuth(`${AI_GENERATE_SERVICE_URL}/export?format=${exportFormat}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

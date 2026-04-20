@@ -203,14 +203,13 @@ export default function ScriptsPage() {
             </Col>
             <Col span={12}>
               <Form.Item
-                name="language"
+                name="script_type"
                 label="语言类型"
                 rules={[{ required: true, message: '请选择语言类型' }]}
               >
                 <Select placeholder="请选择语言类型">
                   <Option value="python">Python</Option>
                   <Option value="javascript">JavaScript</Option>
-                  <Option value="shell">Shell</Option>
                 </Select>
               </Form.Item>
             </Col>

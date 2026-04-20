@@ -163,7 +163,7 @@ export default function ParallelExecutionPage() {
   const handleDownloadReport = async (taskId: string) => {
     try {
       // Trigger report generation
-      const response = await fetch(`/api/v1/reports/parallel/${taskId}?format=html`)
+      const response = await fetch(`/api/v1/reports/parallel/${taskId}/download?format=html`)
       if (response.ok) {
         const blob = await response.blob()
         const url = URL.createObjectURL(blob)

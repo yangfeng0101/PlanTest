@@ -94,11 +94,11 @@ export interface Script {
   id: string
   name: string
   description: string
-  language: 'python' | 'javascript' | 'shell'
+  script_type: 'python' | 'javascript'
   content: string
-  createdAt: string
-  updatedAt: string
-  createdBy: string
+  created_at: string
+  updated_at: string
+  created_by?: string
   tags: string[]
 }
 
@@ -120,20 +120,24 @@ export interface Task {
 // 报告类型
 export interface Report {
   id: string
-  taskId: string
-  deviceName: string
-  scriptName: string
-  status: 'success' | 'failed'
-  summary: {
-    total: number
-    passed: number
-    failed: number
-    skipped: number
+  task_id: string
+  title?: string
+  description?: string
+  status: 'pending' | 'generating' | 'completed' | 'failed'
+  format: 'html' | 'pdf' | 'json' | 'markdown'
+  created_at: string
+  updated_at: string
+  file_size?: number
+  detail?: {
+    summary: {
+      total: number
+      passed: number
+      failed: number
+      skipped: number
+      duration: number
+      success_rate: number
+    }
   }
-  duration: number
-  createdAt: string
-  logs: string
-  screenshots: string[]
 }
 
 // 分页响应

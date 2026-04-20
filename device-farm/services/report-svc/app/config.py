@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # API
     API_PREFIX: str = "/api/v1"
     HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8002"))
+    PORT: int = int(os.getenv("PORT", "8004"))
 
     # Database
     DATABASE_URL: str = os.getenv(
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # Test Service
     TEST_SERVICE_URL: str = os.getenv(
         "TEST_SERVICE_URL",
-        "http://localhost:8001"
+        "http://localhost:8003"
     )
 
     # CORS - comma-separated origins from environment

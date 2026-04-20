@@ -18,6 +18,7 @@ from app.models.models import (
 from app.services.generator import report_generator
 from app.services.storage import storage_service
 from app.services.aggregator import aggregator_service
+from app.middleware.auth import get_current_user
 from app.config import settings
 
 router = APIRouter()

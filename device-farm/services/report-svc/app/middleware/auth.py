@@ -1,6 +1,6 @@
 # Authentication middleware for Report Service
 import os
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 import httpx
@@ -8,11 +8,33 @@ import httpx
 # JWT validation is done by calling test-svc auth API
 # This allows report-svc to validate tokens without duplicating JWT logic
 TEST_SVC_URL = os.getenv("TEST_SVC_URL", "http://localhost:8003")
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+
+
+async def require_csrf_token(
+    request: Request,
+    x_csrf_token: Optional[str] = Header(None, alias="X-CSRF-Token"),
+) -> str:
+    if not x_csrf_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CSRF token is required",
+        )
+    
+    # Simple Double Submit Cookie check
+    csrf_cookie = request.cookies.get("csrf_token")
+    if csrf_cookie and x_csrf_token != csrf_cookie:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid CSRF token",
+        )
+        
+    return x_csrf_token
 
 
 async def verify_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Verify JWT token by calling test-svc auth API.
 
@@ -25,14 +47,26 @@ async def verify_token(
     Raises:
         HTTPException: If token is invalid
     """
-    token = credentials.credentials
+    token = credentials.credentials if credentials else request.cookies.get("access_token")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     try:
         async with httpx.AsyncClient() as client:
+            request_kwargs = {"timeout": 10.0}
+            if credentials:
+                request_kwargs["headers"] = {"Authorization": f"Bearer {token}"}
+            else:
+                request_kwargs["cookies"] = {"access_token": token}
+
             response = await client.get(
                 f"{TEST_SVC_URL}/api/v1/auth/me",
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=10.0
+                **request_kwargs,
             )
 
         if response.status_code == 200:

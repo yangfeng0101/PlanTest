@@ -34,48 +34,39 @@ export default function ReportsPage() {
     try {
       const response = await fetch('/api/v1/reports')
       const data = await response.json()
-      setReports(data.data || data || [])
+      setReports(data.items || data.data || data || [])
     } catch (error) {
       console.error('Failed to fetch reports:', error)
       // 使用模拟数据
       setReports([
         {
           id: '1',
-          taskId: 'task-001',
-          deviceName: 'iPhone 15 Pro',
-          scriptName: '登录流程测试',
-          status: 'success',
-          summary: { total: 10, passed: 10, failed: 0, skipped: 0 },
-          duration: 120,
-          createdAt: '2024-01-15 10:30:00',
-          logs: '测试执行完成，所有用例通过',
-          screenshots: [],
+          task_id: 'task-001',
+          status: 'completed',
+          format: 'json',
+          detail: { summary: { total: 10, passed: 10, failed: 0, skipped: 0, duration: 120, success_rate: 100 } },
+          created_at: '2024-01-15 10:30:00',
+          updated_at: '2024-01-15 10:30:00',
         },
         {
           id: '2',
-          taskId: 'task-002',
-          deviceName: 'Samsung Galaxy S24',
-          scriptName: '支付流程测试',
+          task_id: 'task-002',
           status: 'failed',
-          summary: { total: 8, passed: 6, failed: 2, skipped: 0 },
-          duration: 180,
-          createdAt: '2024-01-15 11:00:00',
-          logs: '部分测试用例执行失败',
-          screenshots: [],
+          format: 'json',
+          detail: { summary: { total: 8, passed: 6, failed: 2, skipped: 0, duration: 180, success_rate: 75 } },
+          created_at: '2024-01-15 11:00:00',
+          updated_at: '2024-01-15 11:00:00',
         },
         {
           id: '3',
-          taskId: 'task-003',
-          deviceName: 'Huawei Mate 60',
-          scriptName: '搜索功能测试',
-          status: 'success',
-          summary: { total: 15, passed: 15, failed: 0, skipped: 0 },
-          duration: 90,
-          createdAt: '2024-01-15 12:00:00',
-          logs: '测试执行完成',
-          screenshots: [],
+          task_id: 'task-003',
+          status: 'completed',
+          format: 'json',
+          detail: { summary: { total: 15, passed: 15, failed: 0, skipped: 0, duration: 90, success_rate: 100 } },
+          created_at: '2024-01-15 12:00:00',
+          updated_at: '2024-01-15 12:00:00',
         },
-      ])
+      ] as any)
     } finally {
       setLoading(false)
     }
@@ -100,15 +91,15 @@ export default function ReportsPage() {
   const filteredReports = reports.filter((report) => {
     const matchStatus = statusFilter === 'all' || report.status === statusFilter
     const matchDate = !dateRange || !dateRange[0] || !dateRange[1] || (
-      dayjs(report.createdAt).isAfter(dateRange[0]) &&
-      dayjs(report.createdAt).isBefore(dateRange[1].add(1, 'day'))
+      dayjs(report.created_at).isAfter(dateRange[0]) &&
+      dayjs(report.created_at).isBefore(dateRange[1].add(1, 'day'))
     )
     return matchStatus && matchDate
   })
 
-  const totalTests = reports.reduce((sum, r) => sum + r.summary.total, 0)
-  const totalPassed = reports.reduce((sum, r) => sum + r.summary.passed, 0)
-  const totalFailed = reports.reduce((sum, r) => sum + r.summary.failed, 0)
+  const totalTests = reports.reduce((sum, r) => sum + (r.detail?.summary?.total || 0), 0)
+  const totalPassed = reports.reduce((sum, r) => sum + (r.detail?.summary?.passed || 0), 0)
+  const totalFailed = reports.reduce((sum, r) => sum + (r.detail?.summary?.failed || 0), 0)
   const successRate = totalTests > 0 ? ((totalPassed / totalTests) * 100).toFixed(1) : '0'
 
   const columns = [
@@ -119,22 +110,23 @@ export default function ReportsPage() {
       width: 100,
     },
     {
-      title: '设备型号',
-      dataIndex: 'deviceName',
-      key: 'deviceName',
+      title: '任务ID',
+      dataIndex: 'task_id',
+      key: 'task_id',
     },
     {
-      title: '脚本名称',
-      dataIndex: 'scriptName',
-      key: 'scriptName',
+      title: '标题',
+      dataIndex: 'title',
+      key: 'title',
+      render: (title: string) => title || '-',
     },
     {
       title: '执行状态',
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
-        <Tag color={status === 'success' ? 'green' : 'red'}>
-          {status === 'success' ? '成功' : '失败'}
+        <Tag color={status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'blue'}>
+          {status === 'completed' ? '成功' : status === 'failed' ? '失败' : status}
         </Tag>
       ),
     },
@@ -143,22 +135,21 @@ export default function ReportsPage() {
       key: 'summary',
       render: (_: unknown, record: Report) => (
         <Space>
-          <Badge color="green" text={`通过: ${record.summary.passed}`} />
-          <Badge color="red" text={`失败: ${record.summary.failed}`} />
-          <Badge color="default" text={`跳过: ${record.summary.skipped}`} />
+          <Badge color="green" text={`通过: ${record.detail?.summary?.passed || 0}`} />
+          <Badge color="red" text={`失败: ${record.detail?.summary?.failed || 0}`} />
+          <Badge color="default" text={`跳过: ${record.detail?.summary?.skipped || 0}`} />
         </Space>
       ),
     },
     {
       title: '执行时长',
-      dataIndex: 'duration',
       key: 'duration',
-      render: (duration: number) => `${duration}s`,
+      render: (_: unknown, record: Report) => `${record.detail?.summary?.duration || 0}s`,
     },
     {
       title: '创建时间',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
+      dataIndex: 'created_at',
+      key: 'created_at',
       width: 180,
     },
     {
@@ -271,36 +262,35 @@ export default function ReportsPage() {
           <div>
             <Descriptions bordered column={2} style={{ marginBottom: 16 }}>
               <Descriptions.Item label="报告ID">{currentReport.id}</Descriptions.Item>
-              <Descriptions.Item label="任务ID">{currentReport.taskId}</Descriptions.Item>
-              <Descriptions.Item label="设备型号">{currentReport.deviceName}</Descriptions.Item>
-              <Descriptions.Item label="脚本名称">{currentReport.scriptName}</Descriptions.Item>
+              <Descriptions.Item label="任务ID">{currentReport.task_id}</Descriptions.Item>
+              <Descriptions.Item label="格式">{currentReport.format}</Descriptions.Item>
               <Descriptions.Item label="执行状态">
-                <Tag color={currentReport.status === 'success' ? 'green' : 'red'}>
-                  {currentReport.status === 'success' ? '成功' : '失败'}
+                <Tag color={currentReport.status === 'completed' ? 'green' : currentReport.status === 'failed' ? 'red' : 'blue'}>
+                  {currentReport.status === 'completed' ? '成功' : currentReport.status === 'failed' ? '失败' : currentReport.status}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="执行时长">{currentReport.duration}s</Descriptions.Item>
+              <Descriptions.Item label="执行时长">{currentReport.detail?.summary?.duration || 0}s</Descriptions.Item>
               <Descriptions.Item label="创建时间" span={2}>
-                {currentReport.createdAt}
+                {currentReport.created_at}
               </Descriptions.Item>
             </Descriptions>
 
             <Card title="测试统计" style={{ marginBottom: 16 }}>
               <Row gutter={16}>
                 <Col span={6}>
-                  <Statistic title="总用例数" value={currentReport.summary.total} />
+                  <Statistic title="总用例数" value={currentReport.detail?.summary?.total || 0} />
                 </Col>
                 <Col span={6}>
                   <Statistic
                     title="通过数"
-                    value={currentReport.summary.passed}
+                    value={currentReport.detail?.summary?.passed || 0}
                     valueStyle={{ color: '#52c41a' }}
                   />
                 </Col>
                 <Col span={6}>
                   <Statistic
                     title="失败数"
-                    value={currentReport.summary.failed}
+                    value={currentReport.detail?.summary?.failed || 0}
                     valueStyle={{ color: '#ff4d4f' }}
                   />
                 </Col>
@@ -308,8 +298,8 @@ export default function ReportsPage() {
                   <Statistic
                     title="通过率"
                     value={
-                      currentReport.summary.total > 0
-                        ? ((currentReport.summary.passed / currentReport.summary.total) * 100).toFixed(1)
+                      (currentReport.detail?.summary?.total || 0) > 0
+                        ? (((currentReport.detail?.summary?.passed || 0) / (currentReport.detail?.summary?.total || 1)) * 100).toFixed(1)
                         : '0'
                     }
                     suffix="%"
@@ -318,32 +308,17 @@ export default function ReportsPage() {
               </Row>
               <Progress
                 percent={
-                  currentReport.summary.total > 0
-                    ? (currentReport.summary.passed / currentReport.summary.total) * 100
+                  (currentReport.detail?.summary?.total || 0) > 0
+                    ? ((currentReport.detail?.summary?.passed || 0) / (currentReport.detail?.summary?.total || 1)) * 100
                     : 0
                 }
-                status={currentReport.status === 'success' ? 'success' : 'exception'}
+                status={currentReport.status === 'completed' ? 'success' : 'exception'}
                 style={{ marginTop: 16 }}
               />
             </Card>
 
             <Tabs
               items={[
-                {
-                  key: 'logs',
-                  label: '执行日志',
-                  children: (
-                    <pre style={{
-                      background: '#f5f5f5',
-                      padding: 16,
-                      borderRadius: 4,
-                      maxHeight: 300,
-                      overflow: 'auto',
-                    }}>
-                      {currentReport.logs}
-                    </pre>
-                  ),
-                },
                 {
                   key: 'timeline',
                   label: '执行时间线',
@@ -352,11 +327,11 @@ export default function ReportsPage() {
                       items={[
                         {
                           color: 'blue',
-                          children: `开始执行 ${currentReport.createdAt}`,
+                          children: `开始执行 ${currentReport.created_at}`,
                         },
                         {
-                          color: currentReport.status === 'success' ? 'green' : 'red',
-                          children: `执行完成 耗时 ${currentReport.duration}s`,
+                          color: currentReport.status === 'completed' ? 'green' : 'red',
+                          children: `执行完成 耗时 ${currentReport.detail?.summary?.duration || 0}s`,
                         },
                       ]}
                     />

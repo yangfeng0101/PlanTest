@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { create } from 'zustand'
 
 // User role enum
@@ -183,7 +184,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 export const useAuthenticatedFetch = () => {
   const { refreshTokens, logout } = useAuthStore()
 
-  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+  const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}) => {
     // Get CSRF token for state-changing requests
     const method = (options.method || 'GET').toUpperCase()
     const requiresCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
@@ -224,7 +225,7 @@ export const useAuthenticatedFetch = () => {
     }
 
     return response
-  }
+  }, [refreshTokens, logout])
 
   return fetchWithAuth
 }

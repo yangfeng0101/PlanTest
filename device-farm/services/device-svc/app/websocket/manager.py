@@ -104,7 +104,7 @@ class ConnectionManager(BaseConnectionManager):
                 devices = await device_service.get_devices()
                 await self.broadcast({
                     "type": "device_list",
-                    "devices": [d.model_dump() for d in devices],
+                    "devices": [d.model_dump(mode='json') for d in devices],
                     "timestamp": datetime.utcnow().isoformat()
                 })
             except Exception as e:
@@ -198,7 +198,7 @@ class ConnectionManager(BaseConnectionManager):
         if self._all_metrics_subscribers:
             message = {
                 "type": "metrics_update",
-                "metrics": {device_id: m.model_dump() for device_id, m in all_metrics.items()},
+                "metrics": {device_id: m.model_dump(mode='json') for device_id, m in all_metrics.items()},
                 "timestamp": now.isoformat()
             }
 
@@ -222,7 +222,7 @@ class ConnectionManager(BaseConnectionManager):
             message = {
                 "type": "metrics_update",
                 "device_id": device_id,
-                "metrics": metrics.model_dump(),
+                "metrics": metrics.model_dump(mode='json'),
                 "timestamp": now.isoformat()
             }
 

@@ -53,10 +53,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if request.url.path.startswith(prefix):
                 return await call_next(request)
 
-        # Skip auth if disabled
-        if not settings.API_KEY_ENABLED:
-            return await call_next(request)
-
         # Check for API key in header
         api_key = request.headers.get("X-API-Key")
 

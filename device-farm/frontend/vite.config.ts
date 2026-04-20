@@ -16,7 +16,15 @@ export default defineConfig({
         target: 'http://localhost:8003',
         changeOrigin: true,
       },
+      '/api/v1/users': {
+        target: 'http://localhost:8003',
+        changeOrigin: true,
+      },
       '/api/v1/scripts': {
+        target: 'http://localhost:8003',
+        changeOrigin: true,
+      },
+      '/api/v1/schedules': {
         target: 'http://localhost:8003',
         changeOrigin: true,
       },
@@ -25,11 +33,31 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/api/v1/reports': {
-        target: 'http://localhost:8003',
+        target: 'http://localhost:8004',
         changeOrigin: true,
       },
       '/api/v1/statistics': {
-        target: 'http://localhost:8003',
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+      },
+      '/api/v1/alerts': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+      },
+      '/api/v1/export': {
+        target: 'http://localhost:8004',
+        changeOrigin: true,
+      },
+      '/api/v1/ocr': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+      },
+      '/api/v1/locate': {
+        target: 'http://localhost:8005',
+        changeOrigin: true,
+      },
+      '/api/v1/generate': {
+        target: 'http://localhost:8005',
         changeOrigin: true,
       },
       '/api': {

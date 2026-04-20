@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.database import get_db
 from app.models.user import UserDB, UserRole, UserStatus
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_csrf_token
 from app.services.password_service import password_service
 
 
@@ -232,6 +232,7 @@ async def update_user(
     user_id: str,
     user_data: UserUpdateRequest,
     current_user: UserDB = Depends(get_current_user),
+    _: str = Depends(require_csrf_token),
     db: AsyncSession = Depends(get_db),
 ):
     """Update user (admin only)

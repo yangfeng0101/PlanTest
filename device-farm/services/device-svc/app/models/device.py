@@ -73,7 +73,7 @@ class DeviceUpdate(BaseModel):
 
 class DeviceOccupyRequest(BaseModel):
     """Device occupy request"""
-    user_id: str = Field(..., description="User ID who wants to occupy")
+    user_id: Optional[str] = Field(default=None, description="User ID who wants to occupy")
     duration: Optional[int] = Field(default=None, description="Occupation duration in minutes")
 
 
