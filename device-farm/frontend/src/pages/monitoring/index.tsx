@@ -116,11 +116,15 @@ export default function MonitoringPage() {
       setWsConnected(true)
 
       // Subscribe to metrics updates
-      if (selectedDeviceId) {
-        ws.send(JSON.stringify({
-          type: 'subscribe_metrics',
-          device_ids: [selectedDeviceId]
-        }))
+      if (selectedDeviceId && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'subscribe_metrics',
+            device_ids: [selectedDeviceId]
+          }))
+        } catch (e) {
+          console.error('Failed to send subscription:', e)
+        }
       }
     }
 
@@ -131,6 +135,7 @@ export default function MonitoringPage() {
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error)
+      setWsConnected(false)
     }
 
     ws.onmessage = (event) => {
@@ -140,10 +145,11 @@ export default function MonitoringPage() {
         if (message.type === 'metrics_update') {
           // Handle single device update
           if (message.device_id === selectedDeviceId && message.metrics) {
-            setCurrentMetrics(message.metrics)
+            const metrics = message.metrics as DeviceMetrics
+            setCurrentMetrics(metrics)
 
             // Update history
-            const newHistory = [...metricsHistoryRef.current, message.metrics].slice(-60) // Keep last 60 points (5 min at 5s interval)
+            const newHistory = [...metricsHistoryRef.current, metrics].slice(-60) // Keep last 60 points (5 min at 5s interval)
             metricsHistoryRef.current = newHistory
             setMetricsHistory(newHistory)
           }
@@ -152,9 +158,10 @@ export default function MonitoringPage() {
           if (message.metrics && typeof message.metrics === 'object' && !message.device_id) {
             const metricsMap = message.metrics as unknown as Record<string, DeviceMetrics>
             if (selectedDeviceId && metricsMap[selectedDeviceId]) {
-              setCurrentMetrics(metricsMap[selectedDeviceId])
+              const metrics = metricsMap[selectedDeviceId]
+              setCurrentMetrics(metrics)
 
-              const newHistory = [...metricsHistoryRef.current, metricsMap[selectedDeviceId]].slice(-60)
+              const newHistory = [...metricsHistoryRef.current, metrics].slice(-60)
               metricsHistoryRef.current = newHistory
               setMetricsHistory(newHistory)
             }
@@ -167,21 +174,15 @@ export default function MonitoringPage() {
 
     return () => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
+        try {
+          ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
+        } catch (e) {
+          // Ignore error during cleanup
+        }
       }
       ws.close()
     }
   }, [selectedDeviceId])
-
-  // Update WebSocket subscription when device changes
-  useEffect(() => {
-    if (wsRef.current && wsConnected && selectedDeviceId) {
-      wsRef.current.send(JSON.stringify({
-        type: 'subscribe_metrics',
-        device_ids: [selectedDeviceId]
-      }))
-    }
-  }, [selectedDeviceId, wsConnected])
 
   // Get device stats
   const getDeviceStats = () => {

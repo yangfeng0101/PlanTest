@@ -174,11 +174,15 @@ export default function DeviceDetail() {
       setWsConnected(true)
 
       // Subscribe to this device's metrics updates
-      if (deviceId) {
-        ws.send(JSON.stringify({
-          type: 'subscribe_metrics',
-          device_ids: [deviceId]
-        }))
+      if (deviceId && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'subscribe_metrics',
+            device_ids: [deviceId]
+          }))
+        } catch (e) {
+          console.error('Failed to send subscription:', e)
+        }
       }
     }
 

@@ -67,11 +67,15 @@ export default function DevicesPage() {
     ws.onopen = () => {
       // Subscribe to all devices' metrics
       const deviceIds = devices.filter(d => d.status === 'online').map(d => d.id)
-      if (deviceIds.length > 0) {
-        ws.send(JSON.stringify({
-          type: 'subscribe_metrics',
-          device_ids: deviceIds,
-        }))
+      if (deviceIds.length > 0 && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'subscribe_metrics',
+            device_ids: deviceIds,
+          }))
+        } catch (e) {
+          console.error('Failed to send subscription:', e)
+        }
       }
     }
 

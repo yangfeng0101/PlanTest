@@ -87,8 +87,8 @@ export default function ScreenPage() {
       if (!selectedDevice || !isPlaying) return
 
       try {
-        const body: Record<string, unknown> = { type, x, y, ...extra }
-        await fetch(`${SCREEN_HTTP_URL}/api/v1/devices/${selectedDevice}/input`, {
+        const body: Record<string, unknown> = { action: type, x, y, ...extra }
+        await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/touch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -218,10 +218,26 @@ export default function ScreenPage() {
   const sendKey = async (keycode: string) => {
     if (!selectedDevice) return
     try {
-      await fetch(`${SCREEN_HTTP_URL}/api/v1/devices/${selectedDevice}/input`, {
+      if (keycode === 'KEYCODE_HOME') {
+        await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/home`, { method: 'POST' })
+        return
+      }
+      if (keycode === 'KEYCODE_BACK') {
+        await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/back`, { method: 'POST' })
+        return
+      }
+
+      const keyMap: Record<string, number> = {
+        'KEYCODE_APP_SWITCH': 187,
+        'KEYCODE_POWER': 26,
+        'KEYCODE_VOLUME_UP': 24,
+        'KEYCODE_VOLUME_DOWN': 25,
+      }
+
+      await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'key', keycode }),
+        body: JSON.stringify({ keyCode: keyMap[keycode] || 0, action: 'down_up' }),
       })
     } catch (e) {
       console.error('Failed to send key:', e)
