@@ -2,8 +2,8 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-RUN apk add --no-cache git scrcpy
+# Install build dependencies
+RUN apk add --no-cache git
 
 # Copy go mod files
 COPY go.mod go.sum ./
@@ -16,12 +16,12 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.16
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apk add --no-cache scrcpy android-tools
+# Install runtime dependencies (Alpine 3.16 has scrcpy 1.23/1.24)
+RUN apk add --no-cache scrcpy android-tools ffmpeg
 
 # Copy binary from builder
 COPY --from=builder /app/main .

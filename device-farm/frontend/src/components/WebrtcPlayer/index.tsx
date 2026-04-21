@@ -42,6 +42,7 @@ export default function WebrtcPlayer({
   const statsIntervalRef = useRef<number | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
   const reconnectAttemptsRef = useRef(0)
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([])
 
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new')
   const [error, setError] = useState<string | null>(null)
@@ -174,16 +175,39 @@ export default function WebrtcPlayer({
           type: 'answer',
           sdp: message.sdp!,
         })
+
+        // Process any queued ICE candidates now that remote description is set
+        if (pendingCandidatesRef.current.length > 0) {
+          for (const candidate of pendingCandidatesRef.current) {
+            try {
+              await pc.addIceCandidate(candidate)
+            } catch (e) {
+              console.warn('Failed to add queued ICE candidate:', e)
+            }
+          }
+          pendingCandidatesRef.current = [] // Clear queue
+        }
         break
 
       case 'candidate':
         // Add ICE candidate
         if (message.candidate) {
-          await pc.addIceCandidate({
+          const candidateInit = {
             candidate: message.candidate.candidate,
             sdpMid: message.candidate.sdpMid,
             sdpMLineIndex: message.candidate.sdpMLineIndex,
-          })
+          }
+
+          if (pc.remoteDescription) {
+            try {
+              await pc.addIceCandidate(candidateInit)
+            } catch (e) {
+              console.warn('Failed to add ICE candidate:', e)
+            }
+          } else {
+            // Queue candidate until remote description is set
+            pendingCandidatesRef.current.push(candidateInit)
+          }
         }
         break
     }

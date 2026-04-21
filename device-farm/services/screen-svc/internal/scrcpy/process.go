@@ -3,14 +3,13 @@ package scrcpy
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -97,7 +96,7 @@ func NewProcess(deviceID string, config *Config, opts ...ProcessOption) *Process
 	return p
 }
 
-// Start starts the scrcpy process
+// Start starts the scrcpy process using an ffmpeg pipeline for raw H264
 func (p *Process) Start() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -106,37 +105,44 @@ func (p *Process) Start() error {
 		return nil
 	}
 
-	// Get screen dimensions first
+	// 1. Get screen dimensions
 	if err := p.fetchScreenSize(); err != nil {
 		p.logger.Warnf("Failed to get screen size: %v, using defaults", err)
 		p.screenWidth = 1080
 		p.screenHeight = 1920
 	}
 
-	// Build scrcpy command with correct parameters for raw H.264 output
-	// scrcpy 2.x command for raw stream output
-	args := []string{
-		"-s", p.deviceID,
-		"--no-playback",      // Don't show window, just stream
-		"--no-audio",         // No audio
-		"--video-codec=h264", // H.264 codec
-		"--video-source=display",
-		fmt.Sprintf("--max-size=%d", p.config.MaxResolution),
-		fmt.Sprintf("--video-bit-rate=%d", p.config.BitRate),
-		fmt.Sprintf("--max-fps=%d", p.config.MaxFPS),
-		"-",            // Output raw stream to stdout
+	// 2. Resolve tunnel host IP
+	tunnelIP := "127.0.0.1"
+	if b, err := os.ReadFile("/etc/hosts"); err == nil {
+		lines := strings.Split(string(b), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "host.docker.internal") && !strings.Contains(line, ":") {
+				fields := strings.Fields(line)
+				if len(fields) > 0 {
+					tunnelIP = fields[0]
+					break
+				}
+			}
+		}
 	}
 
-	p.logger.Infof("Starting scrcpy: %s %v", p.config.ScrcpyPath, args)
+	// 3. Build the pipeline command
+	// scrcpy 1.24 -> MKV stream -> ffmpeg -> raw H264 NAL units
+	pipeline := fmt.Sprintf(
+		"scrcpy -s %s --no-display --max-size %d --bit-rate %d --max-fps %d --tunnel-host %s --record - --record-format mkv | ffmpeg -i - -c:v copy -f h264 -",
+		p.deviceID, p.config.MaxResolution, p.config.BitRate, p.config.MaxFPS, tunnelIP,
+	)
 
-	p.cmd = exec.CommandContext(p.ctx, p.config.ScrcpyPath, args...)
+	p.logger.Infof("Starting video pipeline: %s", pipeline)
+
+	p.cmd = exec.CommandContext(p.ctx, "sh", "-c", pipeline)
+	
+	// Pass through ADB environment variables
+	p.cmd.Env = os.Environ()
+	p.cmd.Env = append(p.cmd.Env, "SDL_VIDEODRIVER=dummy")
 
 	var err error
-	p.stdin, err = p.cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stdin pipe: %w", err)
-	}
-
 	p.stdout, err = p.cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
@@ -147,21 +153,16 @@ func (p *Process) Start() error {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
-	// Start the process
+	// 4. Start the process
 	if err := p.cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start scrcpy: %w", err)
+		return fmt.Errorf("failed to start pipeline: %w", err)
 	}
 
 	p.running = true
-
-	// Monitor stderr for diagnostics
 	go p.monitorStderr()
-
-	// Monitor process exit
 	go p.monitorProcess()
 
-	p.logger.Infof("Scrcpy process started for device %s", p.deviceID)
-
+	p.logger.Infof("Video pipeline started for device %s", p.deviceID)
 	return nil
 }
 
@@ -180,32 +181,16 @@ func (p *Process) Stop() error {
 		p.cancel()
 	}
 
-	if p.stdin != nil {
-		p.stdin.Close()
-	}
-
 	if p.cmd != nil && p.cmd.Process != nil {
-		// Give process time to exit gracefully
-		done := make(chan error, 1)
-		go func() {
-			done <- p.cmd.Wait()
-		}()
-
-		select {
-		case <-done:
-			p.logger.Infof("Scrcpy process exited gracefully")
-		case <-time.After(2 * time.Second):
-			p.logger.Warnf("Scrcpy process didn't exit, killing")
-			p.cmd.Process.Kill()
-			p.cmd.Wait()
-		}
+		p.cmd.Process.Kill()
+		p.cmd.Wait()
 	}
 
-	p.logger.Infof("Scrcpy process stopped for device %s", p.deviceID)
+	p.logger.Infof("Video pipeline stopped for device %s", p.deviceID)
 	return nil
 }
 
-// Read reads video data from scrcpy output
+// Read reads video data from the pipeline
 func (p *Process) Read(buf []byte) (int, error) {
 	if p.stdout == nil {
 		return 0, io.EOF
@@ -236,13 +221,27 @@ func (p *Process) GetVideoSize() (width, height int) {
 
 // fetchScreenSize gets the device screen dimensions via adb
 func (p *Process) fetchScreenSize() error {
-	cmd := exec.Command(p.config.ADBPath, "-s", p.deviceID, "shell", "wm", "size")
+	adbHost := os.Getenv("ANDROID_ADB_SERVER_ADDRESS")
+	if adbHost == "" {
+		adbHost = os.Getenv("ADB_SERVER_HOST")
+	}
+	adbPort := os.Getenv("ANDROID_ADB_SERVER_PORT")
+	if adbPort == "" {
+		adbPort = os.Getenv("ADB_SERVER_PORT")
+	}
+
+	var cmdArgs []string
+	if adbHost != "" && adbHost != "localhost" {
+		cmdArgs = append(cmdArgs, "-H", adbHost, "-P", adbPort)
+	}
+	cmdArgs = append(cmdArgs, "-s", p.deviceID, "shell", "wm", "size")
+
+	cmd := exec.Command(p.config.ADBPath, cmdArgs...)
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get screen size: %w", err)
 	}
 
-	// Parse output like "Physical size: 1080x1920"
 	line := strings.TrimSpace(string(output))
 	parts := strings.Split(line, ":")
 	if len(parts) != 2 {
@@ -258,28 +257,14 @@ func (p *Process) fetchScreenSize() error {
 	p.screenWidth, _ = strconv.Atoi(sizeParts[0])
 	p.screenHeight, _ = strconv.Atoi(sizeParts[1])
 
-	// Calculate video dimensions based on max resolution
-	if p.screenWidth > p.screenHeight {
-		// Landscape
-		if p.screenWidth > p.config.MaxResolution {
-			p.videoWidth = p.config.MaxResolution
-			p.videoHeight = p.screenHeight * p.config.MaxResolution / p.screenWidth
-		} else {
-			p.videoWidth = p.screenWidth
-			p.videoHeight = p.screenHeight
-		}
+	if p.screenHeight > p.config.MaxResolution {
+		p.videoHeight = p.config.MaxResolution
+		p.videoWidth = p.screenWidth * p.config.MaxResolution / p.screenHeight
 	} else {
-		// Portrait
-		if p.screenHeight > p.config.MaxResolution {
-			p.videoHeight = p.config.MaxResolution
-			p.videoWidth = p.screenWidth * p.config.MaxResolution / p.screenHeight
-		} else {
-			p.videoWidth = p.screenWidth
-			p.videoHeight = p.screenHeight
-		}
+		p.videoWidth = p.screenWidth
+		p.videoHeight = p.screenHeight
 	}
 
-	p.logger.Infof("Screen: %dx%d, Video: %dx%d", p.screenWidth, p.screenHeight, p.videoWidth, p.videoHeight)
 	return nil
 }
 
@@ -292,11 +277,10 @@ func (p *Process) monitorStderr() {
 	scanner := bufio.NewScanner(p.stderr)
 	for scanner.Scan() {
 		line := scanner.Text()
-		// Log important messages
 		if strings.Contains(line, "ERROR") || strings.Contains(line, "WARN") {
-			p.logger.Warnf("[scrcpy stderr] %s", line)
+			p.logger.Warnf("[pipeline] %s", line)
 		} else {
-			p.logger.Debugf("[scrcpy stderr] %s", line)
+			p.logger.Debugf("[pipeline] %s", line)
 		}
 	}
 }
@@ -315,9 +299,9 @@ func (p *Process) monitorProcess() {
 	p.mu.Unlock()
 
 	if wasRunning {
-		p.logger.Warnf("Scrcpy process exited unexpectedly: %v", err)
+		p.logger.Warnf("Pipeline process exited unexpectedly: %v", err)
 		if p.onError != nil {
-			p.onError(fmt.Errorf("scrcpy process exited: %w", err))
+			p.onError(fmt.Errorf("pipeline process exited: %w", err))
 		}
 	}
 }
@@ -335,19 +319,4 @@ func (p *Process) ScaleCoordinate(x, y int) (int, int) {
 	scaledY := y * p.screenHeight / p.videoHeight
 
 	return scaledX, scaledY
-}
-
-// parseUint16 reads a 2-byte big-endian uint16
-func parseUint16(data []byte, offset int) uint16 {
-	return binary.BigEndian.Uint16(data[offset : offset+2])
-}
-
-// parseUint32 reads a 4-byte big-endian uint32
-func parseUint32(data []byte, offset int) uint32 {
-	return binary.BigEndian.Uint32(data[offset : offset+4])
-}
-
-// parseUint64 reads an 8-byte big-endian uint64
-func parseUint64(data []byte, offset int) uint64 {
-	return binary.BigEndian.Uint64(data[offset : offset+8])
 }

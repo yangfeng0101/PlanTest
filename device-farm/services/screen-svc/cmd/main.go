@@ -29,12 +29,11 @@ func main() {
 	logger.Info("Starting Screen Service v2.0...")
 
 	// Create scrcpy config
-	scrcpyConfig := &scrcpy.Config{
-		MaxResolution: cfg.Scrcpy.MaxResolution,
-		MaxFPS:        cfg.Scrcpy.MaxFPS,
-		BitRate:       cfg.Scrcpy.BitRate,
-		Codec:         cfg.Scrcpy.Codec,
-	}
+	scrcpyConfig := scrcpy.DefaultConfig()
+	scrcpyConfig.MaxResolution = cfg.Scrcpy.MaxResolution
+	scrcpyConfig.MaxFPS = cfg.Scrcpy.MaxFPS
+	scrcpyConfig.BitRate = cfg.Scrcpy.BitRate
+	scrcpyConfig.Codec = cfg.Scrcpy.Codec
 
 	// Convert ICE servers from config to webrtc format
 	iceServers := make([]webrtc.ICEServer, 0, len(cfg.WebRTC.ICEServers))
