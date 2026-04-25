@@ -19,11 +19,21 @@ class ADBService:
     def __init__(self):
         self.adb_path = settings.ADB_PATH
         self._devices_cache: Dict[str, Device] = {}
-        self._lock = asyncio.Lock()
+        self._locks: Dict[str, asyncio.Lock] = {}
+        self._global_lock = asyncio.Lock()
 
-    async def execute_adb(self, *args: str, device_id: Optional[str] = None) -> str:
-        """Execute ADB command"""
-        async with self._lock:
+    def _get_device_lock(self, device_id: Optional[str]) -> asyncio.Lock:
+        """Get or create a lock for a specific device"""
+        if not device_id:
+            return self._global_lock
+        if device_id not in self._locks:
+            self._locks[device_id] = asyncio.Lock()
+        return self._locks[device_id]
+
+    async def execute_adb(self, *args: str, device_id: Optional[str] = None, timeout: float = 10.0) -> str:
+        """Execute ADB command with per-device lock and timeout"""
+        lock = self._get_device_lock(device_id)
+        async with lock:
             cmd = [self.adb_path]
             
             # Add host and port if configured
@@ -42,27 +52,32 @@ class ADBService:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                stdout, stderr = await process.communicate()
+                
+                try:
+                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    try:
+                        process.kill()
+                    except:
+                        pass
+                    logger.error(f"ADB command timed out after {timeout}s: {' '.join(cmd)}")
+                    raise Exception(f"ADB command timed out after {timeout}s")
 
                 if process.returncode != 0:
-                    # If it's a daemon not running error, try one more time as ADB might have just started
-                    if "daemon not running" in stderr.decode():
+                    err_msg = stderr.decode().strip()
+                    # If it's a daemon not running error, try one more time
+                    if "daemon not running" in err_msg:
                         await asyncio.sleep(1)
-                        process = await asyncio.create_subprocess_exec(
-                            *cmd,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE
-                        )
-                        stdout, stderr = await process.communicate()
-                        if process.returncode == 0:
-                            return stdout.decode().strip()
+                        # Recursive call with same timeout
+                        return await self.execute_adb(*args, device_id=device_id, timeout=timeout)
 
-                    logger.error(f"ADB command failed: {stderr.decode()}")
-                    raise Exception(f"ADB command failed: {stderr.decode()}")
+                    logger.error(f"ADB command failed: {err_msg}")
+                    raise Exception(f"ADB command failed: {err_msg}")
 
                 return stdout.decode().strip()
             except Exception as e:
-                logger.error(f"Error executing ADB command: {e}")
+                if not isinstance(e, asyncio.TimeoutError):
+                    logger.error(f"Error executing ADB command: {e}")
                 raise
 
     async def list_devices(self) -> List[Dict[str, str]]:

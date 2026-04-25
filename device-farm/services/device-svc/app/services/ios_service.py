@@ -411,12 +411,22 @@ class IOSDeviceService:
             Log content as string
         """
         try:
-            result = await self._execute_pymobiledevice3(
-                "oslog", "stream", "--udid", udid, "--no-color"
+            # oslog stream is continuous, capture for a short time
+            cmd = ["python3", "-m", "pymobiledevice3", "oslog", "stream", "--udid", udid, "--no-color"]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-            # oslog stream is continuous, so we just return empty
-            # In real implementation, would need to handle streaming
-            return result or ""
+
+            try:
+                # Capture logs for 2 seconds
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=2.0)
+                return stdout.decode()
+            except asyncio.TimeoutError:
+                process.terminate()
+                await process.wait()
+                return "Log stream captured for 2 seconds. Use WebSocket for real-time streaming."
         except Exception as e:
             logger.error(f"Error getting device logs: {e}")
             return ""

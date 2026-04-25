@@ -34,6 +34,13 @@ export default function DevicesPage() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Memoize online device IDs to prevent unnecessary WebSocket reconnections
+  const onlineDeviceIds = devices
+    .filter(d => d.status === 'online')
+    .map(d => d.id)
+    .sort()
+    .join(',')
+
   useEffect(() => {
     fetchDevices()
   }, [fetchDevices])
@@ -66,7 +73,7 @@ export default function DevicesPage() {
 
     ws.onopen = () => {
       // Subscribe to all devices' metrics
-      const deviceIds = devices.filter(d => d.status === 'online').map(d => d.id)
+      const deviceIds = onlineDeviceIds.split(',').filter(Boolean)
       if (deviceIds.length > 0 && ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(JSON.stringify({
@@ -82,11 +89,24 @@ export default function DevicesPage() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        if (data.type === 'metrics') {
-          setMetricsMap(prev => ({
-            ...prev,
-            [data.device_id]: data,
-          }))
+        if (data.type === 'metrics' || data.type === 'metrics_update') {
+          // If bulk update (metrics is a map)
+          if (data.metrics && !data.device_id) {
+            setMetricsMap(prev => ({
+              ...prev,
+              ...data.metrics
+            }))
+          } else {
+            // Single device update
+            const deviceId = data.device_id || data.id
+            const metrics = data.metrics || data
+            if (deviceId) {
+              setMetricsMap(prev => ({
+                ...prev,
+                [deviceId]: metrics,
+              }))
+            }
+          }
         }
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e)
@@ -103,7 +123,7 @@ export default function DevicesPage() {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error)
     }
-  }, [devices])
+  }, [onlineDeviceIds])
 
   useEffect(() => {
     if (devices.length > 0) {
@@ -117,7 +137,7 @@ export default function DevicesPage() {
         clearTimeout(reconnectTimeoutRef.current)
       }
     }
-  }, [devices, connectWebSocket])
+  }, [connectWebSocket])
 
   // Filter and sort devices
   const filteredDevices = devices

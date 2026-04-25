@@ -51,6 +51,7 @@ export default function MonitoringPage() {
   const [exporting, setExporting] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const metricsHistoryRef = useRef<DeviceMetrics[]>([])
+  const lastDeviceIdRef = useRef<string | undefined>(undefined)
 
   // Fetch devices on mount
   useEffect(() => {
@@ -86,13 +87,15 @@ export default function MonitoringPage() {
       const metricsResponse = await metricsApi.getDevice(selectedDeviceId)
       setCurrentMetrics(metricsResponse.data)
 
-      // Get history (last 5 minutes)
-      const historyResponse = await metricsApi.getHistory(selectedDeviceId, { hours: 1 })
+      // Get history (last 6 minutes)
+      const historyResponse = await metricsApi.getHistory(selectedDeviceId, { hours: 0.1 })
       const history = historyResponse.data || []
       setMetricsHistory(history)
       metricsHistoryRef.current = history
     } catch (error) {
       console.error('Failed to fetch metrics:', error)
+      setMetricsHistory([])
+      metricsHistoryRef.current = []
     }
   }, [selectedDeviceId])
 
@@ -105,82 +108,100 @@ export default function MonitoringPage() {
 
   // WebSocket connection
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/devices/ws`
+    if (!selectedDeviceId || (wsRef.current && lastDeviceIdRef.current === selectedDeviceId)) {
+      return
+    }
+    
+    lastDeviceIdRef.current = selectedDeviceId
 
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
+    const connectWebSocket = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/devices/ws`
 
-    ws.onopen = () => {
-      console.log('WebSocket connected')
-      setWsConnected(true)
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
 
-      // Subscribe to metrics updates
-      if (selectedDeviceId && ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify({
-            type: 'subscribe_metrics',
-            device_ids: [selectedDeviceId]
-          }))
-        } catch (e) {
-          console.error('Failed to send subscription:', e)
+      ws.onopen = () => {
+        console.log('WebSocket connected')
+        setWsConnected(true)
+
+        // Subscribe to metrics updates
+        if (selectedDeviceId && ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'subscribe_metrics',
+              device_ids: [selectedDeviceId]
+            }))
+          } catch (e) {
+            console.error('Failed to send subscription:', e)
+          }
         }
       }
-    }
 
-    ws.onclose = () => {
-      console.log('WebSocket disconnected')
-      setWsConnected(false)
-    }
+      ws.onclose = () => {
+        console.log('WebSocket disconnected')
+        setWsConnected(false)
+        if (lastDeviceIdRef.current === selectedDeviceId) {
+          wsRef.current = null
+        }
+      }
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-      setWsConnected(false)
-    }
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error)
+        setWsConnected(false)
+      }
 
-    ws.onmessage = (event) => {
-      try {
-        const message: WSMessage = JSON.parse(event.data)
+      ws.onmessage = (event) => {
+        try {
+          const message: WSMessage = JSON.parse(event.data)
 
-        if (message.type === 'metrics_update') {
-          // Handle single device update
-          if (message.device_id === selectedDeviceId && message.metrics) {
-            const metrics = message.metrics as DeviceMetrics
-            setCurrentMetrics(metrics)
-
-            // Update history
-            const newHistory = [...metricsHistoryRef.current, metrics].slice(-60) // Keep last 60 points (5 min at 5s interval)
-            metricsHistoryRef.current = newHistory
-            setMetricsHistory(newHistory)
-          }
-
-          // Handle bulk update
-          if (message.metrics && typeof message.metrics === 'object' && !message.device_id) {
-            const metricsMap = message.metrics as unknown as Record<string, DeviceMetrics>
-            if (selectedDeviceId && metricsMap[selectedDeviceId]) {
-              const metrics = metricsMap[selectedDeviceId]
+          if (message.type === 'metrics_update') {
+            // Handle single device update
+            if (message.device_id === selectedDeviceId && message.metrics) {
+              const metrics = message.metrics as DeviceMetrics
               setCurrentMetrics(metrics)
 
-              const newHistory = [...metricsHistoryRef.current, metrics].slice(-60)
+              // Update history
+              const newHistory = [...metricsHistoryRef.current, metrics].slice(-60) // Keep last 60 points (5 min at 5s interval)
               metricsHistoryRef.current = newHistory
               setMetricsHistory(newHistory)
             }
+
+            // Handle bulk update
+            if (message.metrics && typeof message.metrics === 'object' && !message.device_id) {
+              const metricsMap = message.metrics as unknown as Record<string, DeviceMetrics>
+              if (selectedDeviceId && metricsMap[selectedDeviceId]) {
+                const metrics = metricsMap[selectedDeviceId]
+                setCurrentMetrics(metrics)
+
+                const newHistory = [...metricsHistoryRef.current, metrics].slice(-60)
+                metricsHistoryRef.current = newHistory
+                setMetricsHistory(newHistory)
+              }
+            }
           }
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error)
         }
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error)
       }
     }
 
+    const timer = setTimeout(connectWebSocket, 500)
+
     return () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
-        } catch (e) {
-          // Ignore error during cleanup
+      clearTimeout(timer)
+      const ws = wsRef.current
+      if (ws) {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
+          } catch (e) {
+            // Ignore error during cleanup
+          }
         }
+        ws.close()
+        wsRef.current = null
       }
-      ws.close()
     }
   }, [selectedDeviceId])
 
@@ -244,8 +265,8 @@ export default function MonitoringPage() {
       const date = new Date(m.timestamp + 'Z') // Append Z to treat as UTC
       return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     })
-    const cpuData = metricsHistory.map(m => m.cpu_usage?.toFixed(1) || 0)
-    const memoryData = metricsHistory.map(m => m.memory_usage?.toFixed(1) || 0)
+    const cpuData = metricsHistory.map(m => Math.min(Number(m.cpu_usage || 0), 100).toFixed(1))
+    const memoryData = metricsHistory.map(m => Math.min(Number(m.memory_usage || 0), 100).toFixed(1))
 
     return {
       title: {
@@ -306,8 +327,8 @@ export default function MonitoringPage() {
       const date = new Date(m.timestamp + 'Z')
       return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     })
-    const rxData = metricsHistory.map(m => (m.network_rx_speed_kbps / 1024).toFixed(2))
-    const txData = metricsHistory.map(m => (m.network_tx_speed_kbps / 1024).toFixed(2))
+    const rxData = metricsHistory.map(m => Number(((m.network_rx_speed_kbps || 0) / 1024).toFixed(2)))
+    const txData = metricsHistory.map(m => Number(((m.network_tx_speed_kbps || 0) / 1024).toFixed(2)))
 
     return {
       title: {
@@ -317,7 +338,7 @@ export default function MonitoringPage() {
       },
       tooltip: {
         trigger: 'axis',
-        axisPointer: { type: 'shadow' }
+        axisPointer: { type: 'cross' }
       },
       legend: {
         data: ['Download', 'Upload'],
@@ -332,24 +353,30 @@ export default function MonitoringPage() {
       },
       xAxis: {
         type: 'category',
+        boundaryGap: false,
         data: times
       },
       yAxis: {
         type: 'value',
+        min: 0,
         axisLabel: { formatter: '{value}' }
       },
       series: [
         {
           name: 'Download',
-          type: 'bar',
+          type: 'line',
+          smooth: true,
           data: rxData,
-          itemStyle: { color: '#1890ff' }
+          lineStyle: { color: '#1890ff' },
+          areaStyle: { color: 'rgba(24, 144, 255, 0.1)' }
         },
         {
           name: 'Upload',
-          type: 'bar',
+          type: 'line',
+          smooth: true,
           data: txData,
-          itemStyle: { color: '#faad14' }
+          lineStyle: { color: '#faad14' },
+          areaStyle: { color: 'rgba(250, 173, 20, 0.1)' }
         }
       ]
     }
@@ -567,7 +594,7 @@ export default function MonitoringPage() {
               >
                 <Progress
                   type="dashboard"
-                  percent={currentMetrics.cpu_usage}
+                  percent={Math.min(currentMetrics.cpu_usage, 100)}
                   strokeColor={getProgressColor(getMetricStatus(currentMetrics.cpu_usage, 'cpu'))}
                   format={(percent) => (
                     <span style={{
@@ -594,7 +621,7 @@ export default function MonitoringPage() {
               >
                 <Progress
                   type="dashboard"
-                  percent={currentMetrics.memory_usage}
+                  percent={Math.min(currentMetrics.memory_usage, 100)}
                   strokeColor={getProgressColor(getMetricStatus(currentMetrics.memory_usage, 'memory'))}
                   format={(percent) => (
                     <span style={{
@@ -661,7 +688,7 @@ export default function MonitoringPage() {
                   <Col span={12}>
                     <Statistic
                       title="下载"
-                      value={(currentMetrics.network_rx_speed_kbps / 1024).toFixed(2)}
+                      value={((currentMetrics.network_rx_speed_kbps || 0) / 1024).toFixed(2)}
                       suffix="MB/s"
                       valueStyle={{ fontSize: 16 }}
                     />
@@ -669,7 +696,7 @@ export default function MonitoringPage() {
                   <Col span={12}>
                     <Statistic
                       title="上传"
-                      value={(currentMetrics.network_tx_speed_kbps / 1024).toFixed(2)}
+                      value={((currentMetrics.network_tx_speed_kbps || 0) / 1024).toFixed(2)}
                       suffix="MB/s"
                       valueStyle={{ fontSize: 16 }}
                     />

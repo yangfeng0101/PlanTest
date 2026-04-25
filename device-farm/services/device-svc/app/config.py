@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # Server config
     HOST: str = "0.0.0.0"
     PORT: int = 8001
-    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    DEBUG: bool = True
 
     # API config
     API_PREFIX: str = "/api/v1"
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     WS_CLEANUP_INTERVAL: int = 60  # seconds between cleanup runs
 
     # Metrics collection config
-    METRICS_COLLECTION_INTERVAL: int = 30  # seconds between metrics collection
+    METRICS_COLLECTION_INTERVAL: int = 10  # seconds between metrics collection
     METRICS_HISTORY_RETENTION_HOURS: int = 24  # hours to retain metrics history
     METRICS_PUSH_INTERVAL: int = 5  # seconds between WebSocket metrics push
 

@@ -73,7 +73,7 @@ async def get_device_metrics_history(
     device_id: str,
     start_time: Optional[datetime] = Query(None, description="Start time (ISO format)"),
     end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
-    hours: Optional[int] = Query(1, description="Hours to look back (default 1)"),
+    hours: Optional[float] = Query(1, description="Hours to look back (default 1)"),
 ):
     """
     Get historical metrics for a device.
@@ -112,7 +112,7 @@ async def get_device_metrics_aggregation(
     device_id: str,
     start_time: Optional[datetime] = Query(None, description="Start time (ISO format)"),
     end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
-    hours: Optional[int] = Query(1, description="Hours to aggregate (default 1)"),
+    hours: Optional[float] = Query(1, description="Hours to aggregate (default 1)"),
 ):
     """
     Get aggregated metrics statistics for a device.
@@ -480,7 +480,7 @@ async def export_metrics(
     device_ids: Optional[List[str]] = Query(None, description="Device IDs to export (empty for all)"),
     start_time: Optional[datetime] = Query(None, description="Start time (ISO format)"),
     end_time: Optional[datetime] = Query(None, description="End time (ISO format)"),
-    hours: Optional[int] = Query(1, description="Hours to look back (default 1)"),
+    hours: Optional[float] = Query(1, description="Hours to look back (default 1)"),
     format: str = Query("json", description="Export format: json or csv"),
 ):
     """

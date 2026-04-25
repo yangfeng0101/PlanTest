@@ -413,6 +413,9 @@ class TestGeneratorService:
             f"# Description: {test_case.description}",
             f"# Type: {test_case.test_type.value}",
             "",
+            "import time",
+            "from appium.webdriver.common.appiumby import AppiumBy",
+            "",
             "def test_case(driver):",
         ]
 
@@ -420,11 +423,11 @@ class TestGeneratorService:
             lines.append(f"    # Step {i}: {step.description}")
 
             if step.step_type == TestStepType.CLICK:
-                lines.append(f"    element = driver.find_element_by_description('{step.target}')")
+                lines.append(f"    element = driver.find_element(AppiumBy.ACCESSIBILITY_ID, '{step.target}')")
                 lines.append("    element.click()")
 
             elif step.step_type == TestStepType.INPUT:
-                lines.append(f"    element = driver.find_element_by_description('{step.target}')")
+                lines.append(f"    element = driver.find_element(AppiumBy.ACCESSIBILITY_ID, '{step.target}')")
                 if step.value:
                     lines.append(f"    element.send_keys('{step.value}')")
 

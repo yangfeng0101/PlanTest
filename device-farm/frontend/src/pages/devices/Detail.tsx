@@ -28,14 +28,6 @@ const THRESHOLDS = {
   temperature: { warning: 45, critical: 55 },
 }
 
-// WebSocket message types
-interface WSMessage {
-  type: string
-  device_id?: string
-  metrics?: DeviceMetrics
-  [key: string]: unknown
-}
-
 // Get status color based on metric value
 const getMetricStatus = (value: number, type: 'cpu' | 'memory' | 'battery' | 'temperature') => {
   const threshold = THRESHOLDS[type]
@@ -100,6 +92,7 @@ export default function DeviceDetail() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const metricsHistoryRef = useRef<DeviceMetrics[]>([])
+  const lastDeviceIdRef = useRef<string | undefined>(undefined)
 
   // Fetch device details
   useEffect(() => {
@@ -156,6 +149,8 @@ export default function DeviceDetail() {
       metricsHistoryRef.current = history
     } catch (error) {
       console.error('Failed to fetch metrics:', error)
+      setMetricsHistory([])
+      metricsHistoryRef.current = []
     } finally {
       setMetricsLoading(false)
     }
@@ -163,64 +158,101 @@ export default function DeviceDetail() {
 
   // WebSocket connection for real-time metrics
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/devices/ws`
-
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      console.log('WebSocket connected for metrics')
-      setWsConnected(true)
-
-      // Subscribe to this device's metrics updates
-      if (deviceId && ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify({
-            type: 'subscribe_metrics',
-            device_ids: [deviceId]
-          }))
-        } catch (e) {
-          console.error('Failed to send subscription:', e)
-        }
-      }
+    if (!deviceId || (wsRef.current && lastDeviceIdRef.current === deviceId)) {
+      return
     }
+    
+    lastDeviceIdRef.current = deviceId
 
-    ws.onclose = () => {
-      console.log('WebSocket disconnected')
-      setWsConnected(false)
-    }
+    const connectWebSocket = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/devices/ws`
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-    }
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
 
-    ws.onmessage = (event) => {
-      try {
-        const message: WSMessage = JSON.parse(event.data)
+      ws.onopen = () => {
+        console.log('WebSocket connected for metrics')
+        setWsConnected(true)
 
-        if (message.type === 'metrics_update') {
-          // Handle single device update
-          if (message.device_id === deviceId && message.metrics) {
-            setCurrentMetrics(message.metrics)
-
-            // Update history (keep last 60 points = 5 min at 5s interval)
-            const newHistory = [...metricsHistoryRef.current, message.metrics].slice(-60)
-            metricsHistoryRef.current = newHistory
-            setMetricsHistory(newHistory)
+        // Subscribe to this device's metrics updates
+        if (deviceId && ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'subscribe_metrics',
+              device_ids: [deviceId]
+            }))
+          } catch (e) {
+            console.error('Failed to send subscription:', e)
           }
         }
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error)
+      }
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected')
+        setWsConnected(false)
+        // Clear ref on close so we can reconnect if needed
+        if (lastDeviceIdRef.current === deviceId) {
+          wsRef.current = null
+        }
+      }
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error)
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+
+          if (data.type === 'metrics' || data.type === 'metrics_update') {
+            let metrics: DeviceMetrics | null = null
+
+            // Handle single device update
+            const msgDeviceId = data.device_id || data.id
+            if (msgDeviceId === deviceId) {
+              metrics = data.metrics || (data.type === 'metrics' ? data : null)
+            } 
+            // Handle bulk update (metrics is a map)
+            else if (data.metrics && typeof data.metrics === 'object' && !msgDeviceId) {
+              const metricsMap = data.metrics as unknown as Record<string, DeviceMetrics>
+              if (deviceId && metricsMap[deviceId]) {
+                metrics = metricsMap[deviceId]
+              }
+            }
+
+            if (metrics) {
+              setCurrentMetrics(metrics)
+
+              // Update history (keep last 60 points = 5 min at 5s interval)
+              const newHistory = [...metricsHistoryRef.current, metrics].slice(-60)
+              metricsHistoryRef.current = newHistory
+              setMetricsHistory(newHistory)
+            }
+          }
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error)
+        }
       }
     }
 
+    const timer = setTimeout(connectWebSocket, 500)
+
     return () => {
-      // Cleanup: unsubscribe and close WebSocket
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
+      clearTimeout(timer)
+      const ws = wsRef.current
+      if (ws) {
+        // Cleanup: unsubscribe and close WebSocket
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
+          } catch (e) {
+            // Ignore error during cleanup
+          }
+        }
+        ws.close()
+        wsRef.current = null
       }
-      ws.close()
     }
   }, [deviceId])
 
@@ -281,16 +313,6 @@ export default function DeviceDetail() {
     }
   }
 
-  // Resubscribe when device changes
-  useEffect(() => {
-    if (wsRef.current && wsConnected && deviceId) {
-      wsRef.current.send(JSON.stringify({
-        type: 'subscribe_metrics',
-        device_ids: [deviceId]
-      }))
-    }
-  }, [deviceId, wsConnected])
-
   const statusConfig: Record<string, { color: string; text: string }> = {
     online: { color: 'green', text: '在线' },
     offline: { color: 'default', text: '离线' },
@@ -300,9 +322,9 @@ export default function DeviceDetail() {
 
   // Chart options for CPU/Memory mini trend
   const getCpuMemoryMiniChartOption = (): EChartsOption => {
-    const times = metricsHistory.map(m => new Date(m.timestamp).toLocaleTimeString())
-    const cpuData = metricsHistory.map(m => m.cpu_usage?.toFixed(1) || 0)
-    const memoryData = metricsHistory.map(m => m.memory_usage?.toFixed(1) || 0)
+    const times = metricsHistory.map(m => new Date(m.timestamp + 'Z').toLocaleTimeString())
+    const cpuData = metricsHistory.map(m => Math.min(Number(m.cpu_usage || 0), 100).toFixed(1))
+    const memoryData = metricsHistory.map(m => Math.min(Number(m.memory_usage || 0), 100).toFixed(1))
 
     return {
       tooltip: {
@@ -360,7 +382,7 @@ export default function DeviceDetail() {
 
   // Chart options for Battery mini trend
   const getBatteryMiniChartOption = (): EChartsOption => {
-    const times = metricsHistory.map(m => new Date(m.timestamp).toLocaleTimeString())
+    const times = metricsHistory.map(m => new Date(m.timestamp + 'Z').toLocaleTimeString())
     const batteryData = metricsHistory.map(m => m.battery_level)
 
     return {
@@ -408,6 +430,65 @@ export default function DeviceDetail() {
     }
   }
 
+  // Chart options for Network mini trend
+  const getNetworkMiniChartOption = (): EChartsOption => {
+    const times = metricsHistory.map(m => new Date(m.timestamp + 'Z').toLocaleTimeString())
+    const rxData = metricsHistory.map(m => Number(((m.network_rx_speed_kbps || 0) / 1024).toFixed(2)))
+    const txData = metricsHistory.map(m => Number(((m.network_tx_speed_kbps || 0) / 1024).toFixed(2)))
+
+    return {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' }
+      },
+      legend: {
+        data: ['下载', '上传'],
+        top: 0,
+        textStyle: { fontSize: 10 }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        top: 30,
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: times,
+        axisLabel: { show: false },
+        axisTick: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        min: 0,
+        axisLabel: { fontSize: 10 },
+        splitLine: { lineStyle: { type: 'dashed' } }
+      },
+      series: [
+        {
+          name: '下载',
+          type: 'line',
+          smooth: true,
+          symbol: 'none',
+          data: rxData,
+          lineStyle: { color: '#1890ff', width: 2 },
+          areaStyle: { color: 'rgba(24, 144, 255, 0.1)' }
+        },
+        {
+          name: '上传',
+          type: 'line',
+          smooth: true,
+          symbol: 'none',
+          data: txData,
+          lineStyle: { color: '#faad14', width: 2 },
+          areaStyle: { color: 'rgba(250, 173, 20, 0.1)' }
+        }
+      ]
+    }
+  }
+
   // Metrics Tab Content
   const MetricsTabContent = () => {
     if (metricsLoading && !currentMetrics) {
@@ -434,7 +515,7 @@ export default function DeviceDetail() {
             {wsConnected ? '实时更新已连接' : '实时更新断开'}
           </Tag>
           <Text type="secondary" style={{ marginLeft: 8 }}>
-            最近更新: {new Date(currentMetrics.timestamp).toLocaleString()}
+            最近更新: {new Date(currentMetrics.timestamp + 'Z').toLocaleString()}
           </Text>
         </div>
 
@@ -448,7 +529,7 @@ export default function DeviceDetail() {
                 <Progress
                   type="dashboard"
                   width={80}
-                  percent={currentMetrics.cpu_usage}
+                  percent={Math.min(currentMetrics.cpu_usage, 100)}
                   strokeColor={getProgressColor(getMetricStatus(currentMetrics.cpu_usage, 'cpu'))}
                   format={(percent) => (
                     <span style={{
@@ -479,7 +560,7 @@ export default function DeviceDetail() {
                 <Progress
                   type="dashboard"
                   width={80}
-                  percent={currentMetrics.memory_usage}
+                  percent={Math.min(currentMetrics.memory_usage, 100)}
                   strokeColor={getProgressColor(getMetricStatus(currentMetrics.memory_usage, 'memory'))}
                   format={(percent) => (
                     <span style={{
@@ -540,7 +621,7 @@ export default function DeviceDetail() {
                   <Col span={12}>
                     <Statistic
                       title="下载"
-                      value={(currentMetrics.network_rx_speed_kbps / 1024).toFixed(2)}
+                      value={((currentMetrics.network_rx_speed_kbps || 0) / 1024).toFixed(2)}
                       suffix="MB/s"
                       valueStyle={{ fontSize: 14 }}
                     />
@@ -548,7 +629,7 @@ export default function DeviceDetail() {
                   <Col span={12}>
                     <Statistic
                       title="上传"
-                      value={(currentMetrics.network_tx_speed_kbps / 1024).toFixed(2)}
+                      value={((currentMetrics.network_tx_speed_kbps || 0) / 1024).toFixed(2)}
                       suffix="MB/s"
                       valueStyle={{ fontSize: 14 }}
                     />
@@ -564,7 +645,7 @@ export default function DeviceDetail() {
 
         {/* Mini Trend Charts */}
         <Row gutter={16} style={{ marginTop: 16 }}>
-          <Col span={12}>
+          <Col span={8}>
             <Card size="small" title="CPU & 内存趋势 (最近5分钟)">
               <ReactECharts
                 option={getCpuMemoryMiniChartOption()}
@@ -573,10 +654,19 @@ export default function DeviceDetail() {
               />
             </Card>
           </Col>
-          <Col span={12}>
+          <Col span={8}>
             <Card size="small" title="电池趋势 (最近5分钟)">
               <ReactECharts
                 option={getBatteryMiniChartOption()}
+                style={{ height: 150 }}
+                opts={{ renderer: 'canvas' }}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card size="small" title="网络速度趋势 (最近5分钟)">
+              <ReactECharts
+                option={getNetworkMiniChartOption()}
                 style={{ height: 150 }}
                 opts={{ renderer: 'canvas' }}
               />

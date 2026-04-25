@@ -40,8 +40,9 @@ class MetricsCollector:
         return self._redis
 
     async def collect_android_metrics(self, device_id: str) -> Optional[DeviceMetrics]:
-        """Collect metrics from Android device using ADB"""
+        """Collect metrics from Android device using ADB with detailed logging"""
         try:
+            logger.debug(f"Starting metrics collection for device: {device_id}")
             metrics = DeviceMetrics(device_id=device_id)
 
             # Get CPU usage
@@ -50,19 +51,7 @@ class MetricsCollector:
                 device_id=device_id
             )
             metrics.cpu_usage = self._parse_android_cpu(cpu_output)
-
-            # Get CPU temperature
-            try:
-                temp_output = await adb_service.execute_adb(
-                    "shell", "cat", "/sys/class/thermal/thermal_zone0/temp",
-                    device_id=device_id
-                )
-                if temp_output and temp_output.isdigit():
-                    temp = int(temp_output) / 1000.0  # Convert from millidegrees
-                    metrics.cpu_temperature = temp
-                    metrics.device_temperature = temp
-            except Exception:
-                pass
+            logger.debug(f"[{device_id}] CPU output: {cpu_output[:100]}... Result: {metrics.cpu_usage}%")
 
             # Get memory info
             mem_output = await adb_service.execute_adb(
@@ -73,7 +62,7 @@ class MetricsCollector:
             metrics.memory_usage = mem_data.get("usage", 0.0)
             metrics.memory_total_mb = mem_data.get("total_mb")
             metrics.memory_used_mb = mem_data.get("used_mb")
-            metrics.memory_free_mb = mem_data.get("free_mb")
+            logger.debug(f"[{device_id}] Memory usage: {metrics.memory_usage}% ({metrics.memory_used_mb}/{metrics.memory_total_mb} MB)")
 
             # Get network info
             net_output = await adb_service.execute_adb(
@@ -85,6 +74,7 @@ class MetricsCollector:
             metrics.network_tx_bytes = net_data.get("tx_bytes", 0)
             metrics.network_rx_speed_kbps = net_data.get("rx_speed_kbps", 0.0)
             metrics.network_tx_speed_kbps = net_data.get("tx_speed_kbps", 0.0)
+            logger.debug(f"[{device_id}] Network RX: {metrics.network_rx_bytes}, TX: {metrics.network_tx_bytes}, Speed: {metrics.network_rx_speed_kbps} KB/s")
 
             # Get battery info
             battery_output = await adb_service.execute_adb(
@@ -94,42 +84,31 @@ class MetricsCollector:
             battery_data = self._parse_android_battery(battery_output)
             metrics.battery_level = battery_data.get("level", 100)
             metrics.battery_status = battery_data.get("status", "unknown")
-            metrics.battery_temperature = battery_data.get("temperature")
-
-            # Get uptime
-            try:
-                uptime_output = await adb_service.execute_adb(
-                    "shell", "cat", "/proc/uptime",
-                    device_id=device_id
-                )
-                if uptime_output:
-                    uptime_str = uptime_output.split()[0]
-                    metrics.uptime_seconds = int(float(uptime_str))
-            except Exception:
-                pass
+            logger.debug(f"[{device_id}] Battery: {metrics.battery_level}%, status: {metrics.battery_status}")
 
             return metrics
 
         except Exception as e:
-            logger.error(f"Error collecting Android metrics for {device_id}: {e}")
+            logger.error(f"Error collecting Android metrics for {device_id}: {e}", exc_info=True)
             return None
 
     def _parse_android_cpu(self, output: str) -> float:
-        """Parse CPU usage from dumpsys cpuinfo output"""
+        """Parse CPU usage from dumpsys cpuinfo output (improved)"""
         try:
-            # Look for total CPU usage line like: "Total: 25% user + 10% kernel + 5% iowait + 1% irq + 1% softirq"
+            # Common patterns:
+            # 1. "Total: 25% user + ..."
+            # 2. "25% TOTAL: 12% user + ..."
+            # 3. "TOTAL: 25%"
             for line in output.split('\n'):
-                if line.strip().startswith('Total:'):
-                    # Extract percentages
-                    total = 0.0
-                    matches = re.findall(r'(\d+(?:\.\d+)?)%', line)
-                    for match in matches:
-                        total += float(match)
-                    return min(total, 100.0)
+                line = line.strip()
+                if line.startswith('Total:') or 'TOTAL:' in line:
+                    match = re.search(r'(\d+(?:\.\d+)?)%', line)
+                    if match:
+                        return min(float(match.group(1)), 100.0)
 
-            # Fallback: look for line like "25% TOTAL"
+            # Fallback: look for ANY percentage in a line containing TOTAL
             for line in output.split('\n'):
-                if 'TOTAL' in line:
+                if 'TOTAL' in line.upper():
                     match = re.search(r'(\d+(?:\.\d+)?)%', line)
                     if match:
                         return min(float(match.group(1)), 100.0)
@@ -139,36 +118,39 @@ class MetricsCollector:
             return 0.0
 
     def _parse_android_memory(self, output: str) -> Dict[str, Any]:
-        """Parse memory info from dumpsys meminfo output"""
+        """Parse memory info from dumpsys meminfo output (improved)"""
         try:
             result = {}
             total_mem = 0
-            used_mem = 0
             free_mem = 0
+            used_mem = 0
 
             for line in output.split('\n'):
-                # Match: "Total RAM: 7,701,716K (status normal)"
-                if 'Total RAM:' in line:
-                    match = re.search(r'(\d+(?:,\d+)*)K', line)
+                line = line.strip()
+                # Total RAM patterns - use strict matching
+                if line.startswith('Total RAM:'):
+                    match = re.search(r'Total RAM:\s*(\d+(?:,\d+)*)K', line)
                     if match:
                         total_mem = int(match.group(1).replace(',', ''))
 
-                # Match: "Free RAM: 3,840,614K ..."
-                if 'Free RAM:' in line:
-                    match = re.search(r'(\d+(?:,\d+)*)K', line)
+                # Free RAM patterns
+                elif line.startswith('Free RAM:'):
+                    match = re.search(r'Free RAM:\s*(\d+(?:,\d+)*)K', line)
                     if match:
                         free_mem = int(match.group(1).replace(',', ''))
 
-                # Match: "Used RAM: 5,412,310K ..."
-                if 'Used RAM:' in line:
-                    match = re.search(r'(\d+(?:,\d+)*)K', line)
+                # Used RAM patterns
+                elif line.startswith('Used RAM:'):
+                    match = re.search(r'Used RAM:\s*(\d+(?:,\d+)*)K', line)
                     if match:
                         used_mem = int(match.group(1).replace(',', ''))
 
             if total_mem > 0:
-                # If Used RAM not found, calculate from Total - Free
                 if used_mem == 0 and free_mem > 0:
                     used_mem = total_mem - free_mem
+                elif used_mem == 0:
+                    # Try to find "Lost RAM" and other components if available
+                    pass
 
                 result["usage"] = (used_mem / total_mem) * 100 if used_mem > 0 else 0.0
                 result["total_mb"] = total_mem // 1024
@@ -183,39 +165,71 @@ class MetricsCollector:
         """Parse network info from /proc/net/dev output"""
         try:
             result = {"rx_bytes": 0, "tx_bytes": 0, "rx_speed_kbps": 0.0, "tx_speed_kbps": 0.0}
+            candidates = []
 
-            # Find wlan0 or rmnet0 interface
+            # Find interfaces with traffic
             for line in output.split('\n'):
-                if 'wlan0' in line or 'rmnet0' in line:
-                    # Format: interface: rx_bytes rx_packets rx_errs rx_drop rx_fifo rx_frame rx_compressed rx_multicast
-                    #                       tx_bytes tx_packets tx_errs tx_drop tx_fifo tx_colls tx_carrier tx_compressed
-                    parts = line.split()
-                    if len(parts) >= 10:
-                        interface = parts[0].rstrip(':')
-                        rx_bytes = int(parts[1])
-                        tx_bytes = int(parts[9])
-                        result["rx_bytes"] = rx_bytes
-                        result["tx_bytes"] = tx_bytes
+                if ':' in line:
+                    interface_part, stats_part = line.split(':', 1)
+                    interface = interface_part.strip()
+                    # Skip loopback
+                    if interface == 'lo':
+                        continue
+                    
+                    stats = stats_part.split()
+                    if len(stats) >= 10:
+                        rx_bytes = int(stats[0]) # RX bytes is always 1st in stats part
+                        tx_bytes = int(stats[8]) # TX bytes is always 9th in stats part
+                        
+                        # Only consider interfaces with traffic
+                        if rx_bytes > 0 or tx_bytes > 0:
+                            candidates.append({
+                                "interface": interface,
+                                "rx_bytes": rx_bytes,
+                                "tx_bytes": tx_bytes
+                            })
 
-                        # Calculate speed
-                        now = datetime.utcnow()
-                        if device_id in self._previous_network:
-                            prev_rx = self._previous_network[device_id].get("rx_bytes", 0)
-                            prev_tx = self._previous_network[device_id].get("tx_bytes", 0)
-                            prev_time = self._previous_time.get(device_id, now)
+            if not candidates:
+                return result
 
-                            time_diff = (now - prev_time).total_seconds()
-                            if time_diff > 0:
-                                rx_diff = rx_bytes - prev_rx
-                                tx_diff = tx_bytes - prev_tx
-                                # Convert to KB/s
-                                result["rx_speed_kbps"] = (rx_diff / time_diff) / 1024
-                                result["tx_speed_kbps"] = (tx_diff / time_diff) / 1024
+            # Prefer wlan0 or rmnet0, otherwise take the one with most traffic
+            selected = None
+            for c in candidates:
+                if c["interface"] in ['wlan0', 'rmnet0', 'eth0', 'any']:
+                    selected = c
+                    break
+            
+            if not selected:
+                # Sort by total traffic and take highest
+                candidates.sort(key=lambda x: x["rx_bytes"] + x["tx_bytes"], reverse=True)
+                selected = candidates[0]
 
-                        # Update previous values
-                        self._previous_network[device_id] = {"rx_bytes": rx_bytes, "tx_bytes": tx_bytes}
-                        self._previous_time[device_id] = now
-                        break
+            rx_bytes = selected["rx_bytes"]
+            tx_bytes = selected["tx_bytes"]
+            result["rx_bytes"] = rx_bytes
+            result["tx_bytes"] = tx_bytes
+
+            logger.debug(f"Parsed network for {device_id}: {rx_bytes} / {tx_bytes}")
+
+            # Calculate speed
+            now = datetime.utcnow()
+            if device_id in self._previous_network:
+                prev_rx = self._previous_network[device_id].get("rx_bytes", 0)
+                prev_tx = self._previous_network[device_id].get("tx_bytes", 0)
+                prev_time = self._previous_time.get(device_id, now)
+
+                time_diff = (now - prev_time).total_seconds()
+                # Ensure time_diff is reasonable (prevent spikes from long gaps)
+                if 0.1 < time_diff < settings.METRICS_COLLECTION_INTERVAL * 5:
+                    rx_diff = max(0, rx_bytes - prev_rx)
+                    tx_diff = max(0, tx_bytes - prev_tx)
+                    # Convert to KB/s
+                    result["rx_speed_kbps"] = (rx_diff / time_diff) / 1024
+                    result["tx_speed_kbps"] = (tx_diff / time_diff) / 1024
+
+            # Update previous values
+            self._previous_network[device_id] = {"rx_bytes": rx_bytes, "tx_bytes": tx_bytes}
+            self._previous_time[device_id] = now
 
             return result
         except Exception:
@@ -551,15 +565,24 @@ class MetricsCollector:
         logger.info("Metrics collection stopped")
 
     async def _collection_loop(self):
-        """Background loop for metrics collection"""
+        """Background loop for metrics collection (parallelized)"""
         while self._running:
             try:
-                # Get all online devices
+                # Get all online and busy devices
                 devices = await device_service.get_devices()
+                online_devices = [d for d in devices if d.status in ["online", "busy"]]
 
-                for device in devices:
-                    if device.status == "online":
-                        metrics = await self.collect_device_metrics(device)
+                if online_devices:
+                    # Collect metrics in parallel with individual timeouts
+                    tasks = [self.collect_device_metrics(device) for device in online_devices]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    for i, metrics in enumerate(results):
+                        device = online_devices[i]
+                        if isinstance(metrics, Exception):
+                            logger.error(f"Task error collecting metrics for {device.id}: {metrics}")
+                            continue
+                            
                         if metrics:
                             self._metrics_cache[device.id] = metrics
                             await self.store_metrics(metrics)
