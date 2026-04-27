@@ -456,6 +456,9 @@ class MetricsCollector:
         elif device.os == "ios":
             return await self.collect_ios_metrics(device.id)
         elif device.os == "harmony":
+            adb_metrics = await self.collect_android_metrics(device.id)
+            if adb_metrics:
+                return adb_metrics
             return await self.collect_harmony_metrics(device.id)
         else:
             logger.warning(f"Unknown OS type for device {device.id}: {device.os}")
@@ -473,6 +476,7 @@ class MetricsCollector:
                 timedelta(hours=24),
                 metrics.model_dump_json()
             )
+            await device_service.update_device_battery_level(metrics.device_id, metrics.battery_level)
 
             # Also add to time-series list for history
             history_key = f"metrics_history:{metrics.device_id}"

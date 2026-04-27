@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Card, Row, Col, Select, Button, Space, message, Typography } from 'antd'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Button, Space, message, Typography, Table } from 'antd'
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
   FullscreenOutlined,
   VideoCameraOutlined,
+  HomeOutlined,
+  RollbackOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons'
 import { Room } from 'livekit-client'
 import type { Device } from '@/types'
@@ -13,31 +16,100 @@ import WebrtcPlayer from '@/components/WebrtcPlayer'
 import { TouchOverlay } from '@/components/TouchHandler'
 import './ScreenPage.css'
 
-const { Option } = Select
 const { Text } = Typography
 
 const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || ''
 const TOUCH_MOVE_INTERVAL_MS = 16
 
+interface UIElementBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface UISelectorSuggestion {
+  type: string
+  value: string
+}
+
+interface UIElementNode {
+  uid: string
+  parent_uid?: string | null
+  depth: number
+  index: number
+  class_name: string
+  resource_id: string
+  text: string
+  content_desc: string
+  package: string
+  bounds: UIElementBounds
+  center: { x: number; y: number }
+  clickable: boolean
+  enabled: boolean
+  selected: boolean
+  focused: boolean
+  scrollable: boolean
+  xpath: string
+  selector_suggestions: UISelectorSuggestion[]
+  attributes?: Record<string, unknown>
+}
+
+interface UIHierarchyResponse {
+  device_id: string
+  platform: string
+  captured_at: string
+  screen: { width: number; height: number }
+  elements: UIElementNode[]
+}
+
+interface RenderMetrics {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export default function ScreenPage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const deviceIdFromUrl = searchParams.get('deviceId')
+  const missingDeviceMessageShownRef = useRef(false)
   const playerContainerRef = useRef<HTMLDivElement>(null)
 
   const [devices, setDevices] = useState<Device[]>([])
   const [selectedDevice, setSelectedDevice] = useState<string>(deviceIdFromUrl || '')
   const [deviceInfo, setDeviceInfo] = useState<{ width: number; height: number } | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(Boolean(deviceIdFromUrl))
   const [fps, setFps] = useState(0)
   const [connectionState, setConnectionState] = useState<string>('idle')
   const [hasVideoFrame, setHasVideoFrame] = useState(false)
+  const [uiElements, setUiElements] = useState<UIElementNode[]>([])
+  const [selectedUiElement, setSelectedUiElement] = useState<UIElementNode | null>(null)
+  const [loadingUiHierarchy, setLoadingUiHierarchy] = useState(false)
+  const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null)
+  const [uiScreen, setUiScreen] = useState<{ width: number; height: number } | null>(null)
   
   // LiveKit state
   const [lkSession, setLkSession] = useState<{ url: string; token: string } | null>(null)
   const lkRoomRef = useRef<Room | null>(null)
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null)
   const moveTimerRef = useRef<number | null>(null)
+  const autoStartedDeviceRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (deviceIdFromUrl) {
+      setSelectedDevice(deviceIdFromUrl)
+      return
+    }
+
+    if (!missingDeviceMessageShownRef.current) {
+      missingDeviceMessageShownRef.current = true
+      message.warning('请先选择设备')
+    }
+    navigate('/devices', { replace: true })
+  }, [deviceIdFromUrl, navigate])
 
   // Fetch devices
   useEffect(() => {
@@ -76,7 +148,7 @@ export default function ScreenPage() {
   }, [selectedDevice])
 
   // Start session on backend
-  const startSession = async () => {
+  const startSession = useCallback(async () => {
     if (!selectedDevice) return
     setLoading(true)
     try {
@@ -105,7 +177,14 @@ export default function ScreenPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedDevice])
+
+  useEffect(() => {
+    if (!selectedDevice || isPlaying || lkSession || autoStartedDeviceRef.current === selectedDevice) return
+
+    autoStartedDeviceRef.current = selectedDevice
+    void startSession()
+  }, [isPlaying, lkSession, selectedDevice, startSession])
 
   const stopSession = async () => {
     if (!selectedDevice) return
@@ -113,6 +192,7 @@ export default function ScreenPage() {
     setLkSession(null)
     setHasVideoFrame(false)
     setConnectionState('idle')
+    clearUiHierarchy()
     flushPendingMove()
     lkRoomRef.current = null
     try {
@@ -186,6 +266,44 @@ export default function ScreenPage() {
     setFps(stats.fps)
   }, [])
 
+  const clearUiHierarchy = useCallback(() => {
+    setUiElements([])
+    setSelectedUiElement(null)
+    setUiScreen(null)
+  }, [])
+
+  const fetchUiHierarchy = useCallback(async () => {
+    if (!selectedDevice) return
+    if (!isPlaying) {
+      message.warning('请先连接投屏后再获取控件')
+      return
+    }
+
+    setLoadingUiHierarchy(true)
+    try {
+      const res = await fetch(`/api/v1/devices/${selectedDevice}/ui-hierarchy`, {
+        credentials: 'include',
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || '获取控件失败')
+      }
+
+      const result = data as UIHierarchyResponse
+      setUiElements(result.elements || [])
+      setSelectedUiElement(null)
+      if (result.screen?.width > 0 && result.screen?.height > 0) {
+        setUiScreen({ width: result.screen.width, height: result.screen.height })
+      }
+      message.success(`获取到 ${result.elements?.length || 0} 个控件，点击控件框查看属性`)
+    } catch (e) {
+      const error = e as Error
+      message.error(error.message || '获取控件失败')
+    } finally {
+      setLoadingUiHierarchy(false)
+    }
+  }, [isPlaying, selectedDevice])
+
   const handleConnectionStateChange = useCallback((state: string) => {
     setConnectionState(state)
     if (state === 'disconnected') {
@@ -203,6 +321,69 @@ export default function ScreenPage() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    const container = playerContainerRef.current
+    if (!container || !deviceInfo) {
+      setRenderMetrics(null)
+      return
+    }
+
+    const updateMetrics = () => {
+      const rect = container.getBoundingClientRect()
+      const screenRatio = deviceInfo.width / deviceInfo.height
+      const containerRatio = rect.width / rect.height
+      const width = containerRatio > screenRatio ? rect.height * screenRatio : rect.width
+      const height = containerRatio > screenRatio ? rect.height : rect.width / screenRatio
+      setRenderMetrics({
+        left: (rect.width - width) / 2,
+        top: (rect.height - height) / 2,
+        width,
+        height,
+      })
+    }
+
+    updateMetrics()
+    const observer = new ResizeObserver(updateMetrics)
+    observer.observe(container)
+    window.addEventListener('resize', updateMetrics)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateMetrics)
+    }
+  }, [deviceInfo, isPlaying])
+
+  const uiPropertyRows = selectedUiElement
+    ? [
+        { key: 'uid', property: 'uid', value: selectedUiElement.uid },
+        { key: 'class', property: 'class', value: selectedUiElement.class_name },
+        { key: 'resource_id', property: 'resource-id', value: selectedUiElement.resource_id },
+        { key: 'text', property: 'text', value: selectedUiElement.text },
+        { key: 'content_desc', property: 'content-desc', value: selectedUiElement.content_desc },
+        { key: 'package', property: 'package', value: selectedUiElement.package },
+        {
+          key: 'bounds',
+          property: 'bounds',
+          value: `[${selectedUiElement.bounds.x},${selectedUiElement.bounds.y}][${selectedUiElement.bounds.x + selectedUiElement.bounds.width},${selectedUiElement.bounds.y + selectedUiElement.bounds.height}]`,
+        },
+        { key: 'center', property: 'center', value: `${selectedUiElement.center.x}, ${selectedUiElement.center.y}` },
+        { key: 'clickable', property: 'clickable', value: String(selectedUiElement.clickable) },
+        { key: 'enabled', property: 'enabled', value: String(selectedUiElement.enabled) },
+        { key: 'selected', property: 'selected', value: String(selectedUiElement.selected) },
+        { key: 'focused', property: 'focused', value: String(selectedUiElement.focused) },
+        { key: 'scrollable', property: 'scrollable', value: String(selectedUiElement.scrollable) },
+        { key: 'xpath', property: 'xpath', value: selectedUiElement.xpath },
+        {
+          key: 'selectors',
+          property: 'selector_suggestions',
+          value: selectedUiElement.selector_suggestions.map((s) => `${s.type}: ${s.value}`).join('\n'),
+        },
+      ]
+    : []
+
+  const visibleUiElements = uiElements
+    .filter((element) => element.bounds.width > 0 && element.bounds.height > 0)
+    .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
 
   // Send key event via DataChannel
   const sendKey = (keycode: string) => {
@@ -232,72 +413,37 @@ export default function ScreenPage() {
     }
   }
 
-  const availableDevices = devices.filter((d) => d.status === 'online' || d.status === 'busy')
-
   return (
     <div className="screen-page">
-      <Row gutter={24}>
-        <Col span={18}>
-          <Card
-            title={
-              <Space>
-                <VideoCameraOutlined />
-                <span>极速投屏控制台 (WebRTC + SFU)</span>
-                {selectedDevice && (
-                  <span style={{ color: '#999', fontSize: 14 }}>
-                    ({devices.find((d) => d.id === selectedDevice)?.name || selectedDevice})
-                  </span>
-                )}
-              </Space>
-            }
-            extra={
-              <Space>
-                <Select
-                  value={selectedDevice}
-                  style={{ width: 200 }}
-                  placeholder="选择设备"
-                  onChange={(val) => {
-                    setSelectedDevice(val)
-                    if (isPlaying) stopSession()
-                  }}
-                >
-                  {availableDevices.map((device) => (
-                    <Option key={device.id} value={device.id}>
-                      {device.name}
-                    </Option>
-                  ))}
-                </Select>
-                <Button
-                  type={isPlaying ? 'default' : 'primary'}
-                  icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-                  onClick={() => isPlaying ? stopSession() : startSession()}
-                  disabled={!selectedDevice}
-                  loading={loading}
-                >
-                  {isPlaying ? '断开' : '连接'}
-                </Button>
-              </Space>
-            }
-          >
+      <div className="screen-workbench">
+        <section className="device-stage">
+          <div className="device-stage-header">
+            <div className="device-context">
+              <VideoCameraOutlined />
+              <span>{devices.find((d) => d.id === selectedDevice)?.name || selectedDevice || '未选择设备'}</span>
+            </div>
+            <Button
+              type={isPlaying ? 'default' : 'primary'}
+              icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+              onClick={() => isPlaying ? stopSession() : startSession()}
+              disabled={!selectedDevice}
+              loading={loading}
+            >
+              {loading ? '连接中' : isPlaying ? '断开' : '重新连接'}
+            </Button>
+          </div>
+
+          <div className="device-frame-wrap">
             <div
               ref={playerContainerRef}
               className={`player-container ${isPlaying ? 'active' : ''}`}
-              style={{
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#000',
-                minHeight: 600,
-                borderRadius: 8,
-                overflow: 'hidden',
-              }}
             >
               {isPlaying && lkSession ? (
                 <TouchOverlay
                   screenWidth={deviceInfo?.width || 1080}
                   screenHeight={deviceInfo?.height || 1920}
                   onInput={handleTouchInput}
+                  disabled={uiElements.length > 0}
                 >
                   <WebrtcPlayer
                     deviceId={selectedDevice}
@@ -312,49 +458,141 @@ export default function ScreenPage() {
                     onRoomCreated={(room) => { lkRoomRef.current = room; }}
                   />
                   {!hasVideoFrame && (
+                    <div className="video-waiting-overlay">
+                      等待视频画面...
+                    </div>
+                  )}
+                  {uiElements.length > 0 && renderMetrics && uiScreen && (
                     <div
+                      className="ui-element-layer"
                       style={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#bfbfbf',
-                        background: '#000',
-                        pointerEvents: 'none',
+                        left: renderMetrics.left,
+                        top: renderMetrics.top,
+                        width: renderMetrics.width,
+                        height: renderMetrics.height,
                       }}
                     >
-                      等待视频画面...
+                      {visibleUiElements.map((element) => {
+                        const isSelected = selectedUiElement?.uid === element.uid
+                        return (
+                          <button
+                            key={element.uid}
+                            type="button"
+                            className={`ui-element-box ${isSelected ? 'selected' : ''} ${element.clickable ? 'clickable' : ''}`}
+                            title={element.resource_id || element.content_desc || element.text || element.class_name}
+                            style={{
+                              left: `${(element.bounds.x / uiScreen.width) * 100}%`,
+                              top: `${(element.bounds.y / uiScreen.height) * 100}%`,
+                              width: `${(element.bounds.width / uiScreen.width) * 100}%`,
+                              height: `${(element.bounds.height / uiScreen.height) * 100}%`,
+                              zIndex: element.depth + 1,
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              setSelectedUiElement(element)
+                            }}
+                          />
+                        )
+                      })}
                     </div>
                   )}
                 </TouchOverlay>
               ) : (
-                <div style={{ textAlign: 'center', color: '#666' }}>
-                  <VideoCameraOutlined style={{ fontSize: 64, marginBottom: 16 }} />
-                  <p>选择设备并点击连接开始极速投屏</p>
+                <div className="player-placeholder">
+                  <VideoCameraOutlined style={{ fontSize: 56, marginBottom: 16 }} />
+                  <p>从设备管理选择设备后点击连接开始投屏</p>
                 </div>
               )}
             </div>
-          </Card>
-        </Col>
 
-        <Col span={6}>
-          <Card title="极速控制">
-             <Space direction="vertical" style={{ width: '100%' }}>
-                <Button block onClick={() => sendKey('KEYCODE_HOME')}>Home</Button>
-                <Button block onClick={() => sendKey('KEYCODE_BACK')}>返回</Button>
-                <Button block onClick={() => sendKey('KEYCODE_APP_SWITCH')}>多任务</Button>
-                <Button block onClick={handleFullscreen} icon={<FullscreenOutlined />}>全屏</Button>
-                
-	                <div style={{ marginTop: 20 }}>
-	                    <Text type="secondary">连接状态: {connectionState}</Text>
-	                    <br />
-	                    <Text type="secondary">FPS: {fps}</Text>
-	                </div>
-             </Space>
-          </Card>
-        </Col>
-      </Row>
+            <div className="device-rail">
+              <Button shape="circle" icon={<HomeOutlined />} onClick={() => sendKey('KEYCODE_HOME')} />
+              <Button shape="circle" icon={<RollbackOutlined />} onClick={() => sendKey('KEYCODE_BACK')} />
+              <Button shape="circle" icon={<AppstoreOutlined />} onClick={() => sendKey('KEYCODE_APP_SWITCH')} />
+              <Button shape="circle" icon={<FullscreenOutlined />} onClick={handleFullscreen} />
+            </div>
+          </div>
+
+          <div className="device-stage-footer">
+            <Text type="secondary">状态：{connectionState}</Text>
+            <Text type="secondary">FPS：{fps}</Text>
+            {uiElements.length > 0 && <Text type="secondary">控件：{uiElements.length}</Text>}
+          </div>
+        </section>
+
+        <section className="screen-workspace">
+          <div className="workspace-tabs">
+            <button type="button" className="workspace-tab active">控件检查</button>
+            <button type="button" className="workspace-tab">脚本辅助</button>
+            <button type="button" className="workspace-tab">Logcat</button>
+          </div>
+
+          <div className="workspace-panel inspector-panel">
+            <div className="workspace-toolbar">
+              <Space>
+                <Button type="primary" loading={loadingUiHierarchy} disabled={!selectedDevice || !isPlaying} onClick={fetchUiHierarchy}>
+                  获取控件
+                </Button>
+                <Button danger disabled={uiElements.length === 0} onClick={clearUiHierarchy}>
+                  清理控件
+                </Button>
+              </Space>
+              <Space size={20}>
+                <Text type="secondary">当前设备：{devices.find((d) => d.id === selectedDevice)?.name || selectedDevice || '-'}</Text>
+                <Text type="secondary">选中：{selectedUiElement?.class_name || '-'}</Text>
+              </Space>
+            </div>
+
+            <Table
+              className="ui-property-table"
+              size="small"
+              pagination={false}
+              rowKey="key"
+              scroll={{ y: 330 }}
+              columns={[
+                {
+                  title: '属性',
+                  dataIndex: 'property',
+                  width: 180,
+                },
+                {
+                  title: '值',
+                  dataIndex: 'value',
+                  render: (value: string) => value ? (
+                    <Text copyable={{ text: value }} className="property-value">
+                      {value}
+                    </Text>
+                  ) : (
+                    <Text type="secondary">空</Text>
+                  ),
+                },
+              ]}
+              dataSource={uiPropertyRows}
+              locale={{ emptyText: uiElements.length > 0 ? '点击左侧控件框查看属性' : '暂无数据' }}
+            />
+          </div>
+
+          <div className="workspace-panel log-panel">
+            <div className="workspace-toolbar compact">
+              <Text strong>自动化选择器</Text>
+              <Text type="secondary">点击属性值右侧图标可复制</Text>
+            </div>
+            <div className="selector-preview">
+              {selectedUiElement ? (
+                selectedUiElement.selector_suggestions.map((selector) => (
+                  <div className="selector-row" key={`${selector.type}-${selector.value}`}>
+                    <Text className="selector-type">{selector.type}</Text>
+                    <Text copyable={{ text: selector.value }} className="selector-value">{selector.value}</Text>
+                  </div>
+                ))
+              ) : (
+                <Text type="secondary">选择控件后显示可用于自动化脚本的 id、accessibility_id、text 和 xpath。</Text>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

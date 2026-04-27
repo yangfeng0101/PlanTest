@@ -80,6 +80,8 @@ class DeviceDatabaseService:
         self,
         device_id: str,
         name: Optional[str] = None,
+        os: Optional[str] = None,
+        os_version: Optional[str] = None,
         tags: Optional[List[str]] = None,
         battery_level: Optional[int] = None,
         status: Optional[DeviceStatus] = None
@@ -95,6 +97,10 @@ class DeviceDatabaseService:
 
             if name is not None:
                 db_device.name = name
+            if os is not None:
+                db_device.os = os
+            if os_version is not None:
+                db_device.os_version = os_version
             if tags is not None:
                 db_device.tags = tags
             if battery_level is not None:

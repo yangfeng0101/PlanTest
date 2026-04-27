@@ -131,12 +131,29 @@ class ADBService:
             market_name = get_market_name(model) if model else model
             info["name"] = market_name or model or device_id
 
-            # Get OS version
-            os_version = await self.execute_adb(
+            android_version = await self.execute_adb(
                 "shell", "getprop", "ro.build.version.release",
                 device_id=device_id
             )
-            info["os_version"] = os_version or "Unknown"
+            harmony_enabled = await self.execute_adb(
+                "shell", "getprop", "hw_sc.build.os.enable",
+                device_id=device_id
+            )
+            harmony_platform_version = await self.execute_adb(
+                "shell", "getprop", "hw_sc.build.platform.version",
+                device_id=device_id
+            )
+            harmony_os_version = await self.execute_adb(
+                "shell", "getprop", "hw_sc.build.os.version",
+                device_id=device_id
+            )
+
+            if harmony_enabled == "true" or harmony_platform_version:
+                info["os"] = "harmony"
+                info["os_version"] = harmony_platform_version or harmony_os_version or android_version or "Unknown"
+            else:
+                info["os"] = "android"
+                info["os_version"] = android_version or "Unknown"
 
             # Get screen resolution
             resolution = await self.execute_adb(

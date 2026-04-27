@@ -32,6 +32,14 @@ const getMetricColor = (value: number, type: 'cpu' | 'memory' | 'battery') => {
   return '#52c41a'
 }
 
+const formatOsName = (os: string) => {
+  const normalized = os.toLowerCase()
+  if (normalized === 'harmony') return 'HarmonyOS'
+  if (normalized === 'android') return 'Android'
+  if (normalized === 'ios') return 'iOS'
+  return os
+}
+
 export default function DeviceCard({
   device,
   metrics,
@@ -48,6 +56,7 @@ export default function DeviceCard({
   }
 
   const { color, text } = statusConfig[device.status] || { color: 'default', text: '未知' }
+  const batteryLevel = metrics?.battery_level ?? device.batteryLevel
 
   // Check if device has abnormal metrics
   const hasWarning = metrics && (
@@ -127,7 +136,7 @@ export default function DeviceCard({
               <span>{device.model}</span>
             </div>
             <div className="device-meta">
-              <span>{device.os} {device.osVersion}</span>
+              <span>{formatOsName(device.os)} {device.osVersion}</span>
             </div>
             <Space direction="vertical" style={{ width: '100%', marginTop: 8 }}>
               {/* Performance metrics mini indicators */}
@@ -173,9 +182,9 @@ export default function DeviceCard({
               <div className="battery-info">
                 <span>电量</span>
                 <Progress
-                  percent={device.batteryLevel}
+                  percent={batteryLevel}
                   size="small"
-                  status={device.batteryLevel < 20 ? 'exception' : 'normal'}
+                  status={batteryLevel < 20 ? 'exception' : 'normal'}
                 />
               </div>
             </Space>

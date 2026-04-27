@@ -27,6 +27,9 @@
 *   `POST /api/v1/devices/:id/acquire`: 占用设备
 *   `POST /api/v1/devices/:id/release`: 释放设备
 *   `POST /api/v1/devices/:id/reserve`: 预约设备
+*   `GET /api/v1/devices/:id/ui-hierarchy`: 获取 Android 当前屏幕控件树和自动化选择器建议
+
+`ui-hierarchy` 使用 Android UIAutomator dump 获取原生控件信息，返回 `resource_id`、`text`、`content_desc`、`class_name`、`bounds`、`center`、`xpath` 和 `selector_suggestions`。第一版仅支持 Android，结果不持久化。
 
 ### 3. 投屏与控制 (Screen)
 *   `GET /api/v1/health`: screen-svc 健康检查

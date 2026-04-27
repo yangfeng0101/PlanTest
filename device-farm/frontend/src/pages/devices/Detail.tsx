@@ -70,6 +70,14 @@ const formatUptime = (seconds: number) => {
   return `${minutes}m`
 }
 
+const formatOsName = (os: string) => {
+  const normalized = os.toLowerCase()
+  if (normalized === 'harmony') return 'HarmonyOS'
+  if (normalized === 'android') return 'Android'
+  if (normalized === 'ios') return 'iOS'
+  return os
+}
+
 export default function DeviceDetail() {
   const { id: deviceId } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -729,7 +737,7 @@ export default function DeviceDetail() {
           </Descriptions.Item>
           <Descriptions.Item label="品牌">{device.brand}</Descriptions.Item>
           <Descriptions.Item label="型号">{device.model}</Descriptions.Item>
-          <Descriptions.Item label="操作系统">{device.os}</Descriptions.Item>
+          <Descriptions.Item label="操作系统">{formatOsName(device.os)}</Descriptions.Item>
           <Descriptions.Item label="系统版本">{device.osVersion}</Descriptions.Item>
           <Descriptions.Item label="分辨率">{device.screenResolution}</Descriptions.Item>
           <Descriptions.Item label="屏幕尺寸">{device.screenSize}英寸</Descriptions.Item>
@@ -746,7 +754,12 @@ export default function DeviceDetail() {
         </Descriptions>
 
         <Space style={{ marginTop: 24 }}>
-          <Button type="primary" icon={<PlayCircleOutlined />}>
+          <Button
+            type="primary"
+            icon={<PlayCircleOutlined />}
+            disabled={!deviceId || device.status === 'offline'}
+            onClick={() => window.open(`/screen?deviceId=${encodeURIComponent(device.id)}`, '_blank', 'noopener,noreferrer')}
+          >
             开始投屏
           </Button>
           {device.status === 'online' ? (

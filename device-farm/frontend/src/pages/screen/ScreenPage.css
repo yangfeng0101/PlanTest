@@ -1,11 +1,64 @@
 .screen-page {
-  height: 100%;
+  min-height: calc(100vh - 112px);
+  background: #f4f6f9;
+  color: #1f2933;
+}
+
+.screen-workbench {
+  display: flex;
+  gap: 16px;
+  min-height: calc(100vh - 112px);
+}
+
+.device-stage {
+  width: 440px;
+  min-width: 380px;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e8edf3;
+}
+
+.device-stage-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 48px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e8edf3;
+}
+
+.device-context {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #263442;
+  font-weight: 500;
+}
+
+.device-context span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-frame-wrap {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px;
+  gap: 8px;
+  padding: 12px;
 }
 
 .player-container {
-  height: 500px;
+  height: 100%;
+  min-height: 640px;
   background: #000;
-  border-radius: 8px;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,7 +67,7 @@
 }
 
 .player-container.active {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: #000;
 }
 
 .player-placeholder {
@@ -32,6 +85,95 @@
   font-size: 12px;
 }
 
+.video-waiting-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #bfbfbf;
+  background: #000;
+  pointer-events: none;
+}
+
+.device-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  padding-top: 8px;
+  border-left: 1px solid #edf1f5;
+}
+
+.device-stage-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #e8edf3;
+}
+
+.screen-workspace {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workspace-tabs {
+  display: flex;
+  align-items: flex-end;
+  height: 48px;
+  padding: 0 10px;
+  background: #fff;
+  border: 1px solid #e8edf3;
+}
+
+.workspace-tab {
+  height: 44px;
+  padding: 0 28px;
+  border: 0;
+  border-right: 1px solid #edf1f5;
+  background: transparent;
+  color: #52616f;
+  cursor: default;
+}
+
+.workspace-tab.active {
+  color: #1677ff;
+  background: #fff;
+  border-top: 2px solid #1677ff;
+}
+
+.workspace-panel {
+  background: #fff;
+  border: 1px solid #e8edf3;
+}
+
+.inspector-panel {
+  min-height: 430px;
+}
+
+.log-panel {
+  flex: 1;
+  min-height: 220px;
+}
+
+.workspace-toolbar {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.workspace-toolbar.compact {
+  min-height: 44px;
+}
+
 .control-panel {
   padding: 8px 0;
 }
@@ -41,6 +183,67 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+
+.ui-element-layer {
+  position: absolute;
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.ui-element-box {
+  position: absolute;
+  display: block;
+  padding: 0;
+  border: 1px dashed rgba(82, 196, 26, 0.8);
+  background: transparent;
+  cursor: crosshair;
+}
+
+.ui-element-box.clickable {
+  border-color: rgba(24, 144, 255, 0.9);
+  background: rgba(24, 144, 255, 0.04);
+}
+
+.ui-element-box.selected {
+  border: 2px solid #ff4d4f;
+  background: rgba(255, 77, 79, 0.14);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.ui-property-table {
+  padding: 0 12px 12px;
+}
+
+.property-value {
+  display: block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.selector-preview {
+  padding: 12px;
+}
+
+.selector-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f3f7;
+}
+
+.selector-type {
+  color: #66788a;
+}
+
+.selector-value {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .gesture-panel,
@@ -53,7 +256,15 @@
 }
 
 @media (max-width: 1200px) {
+  .screen-workbench {
+    flex-direction: column;
+  }
+
+  .device-stage {
+    width: 100%;
+  }
+
   .player-container {
-    height: 400px;
+    min-height: 520px;
   }
 }

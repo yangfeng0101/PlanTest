@@ -40,6 +40,14 @@ from app.models.metrics import (
     MetricsAggregation,
     MetricsSubscription,
 )
+from app.models.ui_hierarchy import (
+    SelectorSuggestion,
+    UIBounds,
+    UIElement,
+    UIHierarchyResponse,
+    UIPoint,
+    UIScreen,
+)
 
 __all__ = [
     "Device",
@@ -73,4 +81,10 @@ __all__ = [
     "MetricsHistoryQuery",
     "MetricsAggregation",
     "MetricsSubscription",
+    "SelectorSuggestion",
+    "UIBounds",
+    "UIElement",
+    "UIHierarchyResponse",
+    "UIPoint",
+    "UIScreen",
 ]

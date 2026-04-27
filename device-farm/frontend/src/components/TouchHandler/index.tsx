@@ -269,6 +269,7 @@ interface TouchOverlayProps {
   screenHeight: number
   onInput?: (type: string, x: number, y: number, extra?: Record<string, unknown>) => void
   showIndicator?: boolean
+  disabled?: boolean
   children?: React.ReactNode
 }
 
@@ -277,6 +278,7 @@ export function TouchOverlay({
   screenHeight,
   onInput,
   showIndicator = true,
+  disabled = false,
   children,
 }: TouchOverlayProps) {
   const { handlePointerDown, handlePointerMove, handlePointerUp, isPressed, touchPoint, gestureType, setContainerRef } =
@@ -296,10 +298,10 @@ export function TouchOverlay({
         touchAction: 'none',
         userSelect: 'none',
       }}
-      onPointerDownCapture={handlePointerDown}
-      onPointerMoveCapture={handlePointerMove}
-      onPointerUpCapture={handlePointerUp}
-      onPointerCancelCapture={handlePointerUp}
+      onPointerDownCapture={disabled ? undefined : handlePointerDown}
+      onPointerMoveCapture={disabled ? undefined : handlePointerMove}
+      onPointerUpCapture={disabled ? undefined : handlePointerUp}
+      onPointerCancelCapture={disabled ? undefined : handlePointerUp}
     >
       {children}
 

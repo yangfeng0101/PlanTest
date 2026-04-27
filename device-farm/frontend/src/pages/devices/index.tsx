@@ -22,6 +22,14 @@ const { Option } = Select
 type SortField = 'name' | 'cpu' | 'memory' | 'battery'
 type SortOrder = 'asc' | 'desc'
 
+const formatOsName = (os: string) => {
+  const normalized = os.toLowerCase()
+  if (normalized === 'harmony') return 'HarmonyOS'
+  if (normalized === 'android') return 'Android'
+  if (normalized === 'ios') return 'iOS'
+  return os
+}
+
 export default function DevicesPage() {
   const navigate = useNavigate()
   const { devices, loading, viewMode, fetchDevices, setViewMode, occupyDevice, releaseDevice } = useDeviceStore()
@@ -215,7 +223,7 @@ export default function DevicesPage() {
   }
 
   const handleScreen = (id: string) => {
-    navigate(`/screen?deviceId=${id}`)
+    window.open(`/screen?deviceId=${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer')
   }
 
   const onlineCount = devices.filter((d) => d.status === 'online').length
@@ -271,7 +279,7 @@ export default function DevicesPage() {
 
   const columns = [
     {
-      title: '设备型号',
+      title: '设备名称',
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record: Device) => (
@@ -292,6 +300,7 @@ export default function DevicesPage() {
       title: '系统版本',
       dataIndex: 'osVersion',
       key: 'osVersion',
+      render: (_: string, record: Device) => `${formatOsName(record.os)} ${record.osVersion}`,
     },
     {
       title: '状态',

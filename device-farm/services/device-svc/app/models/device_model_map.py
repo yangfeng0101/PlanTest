@@ -133,7 +133,10 @@ DEVICE_MODEL_MAP = {
     "OCE-AN10": "华为 Mate 40 Pro",
     "NOH-AN00": "华为 Mate 50 Pro",
     "ALT-AL00": "华为 P40 Pro",
-    "ANA-AN00": "华为 P50 Pro",
+    "ANA-AN00": "华为 P40",
+    "JAD-AL00": "华为 P50 Pro",
+    "JAD-AL50": "华为 P50 Pro",
+    "JAD-LX9": "华为 P50 Pro",
     "BAL-AL00": "华为 P60 Pro",
 
     # Google Pixel
@@ -149,3 +152,15 @@ DEVICE_MODEL_MAP = {
 def get_market_name(model: str) -> str:
     """Get market name for device model code"""
     return DEVICE_MODEL_MAP.get(model, model)
+
+
+def should_refresh_device_name(name: str, model: str, device_id: str) -> bool:
+    """Return whether an existing name still looks like a generated hardware value."""
+    current_name = (name or "").strip()
+    current_model = (model or "").strip()
+    current_id = (device_id or "").strip()
+
+    if not current_name:
+        return True
+
+    return current_name in {current_model, current_id, "Unknown"}

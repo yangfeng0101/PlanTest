@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import { Layout, Menu, Dropdown, Avatar, Space } from 'antd'
 import {
   MobileOutlined,
-  PlayCircleOutlined,
   CodeOutlined,
   FileTextOutlined,
   TeamOutlined,
@@ -47,11 +46,6 @@ const baseMenuItems = [
     key: '/monitoring',
     icon: <DashboardOutlined />,
     label: '设备监控',
-  },
-  {
-    key: '/screen',
-    icon: <PlayCircleOutlined />,
-    label: '投屏控制',
   },
   {
     key: '/scripts',
@@ -109,6 +103,7 @@ function MainLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
+  const isScreenWorkspace = location.pathname === '/screen'
 
   // Filter menu items based on permissions
   const menuItems = baseMenuItems.filter(item => {
@@ -153,39 +148,48 @@ function MainLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider width={220} theme="light">
-        <div className="logo">
-          <MobileOutlined style={{ fontSize: 24, color: '#1890ff' }} />
-          <span>设备农场</span>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          defaultOpenKeys={['/ai']}
-          items={menuItems}
-          onClick={({ key }) => {
-            navigate(key)
-          }}
-        />
-      </Sider>
+      {!isScreenWorkspace && (
+        <Sider width={220} theme="light">
+          <div className="logo">
+            <MobileOutlined style={{ fontSize: 24, color: '#1890ff' }} />
+            <span>设备农场</span>
+          </div>
+          <Menu
+            mode="inline"
+            selectedKeys={[location.pathname]}
+            defaultOpenKeys={['/ai']}
+            items={menuItems}
+            onClick={({ key }) => {
+              navigate(key)
+            }}
+          />
+        </Sider>
+      )}
       <Layout>
-        <Header className="app-header">
-          <div style={{ flex: 1 }} />
-          <Dropdown
-            menu={{ items: userMenuItems, onClick: handleUserMenuClick }}
-            placement="bottomRight"
-          >
-            <Space className="user-info" style={{ cursor: 'pointer' }}>
-              <Avatar
-                size="small"
-                icon={<UserOutlined />}
-                src={user?.avatar_url}
-              />
-              <span>{user?.full_name || user?.username || 'User'}</span>
-            </Space>
-          </Dropdown>
-        </Header>
-        <Content style={{ padding: 24, overflow: 'auto' }}>
+        {!isScreenWorkspace && (
+          <Header className="app-header">
+            <div style={{ flex: 1 }} />
+            <Dropdown
+              menu={{ items: userMenuItems, onClick: handleUserMenuClick }}
+              placement="bottomRight"
+            >
+              <Space className="user-info" style={{ cursor: 'pointer' }}>
+                <Avatar
+                  size="small"
+                  icon={<UserOutlined />}
+                  src={user?.avatar_url}
+                />
+                <span>{user?.full_name || user?.username || 'User'}</span>
+              </Space>
+            </Dropdown>
+          </Header>
+        )}
+        <Content
+          style={{
+            padding: isScreenWorkspace ? 0 : 24,
+            overflow: 'auto',
+          }}
+        >
           <Routes>
             <Route path="/devices" element={<DevicesPage />} />
             <Route path="/devices/:id" element={<DeviceDetailPage />} />

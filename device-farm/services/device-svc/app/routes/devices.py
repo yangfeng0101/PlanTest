@@ -11,6 +11,7 @@ from app.models import (
     ReservationCreate, ReservationResponse, ReservationStatus
 )
 from app.services import device_service
+from app.services.ui_hierarchy_service import UIHierarchyError, ui_hierarchy_service
 from app.services.reservation_service import reservation_service
 from app.websocket import ws_manager
 from app.middleware.auth import get_current_user, get_current_user_id
@@ -111,6 +112,31 @@ async def get_screenshot(device_id: str):
         "image": base64.b64encode(screenshot).decode('utf-8'),
         "format": "png"
     }
+
+
+@router.get("/{device_id}/ui-hierarchy")
+async def get_ui_hierarchy(device_id: str):
+    """Get current Android UI hierarchy for automation locator generation"""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if str(device.os).lower() not in {"android", "harmony"}:
+        raise HTTPException(
+            status_code=400,
+            detail="UI hierarchy is currently supported for Android-compatible devices only",
+        )
+
+    try:
+        return await ui_hierarchy_service.get_ui_hierarchy(
+            device_id=device_id,
+            screen_resolution=device.screen_resolution,
+        )
+    except UIHierarchyError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get UI hierarchy for {device_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get UI hierarchy")
 
 
 @router.post("/{device_id}/command")
@@ -268,4 +294,3 @@ async def get_websocket_stats():
         Connection statistics
     """
     return ws_manager.get_connection_stats()
-

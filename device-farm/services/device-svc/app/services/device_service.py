@@ -8,6 +8,7 @@ import json
 from app.config import settings
 from app.models import Device, DeviceStatus, DeviceCreate, DeviceUpdate, DeviceFilter
 from app.models.device_db import DeviceStatusDB
+from app.models.device_model_map import get_market_name, should_refresh_device_name
 from app.services.adb_service import adb_service
 from app.services.device_db_service import device_db_service
 
@@ -44,10 +45,66 @@ class DeviceService:
         try:
             devices = await device_db_service.get_all_devices()
             for device in devices:
+                await self._refresh_existing_device_metadata(device)
                 self._devices[device.id] = device
             logger.info(f"Loaded {len(devices)} devices from database")
         except Exception as e:
             logger.error(f"Error loading devices from database: {e}")
+
+    async def _refresh_generated_device_name(self, device: Device) -> None:
+        """Refresh old generated names after the model-name mapping improves."""
+        market_name = get_market_name(device.model)
+        if market_name == device.model:
+            return
+
+        if not should_refresh_device_name(device.name, device.model, device.id):
+            return
+
+        device.name = market_name
+        device.updated_at = datetime.now()
+        await device_db_service.update_device_info(device.id, name=market_name)
+
+    async def _refresh_existing_device_metadata(self, device: Device) -> None:
+        """Refresh metadata that used to be inferred too coarsely."""
+        await self._refresh_generated_device_name(device)
+
+        brand = (device.brand or "").upper()
+        should_probe_harmony = brand == "HUAWEI" and str(device.os).lower() != "harmony"
+        if device.status != DeviceStatus.ONLINE or not should_probe_harmony:
+            return
+
+        try:
+            info = await adb_service.get_device_info(device.id)
+        except Exception as e:
+            logger.warning(f"Unable to refresh device metadata for {device.id}: {e}")
+            return
+
+        new_os = info.get("os")
+        new_os_version = info.get("os_version")
+        new_name = info.get("name")
+
+        changed = False
+        name_for_update: Optional[str] = None
+
+        if new_name and should_refresh_device_name(device.name, device.model, device.id):
+            device.name = new_name
+            name_for_update = new_name
+            changed = True
+        if new_os and device.os != new_os:
+            device.os = new_os
+            changed = True
+        if new_os_version and device.os_version != new_os_version:
+            device.os_version = new_os_version
+            changed = True
+
+        if changed:
+            device.updated_at = datetime.now()
+            await device_db_service.update_device_info(
+                device.id,
+                name=name_for_update,
+                os=device.os,
+                os_version=device.os_version,
+            )
 
     async def _scan_loop(self):
         """Background device scanning loop"""
@@ -72,6 +129,7 @@ class DeviceService:
                 # Update existing device status
                 self._devices[device_id].status = device_info["status"]
                 self._devices[device_id].last_active_at = datetime.now()
+                await self._refresh_existing_device_metadata(self._devices[device_id])
                 # Persist status update to database
                 await device_db_service.update_device_status(
                     device_id,
@@ -229,6 +287,26 @@ class DeviceService:
             name=update.name,
             tags=update.tags,
             status=update.status
+        )
+
+        return device
+
+    async def update_device_battery_level(self, device_id: str, battery_level: int) -> Optional[Device]:
+        """Sync the latest collected battery level into device inventory data."""
+        device = self._devices.get(device_id)
+        if not device:
+            return None
+
+        normalized_level = max(0, min(100, int(battery_level)))
+        if device.battery_level == normalized_level:
+            return device
+
+        device.battery_level = normalized_level
+        device.updated_at = datetime.now()
+
+        await device_db_service.update_device_info(
+            device_id,
+            battery_level=normalized_level,
         )
 
         return device
