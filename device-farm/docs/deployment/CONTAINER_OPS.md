@@ -13,13 +13,18 @@
     ```
 
 ### 1.2 一键部署
-在项目根目录下执行以下命令：
+推荐在 `device-farm` 目录下执行一键脚本：
 ```bash
-# 进入部署目录
-cd device-farm/infra/docker
+cd device-farm
+./dev.sh start
+```
 
-# 构建并启动全量服务 (Nginx, 4个微服务, 3个数据库/中间件)
-docker-compose up -d --build
+`dev.sh` 会自动探测当前局域网 IP，并写入 `.env` 与 `infra/docker/.env` 的 `LIVEKIT_PUBLIC_HOST`。手机换 Wi-Fi 或电脑换网段后，请重新执行一次。
+
+如需手动部署：
+```bash
+cd device-farm/infra/docker
+docker compose --env-file .env up -d --build
 ```
 
 ### 1.3 访问信息
@@ -37,8 +42,11 @@ docker-compose up -d --build
 | `test-svc` | 8001 | 8003 | 身份鉴权、脚本管理、任务调度 |
 | `device-svc`| 8001 | 8001 | 宿主机 ADB 桥接、真机状态监控、WebSocket 推送 |
 | `report-svc`| 8002 | 8004 | 测试报告存储、数据统计、告警通知 |
-| `screen-svc`| 8002 | 8002 | WebRTC/MJPEG 低延迟投屏逻辑 |
+| `screen-svc`| 8002 | 8002 | scrcpy 拉流、LiveKit 发布、DataChannel 控制 |
+| `livekit`   | 7880/7881 | 7880/7881 | WebRTC 信令、TCP 媒体传输 |
 | `ai-svc`    | 8005 | 8005 | OCR 识别、UI 元素定位、测试用例生成 |
+
+LiveKit 还会使用 `50000-50100/udp` 作为媒体端口范围。
 
 ---
 
@@ -66,9 +74,19 @@ docker-compose up -d --build
     2. 执行 `docker exec device-farm-device-svc adb devices` 看容器内是否有输出。
 *   **解决**: 检查 `docker-compose.yml` 中的 `extra_hosts` 是否包含 `host.docker.internal:host-gateway`。
 
-### 3.4 WebSocket 连接断开
-*   **现象**: 监控曲线不跳动或投屏黑屏。
-*   **解决**: 检查 Nginx 配置文件中 `Upgrade` 和 `Connection` 头的设置。系统已默认配置扁平化路由以保障长连接稳定性。
+### 3.4 投屏一直显示“等待视频流”
+*   **常见原因**: `LIVEKIT_PUBLIC_HOST` 仍是旧 Wi-Fi/旧网段 IP，手机拿到的 LiveKit 地址不可达。
+*   **检查**:
+    ```bash
+    cd device-farm/infra/docker
+    docker compose --env-file .env exec livekit printenv LIVEKIT_RTC_NODE_IP
+    docker compose --env-file .env exec screen-svc printenv LIVEKIT_PUBLIC_URL
+    ```
+*   **解决**: 回到 `device-farm` 目录重新执行 `./dev.sh start`，必要时重建 `livekit` 与 `screen-svc`。
+
+### 3.5 投屏连接后短暂黑屏
+*   **说明**: 首帧需要等待 scrcpy 启动、ADB socket 建立、LiveKit 发布轨道和浏览器解码关键帧。网络抖动会放大等待时间。
+*   **排查**: 查看 `screen-svc` 与 `livekit` 日志，重点关注启动耗时、丢包、RTT 和 jitter。
 
 ---
 
@@ -97,6 +115,6 @@ docker-compose logs -f device-svc
 ---
 
 ## 5. 开发建议 (Developer Tips)
-*   **前端修改**: 必须执行 `npm run build` 后重启 Nginx 容器才能生效。
+*   **前端修改**: 执行 `npm run build` 后，Nginx 会从 `frontend/dist` 读取最新静态资源；浏览器必要时做一次强制刷新。
 *   **后端修改**: 重启对应容器即可：`docker-compose restart <service-name>`。
 *   **依赖更新**: 修改 `requirements.txt` 后必须加 `--build` 参数重新启动。

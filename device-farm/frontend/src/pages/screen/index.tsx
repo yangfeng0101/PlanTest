@@ -17,6 +17,7 @@ const { Option } = Select
 const { Text } = Typography
 
 const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || ''
+const TOUCH_MOVE_INTERVAL_MS = 16
 
 export default function ScreenPage() {
   const [searchParams] = useSearchParams()
@@ -30,10 +31,13 @@ export default function ScreenPage() {
   const [loading, setLoading] = useState(false)
   const [fps, setFps] = useState(0)
   const [connectionState, setConnectionState] = useState<string>('idle')
+  const [hasVideoFrame, setHasVideoFrame] = useState(false)
   
   // LiveKit state
   const [lkSession, setLkSession] = useState<{ url: string; token: string } | null>(null)
   const lkRoomRef = useRef<Room | null>(null)
+  const pendingMoveRef = useRef<{ x: number; y: number } | null>(null)
+  const moveTimerRef = useRef<number | null>(null)
 
   // Fetch devices
   useEffect(() => {
@@ -88,6 +92,8 @@ export default function ScreenPage() {
         if (videoWidth > 0 && videoHeight > 0) {
           setDeviceInfo({ width: videoWidth, height: videoHeight })
         }
+        setHasVideoFrame(false)
+        setConnectionState('connecting')
         setLkSession({ url: data.livekit_url || 'ws://localhost:7880', token: data.token })
         setIsPlaying(true)
       } else {
@@ -105,6 +111,9 @@ export default function ScreenPage() {
     if (!selectedDevice) return
     setIsPlaying(false)
     setLkSession(null)
+    setHasVideoFrame(false)
+    setConnectionState('idle')
+    flushPendingMove()
     lkRoomRef.current = null
     try {
       await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/stop`, {
@@ -127,13 +136,50 @@ export default function ScreenPage() {
     })
   }, [])
 
+  const flushPendingMove = useCallback(() => {
+    if (moveTimerRef.current) {
+      window.clearTimeout(moveTimerRef.current)
+      moveTimerRef.current = null
+    }
+
+    const pendingMove = pendingMoveRef.current
+    pendingMoveRef.current = null
+    if (pendingMove) {
+      publishControl({ type: 'touch', action: 'move', x: pendingMove.x, y: pendingMove.y }, false)
+    }
+  }, [publishControl])
+
+  const scheduleMove = useCallback(
+    (x: number, y: number) => {
+      pendingMoveRef.current = { x, y }
+      if (moveTimerRef.current) return
+
+      moveTimerRef.current = window.setTimeout(() => {
+        moveTimerRef.current = null
+        const pendingMove = pendingMoveRef.current
+        pendingMoveRef.current = null
+        if (pendingMove) {
+          publishControl({ type: 'touch', action: 'move', x: pendingMove.x, y: pendingMove.y }, false)
+        }
+      }, TOUCH_MOVE_INTERVAL_MS)
+    },
+    [publishControl]
+  )
+
   // Handle touch input via DataChannel
   const handleTouchInput = useCallback(
     (type: string, x: number, y: number, extra?: Record<string, unknown>) => {
       if (type !== 'touch') return
-      publishControl({ type: 'touch', action: extra?.action || 'move', x, y })
+      const action = extra?.action || 'move'
+      if (action === 'move') {
+        scheduleMove(x, y)
+        return
+      }
+
+      flushPendingMove()
+      publishControl({ type: 'touch', action, x, y }, true)
     },
-    [publishControl]
+    [flushPendingMove, publishControl, scheduleMove]
   )
 
   const handleWebRTCStats = useCallback((stats: { fps: number; bytesReceived: number }) => {
@@ -142,8 +188,19 @@ export default function ScreenPage() {
 
   const handleConnectionStateChange = useCallback((state: string) => {
     setConnectionState(state)
+    if (state === 'disconnected') {
+      setHasVideoFrame(false)
+    }
     if (state === 'connected') {
       setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (moveTimerRef.current) {
+        window.clearTimeout(moveTimerRef.current)
+      }
     }
   }, [])
 
@@ -248,8 +305,28 @@ export default function ScreenPage() {
                     serverUrl={lkSession.url}
                     onConnectionStateChange={handleConnectionStateChange}
                     onStats={handleWebRTCStats}
+                    onFirstFrame={() => {
+                      setHasVideoFrame(true)
+                      setLoading(false)
+                    }}
                     onRoomCreated={(room) => { lkRoomRef.current = room; }}
                   />
+                  {!hasVideoFrame && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#bfbfbf',
+                        background: '#000',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      等待视频画面...
+                    </div>
+                  )}
                 </TouchOverlay>
               ) : (
                 <div style={{ textAlign: 'center', color: '#666' }}>

@@ -65,7 +65,7 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
-      // WebSocket proxy for screen streaming (MJPEG/WebRTC)
+      // Legacy WebSocket proxy for services that still expose WS endpoints.
       '/ws': {
         target: 'http://localhost:8002',
         changeOrigin: true,

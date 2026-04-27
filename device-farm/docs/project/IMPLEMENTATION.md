@@ -1,8 +1,10 @@
 # 统一真机自动化测试平台 - 实施执行文档
 
-> 最后更新: 2026-04-13
-> 文档版本: 1.3
+> 最后更新: 2026-04-27
+> 文档版本: 1.4
 > **Phase 3 已完成** ✅
+>
+> 说明：本文保留项目阶段性实施记录。当前运行态以 `README.md`、`docs/PROJECT_STRUCTURE.md`、`docs/api.md` 和 `docs/deployment/CONTAINER_OPS.md` 为准。
 
 ## 一、项目概览
 
@@ -17,8 +19,8 @@
 │                          服务层                                  │
 ├─────────────┬─────────────┬─────────────┬───────────────────────┤
 │ device-svc  │ screen-svc  │  test-svc   │   report-svc          │
-│  :8001      │   :8002     │   :8003     │    :8003              │
-│  Python ✓   │  Node.js ✓  │  Python ✓   │   Python ✓            │
+│  :8001      │   :8002     │   :8003     │    :8004              │
+│  Python ✓   │   Go ✓      │  Python ✓   │   Python ✓            │
 ├─────────────┴─────────────┴─────────────┴───────────────────────┤
 │                          数据层                                  │
 ├─────────────────────┬─────────────────────┬─────────────────────┤
@@ -32,7 +34,7 @@
 |------|------|--------|------|
 | 基础设施 | 🟢 已完成 | 100% | Docker/PostgreSQL/Redis/MinIO/Nginx |
 | device-svc | 🟢 已完成 | 100% | Android/iOS/HarmonyOS 设备管理 + 预约 + 分组 + 统计 |
-| screen-svc | 🟢 已完成 | 100% | WebRTC + MJPEG 双模式投屏 + iOS/MJPG 投屏 |
+| screen-svc | 🟢 已完成 | 100% | Android scrcpy + LiveKit WebRTC 投屏与 DataChannel 控制 |
 | test-svc | 🟢 已完成 | 100% | 数据持久化 + MinIO存储 + JS执行器 + 定时任务 + 并行执行 |
 | report-svc | 🟢 已完成 | 100% | 报告生成 + 告警通知 + 数据导出 |
 | ai-svc | 🟢 已完成 | 100% | 自然语言用例生成 + AI元素定位 |
@@ -76,28 +78,26 @@
 | 功能项 | 优先级 | 状态 | 完成度 | 文件位置 |
 |--------|--------|------|--------|----------|
 | 实时投屏(Android) | P0 | ✅ 已完成 | 100% | `services/screen-svc/internal/` |
-| WebRTC视频流 | P0 | ✅ 已完成 | 100% | `services/screen-svc/internal/video/`, `internal/webrtc/` |
-| H.264 NAL解析 | P0 | ✅ 已完成 | 100% | `services/screen-svc/internal/video/nal_parser.go` |
-| RTP打包 | P0 | ✅ 已完成 | 100% | `services/screen-svc/internal/video/rtp_packer.go` |
-| 远程触控 | P0 | ✅ 已完成 | 100% | `services/screen-svc-simple/server.js` |
+| WebRTC视频流 | P0 | ✅ 已完成 | 100% | `services/screen-svc/internal/session/`, `internal/webrtc/` |
+| H.264 NAL解析 | P0 | ✅ 已完成 | 100% | `services/screen-svc/internal/scrcpy/h264parser.go` |
+| RTP打包 | P0 | ✅ 已完成 | 100% | LiveKit SDK 发布 H.264 Track |
+| 远程触控 | P0 | ✅ 已完成 | 100% | `services/screen-svc/internal/scrcpy/control.go` |
 | 截图录制 | P0 | ✅ 已完成 | 100% | 截图 + 录制功能完成 |
-| 文件传输 | P1 | ✅ 已完成 | 100% | `services/screen-svc-simple/server.js` |
-| Shell终端 | P1 | ✅ 已完成 | 100% | `services/screen-svc-simple/server.js` |
-| iOS投屏 | P0 | ✅ 已完成 | 100% | `services/screen-svc-simple/ios_stream.py` |
-| 鸿蒙投屏 | P0 | ✅ 已完成 | 100% | `services/screen-svc-simple/harmony_stream.py` |
+| 文件传输 | P1 | 待复核 | - | 旧备用实现已移除，后续按独立 API 补齐 |
+| Shell终端 | P1 | 待复核 | - | 旧备用实现已移除，后续按独立 API 补齐 |
+| iOS投屏 | P0 | 待复核 | - | 代码存在于 `services/screen-svc/internal/ios/`，未纳入当前默认运行链路 |
+| 鸿蒙投屏 | P0 | 待复核 | - | 代码存在于 `services/screen-svc/internal/harmony/`，未纳入当前默认运行链路 |
 
 **Phase 1-3 实现:**
 - ✅ Go 版 screen-svc 重构
 - ✅ H.264 NAL 单元解析器
-- ✅ RTP 打包器 (Single NAL + FU-A 分片)
-- ✅ WebRTC Manager 实现 SendVideo
+- ✅ LiveKit Track 发布 H.264 视频流
+- ✅ DataChannel 控制通道
 - ✅ 前端 WebRTC 播放器组件
 - ✅ 前端触摸事件处理器
-- ✅ 投屏控制台重构 (WebRTC + MJPEG 双模式)
-- ✅ iOS MJPG 投屏支持
-- ✅ 鸿蒙投屏支持
-- ✅ 文件传输功能
-- ✅ Shell 终端功能
+- ✅ 投屏控制台重构 (LiveKit WebRTC)
+- 待复核 iOS/鸿蒙投屏接入当前默认运行链路
+- 待补齐文件传输与 Shell 终端的新版独立 API
 - ✅ 录制功能
 
 **性能指标:**
@@ -185,9 +185,9 @@
 | 统计报表 | P2 | ✅ 已完成 | 100% | `frontend/src/pages/stats/` |
 
 **Phase 1 新增实现:**
-- ✅ WebRTC 播放器组件 (RTCPeerConnection + WebSocket 信令)
+- ✅ LiveKit WebRTC 播放器组件
 - ✅ 触摸事件处理器 (坐标映射 + 手势识别)
-- ✅ 投屏控制台重构 (WebRTC/MJPEG 双模式切换)
+- ✅ 投屏控制台重构 (LiveKit WebRTC)
 - ✅ 设备信息动态获取 (分辨率、状态)
 - ✅ 连接状态监控 (FPS 显示)
 
@@ -440,7 +440,7 @@
 |------|------|----------|
 | iOS投屏方案不稳定 | 高 | Phase 0 充分PoC，准备备选方案 |
 | GPU资源不足 | 中 | 云GPU备选 |
-| Scrcpy集成复杂度 | 中 | 渐进式优化，保留MJPEG降级 |
+| Scrcpy集成复杂度 | 中 | 使用 LiveKit 统一传输链路，保留可观测日志和首帧状态 |
 | Appium兼容性 | 低 | 多版本测试 |
 
 ---
@@ -550,28 +550,8 @@
 ### 开发环境启动
 
 ```bash
-# 启动基础设施
-cd device-farm/infra/docker
-docker-compose up -d
-
-# 启动 device-svc
-cd device-farm/services/device-svc
-pip install -r requirements.txt
-python -m app.main
-
-# 启动 screen-svc-simple
-cd device-farm/services/screen-svc-simple
-node server.js
-
-# 启动 test-svc
-cd device-farm/services/test-svc
-pip install -r requirements.txt
-python -m app.main
-
-# 启动前端
-cd device-farm/frontend
-npm install
-npm run dev
+cd device-farm
+./dev.sh start
 ```
 
 ### API 文档

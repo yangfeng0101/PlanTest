@@ -11,7 +11,8 @@
 | 服务 | 端口 | 处理路径 | 描述 |
 |------|------|----------|------|
 | **device-svc** | `8001` | `/api/v1/devices`, `/api/v1/groups` | 设备注册、状态管理、预约、分组 |
-| **screen-svc** | `8002` | `/ws`, `/api/v1/devices/:id/screen` | WebRTC/MJPEG 投屏、远程控制、文件传输 |
+| **screen-svc** | `8002` | `/api/v1/sessions/:device_id/*` | LiveKit/scrcpy 投屏、远程控制会话 |
+| **livekit** | `7880`, `7881`, `50000-50100/udp` | WebRTC 信令与媒体转发 |
 | **test-svc** | `8003` | `/api/v1/auth`, `/api/v1/scripts`, `/api/v1/tasks` | 用户认证、脚本管理、任务执行、报告 |
 
 ## 核心 API 端点
@@ -28,9 +29,20 @@
 *   `POST /api/v1/devices/:id/reserve`: 预约设备
 
 ### 3. 投屏与控制 (Screen)
-*   `WS /ws/screen/:id`: WebRTC/MJPEG 视频流
-*   `POST /api/v1/devices/:id/screen/input`: 发送点击/滑动事件
-*   `POST /api/v1/devices/:id/screen/shell`: 执行 Adb Shell 命令
+*   `GET /api/v1/health`: screen-svc 健康检查
+*   `GET /api/v1/sessions/:device_id`: 查询设备当前投屏会话
+*   `POST /api/v1/sessions/:device_id/start`: 启动投屏会话，返回 `livekit_url`、`token`、`room_name`、视频宽高
+*   `POST /api/v1/sessions/:device_id/stop`: 停止投屏会话
+*   LiveKit DataChannel `topic=control`: 发送远程控制事件，消息格式如下：
+
+```json
+{ "type": "touch", "action": "down", "x": 120, "y": 360 }
+```
+
+支持的控制类型：
+*   `touch`: `action` 为 `down`、`move`、`up`
+*   `key`: Android keycode，例如 `KEYCODE_HOME=3`、`KEYCODE_BACK=4`
+*   `text`: 文本输入
 
 ### 4. 自动化测试 (Tasks)
 *   `POST /api/v1/tasks`: 创建测试任务

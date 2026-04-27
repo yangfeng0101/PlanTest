@@ -1,12 +1,12 @@
 # Screen Service
 
-Screen mirroring and remote control service using scrcpy and WebRTC.
+Screen mirroring and remote control service using scrcpy, LiveKit, and WebRTC.
 
 ## Features
 
 - Real-time screen mirroring via scrcpy
-- WebRTC-based low latency streaming
-- Remote touch and key input
+- LiveKit-based low latency streaming
+- Remote touch, key, and text input via WebRTC DataChannel
 - Multi-client support
 
 ## Prerequisites
@@ -14,11 +14,12 @@ Screen mirroring and remote control service using scrcpy and WebRTC.
 - Go 1.21+
 - scrcpy installed on host
 - ADB access to Android devices
+- Reachable LiveKit server
 
 ## Running
 
 ```bash
-go run ./cmd
+go run ./cmd/main.go
 ```
 
 ## API Endpoints
@@ -26,18 +27,17 @@ go run ./cmd
 ### REST API
 
 - `GET /api/v1/health` - Health check
-- `GET /api/v1/sessions` - List active sessions
 - `GET /api/v1/sessions/:device_id` - Get session details
 - `POST /api/v1/sessions/:device_id/start` - Start screen session
 - `POST /api/v1/sessions/:device_id/stop` - Stop screen session
-- `POST /api/v1/sessions/:device_id/touch` - Send touch event
-- `POST /api/v1/sessions/:device_id/key` - Send key event
-- `POST /api/v1/sessions/:device_id/text` - Send text input
 
-### WebSocket
+### Control Channel
 
-- `WS /ws/screen/:device_id` - Screen stream and control
-- `WS /webrtc/:device_id` - WebRTC signaling
+After `start`, clients join the returned LiveKit room with the returned token. Remote control is sent through LiveKit data messages on `topic=control`.
+
+```json
+{ "type": "touch", "action": "move", "x": 120, "y": 360 }
+```
 
 ## Configuration
 

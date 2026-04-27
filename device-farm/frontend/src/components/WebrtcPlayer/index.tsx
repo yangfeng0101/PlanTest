@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   LiveKitRoom,
   VideoTrack,
@@ -16,6 +16,7 @@ interface WebrtcPlayerProps {
   onConnectionStateChange?: (state: string) => void
   onStats?: (stats: { fps: number; bytesReceived: number }) => void
   onRoomCreated?: (room: Room) => void
+  onFirstFrame?: () => void
 }
 
 export default function WebrtcPlayer({
@@ -23,6 +24,8 @@ export default function WebrtcPlayer({
   serverUrl,
   onConnectionStateChange,
   onRoomCreated,
+  onFirstFrame,
+  onStats,
 }: WebrtcPlayerProps) {
   if (!token || !serverUrl) {
     return (
@@ -44,7 +47,7 @@ export default function WebrtcPlayer({
         style={{ height: '100%' }}
       >
         <RoomBinder onRoomCreated={onRoomCreated} />
-        <VideoContainer />
+        <VideoContainer onFirstFrame={onFirstFrame} onStats={onStats} />
         <RoomAudioRenderer />
       </LiveKitRoom>
     </div>
@@ -61,11 +64,56 @@ function RoomBinder({ onRoomCreated }: { onRoomCreated?: (room: Room) => void })
   return null
 }
 
-function VideoContainer() {
+function VideoContainer({
+  onFirstFrame,
+  onStats,
+}: {
+  onFirstFrame?: () => void
+  onStats?: (stats: { fps: number; bytesReceived: number }) => void
+}) {
   const tracks = useTracks([Track.Source.ScreenShare, Track.Source.Camera])
-  
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const hasFirstFrameRef = useRef(false)
+  const statsRef = useRef({ lastFrames: 0, lastTime: 0 })
+
   // We expect the agent to publish a track
   const track = tracks[0]
+
+  useEffect(() => {
+    hasFirstFrameRef.current = false
+    statsRef.current = { lastFrames: 0, lastTime: performance.now() }
+  }, [track?.publication?.trackSid])
+
+  const markFirstFrame = useCallback(() => {
+    const video = videoRef.current
+    if (!video || hasFirstFrameRef.current || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+
+    hasFirstFrameRef.current = true
+    onFirstFrame?.()
+  }, [onFirstFrame])
+
+  useEffect(() => {
+    if (!track || !onStats) return
+
+    const timer = window.setInterval(() => {
+      const video = videoRef.current
+      if (!video || typeof video.getVideoPlaybackQuality !== 'function') return
+
+      const quality = video.getVideoPlaybackQuality()
+      const now = performance.now()
+      const elapsedSeconds = (now - statsRef.current.lastTime) / 1000
+      const frameDelta = quality.totalVideoFrames - statsRef.current.lastFrames
+      const fps = elapsedSeconds > 0 ? Math.max(0, Math.round(frameDelta / elapsedSeconds)) : 0
+
+      statsRef.current = {
+        lastFrames: quality.totalVideoFrames,
+        lastTime: now,
+      }
+      onStats({ fps, bytesReceived: 0 })
+    }, 1000)
+
+    return () => window.clearInterval(timer)
+  }, [track, onStats])
 
   if (!track) {
     return (
@@ -82,7 +130,11 @@ function VideoContainer() {
 
   return (
     <VideoTrack
+      ref={videoRef}
       trackRef={track}
+      onLoadedData={markFirstFrame}
+      onCanPlay={markFirstFrame}
+      onPlaying={markFirstFrame}
       style={{
         width: '100%',
         height: '100%',
