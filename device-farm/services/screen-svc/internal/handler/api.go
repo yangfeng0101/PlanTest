@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -119,8 +120,13 @@ func (h *Handler) StartSession(c *gin.Context) {
 	}
 
 	deviceID := c.Param("device_id")
-	s, err := h.manager.StartSession(deviceID, user.ID, &h.cfg.LiveKit, &h.cfg.Scrcpy)
+	allowReplace := !h.cfg.Auth.Enabled || user.Role == "admin"
+	s, err := h.manager.StartSession(deviceID, user.ID, allowReplace, &h.cfg.LiveKit, &h.cfg.Scrcpy)
 	if err != nil {
+		if errors.Is(err, session.ErrDeviceInUse) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "device is already in use"})
+			return
+		}
 		h.logger.Errorf("failed to start screen session for %s: %v", deviceID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start screen session"})
 		return

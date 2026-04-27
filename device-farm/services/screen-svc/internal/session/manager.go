@@ -4,11 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 
 	"screen-svc/internal/config"
 )
+
+var ErrDeviceInUse = errors.New("device is already in use")
 
 type Manager struct {
 	sessions map[string]*Session
@@ -23,11 +26,14 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) StartSession(deviceID, userID string, livekitCfg *config.LiveKitConfig, scrcpyCfg *config.ScrcpyConfig) (*Session, error) {
+func (m *Manager) StartSession(deviceID, userID string, allowReplace bool, livekitCfg *config.LiveKitConfig, scrcpyCfg *config.ScrcpyConfig) (*Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if oldID, ok := m.byDevice[deviceID]; ok {
+		if old, exists := m.sessions[oldID]; exists && old.UserID != userID && !allowReplace {
+			return nil, ErrDeviceInUse
+		}
 		m.removeLocked(oldID)
 	}
 
