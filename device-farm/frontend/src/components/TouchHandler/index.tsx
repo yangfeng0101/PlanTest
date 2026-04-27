@@ -20,6 +20,12 @@ interface TouchState {
   isSwipe: boolean
 }
 
+interface MappedPoint {
+  x: number
+  y: number
+  inside: boolean
+}
+
 interface UseTouchHandlerReturn {
   // Event handlers
   handlePointerDown: (e: React.PointerEvent) => void
@@ -58,20 +64,36 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
 
   // Map coordinates from container to device screen
   const mapCoordinates = useCallback(
-    (clientX: number, clientY: number, containerRect: DOMRect) => {
-      // Calculate relative position in container
-      const relativeX = clientX - containerRect.left
-      const relativeY = clientY - containerRect.top
+    (clientX: number, clientY: number, containerRect: DOMRect): MappedPoint | null => {
+      if (screenWidth <= 0 || screenHeight <= 0 || containerRect.width <= 0 || containerRect.height <= 0) {
+        return null
+      }
 
-      // Calculate scale factor
-      const scaleX = screenWidth / containerRect.width
-      const scaleY = screenHeight / containerRect.height
+      const screenRatio = screenWidth / screenHeight
+      const containerRatio = containerRect.width / containerRect.height
+      const renderedWidth = containerRatio > screenRatio
+        ? containerRect.height * screenRatio
+        : containerRect.width
+      const renderedHeight = containerRatio > screenRatio
+        ? containerRect.height
+        : containerRect.width / screenRatio
+      const offsetX = (containerRect.width - renderedWidth) / 2
+      const offsetY = (containerRect.height - renderedHeight) / 2
+      const rawX = clientX - containerRect.left - offsetX
+      const rawY = clientY - containerRect.top - offsetY
+      const inside = rawX >= 0 && rawX <= renderedWidth && rawY >= 0 && rawY <= renderedHeight
+
+      const relativeX = Math.min(Math.max(rawX, 0), renderedWidth)
+      const relativeY = Math.min(Math.max(rawY, 0), renderedHeight)
+
+      const scaleX = screenWidth / renderedWidth
+      const scaleY = screenHeight / renderedHeight
 
       // Map to device coordinates
       const deviceX = Math.round(relativeX * scaleX)
       const deviceY = Math.round(relativeY * scaleY)
 
-      return { x: deviceX, y: deviceY }
+      return { x: deviceX, y: deviceY, inside }
     },
     [screenWidth, screenHeight]
   )
@@ -100,7 +122,9 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
       // Use container ref instead of e.target to avoid incorrect bounds from child elements
       if (!containerRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
-      const { x, y } = mapCoordinates(e.clientX, e.clientY, rect)
+      const point = mapCoordinates(e.clientX, e.clientY, rect)
+      if (!point?.inside) return
+      const { x, y } = point
 
       touchStateRef.current = {
         startX: e.clientX,
@@ -138,7 +162,9 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
       // Use container ref instead of e.target to avoid incorrect bounds from child elements
       if (!containerRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
-      const { x, y } = mapCoordinates(e.clientX, e.clientY, rect)
+      const point = mapCoordinates(e.clientX, e.clientY, rect)
+      if (!point) return
+      const { x, y } = point
 
       setTouchPoint({ x, y })
 
@@ -176,7 +202,9 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
       // Use container ref instead of e.target to avoid incorrect bounds from child elements
       if (!containerRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
-      const { x, y } = mapCoordinates(e.clientX, e.clientY, rect)
+      const point = mapCoordinates(e.clientX, e.clientY, rect)
+      if (!point) return
+      const { x, y } = point
 
       // Detect gesture
       if (!touchStateRef.current.isLongPress) {
@@ -193,6 +221,7 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
           const startX = touchStateRef.current.startX
           const startY = touchStateRef.current.startY
           const startCoords = mapCoordinates(startX, startY, rect)
+          if (!startCoords) return
 
           // Send swipe event
           onInput?.('swipe', startCoords.x, startCoords.y, {
@@ -267,10 +296,10 @@ export function TouchOverlay({
         touchAction: 'none',
         userSelect: 'none',
       }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerDownCapture={handlePointerDown}
+      onPointerMoveCapture={handlePointerMove}
+      onPointerUpCapture={handlePointerUp}
+      onPointerCancelCapture={handlePointerUp}
     >
       {children}
 

@@ -451,7 +451,7 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(
-    current_user: UserDB = Depends(get_current_user_from_cookie),
+    current_user: UserDB = Depends(get_current_user),
 ):
     """Get current user information
 

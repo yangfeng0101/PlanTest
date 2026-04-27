@@ -39,9 +39,9 @@ device-farm/
 | **frontend** | `3000` | (Vite 开发服务器) |
 
 ## 5. 快速开始 (Quick Start)
-1.  **启动基础设施**: `cd infra/docker && docker-compose up -d`
-2.  **配置环境变量**: `cp .env.example .env` (根据需要修改内容)
-3.  **启动开发环境**: 运行根目录下的 `./dev.sh` 脚本。
+1.  **配置环境变量**: `cp .env.example .env` (可选，`./dev.sh` 会自动创建)
+2.  **启动开发环境**: 运行根目录下的 `./dev.sh start` 脚本。脚本会自动探测本机局域网 IP，并写入 `LIVEKIT_PUBLIC_HOST`，用于手机端访问 WebRTC 视频流。
+3.  **手动启动 Docker**: 如果不用脚本，请先在 `infra/docker/.env` 中设置当前局域网 IP，例如 `LIVEKIT_PUBLIC_HOST=192.168.3.74`，再执行 `cd infra/docker && docker compose up -d`。
 
 ## 6. 详细文档
 *   [API 文档](./docs/api.md)

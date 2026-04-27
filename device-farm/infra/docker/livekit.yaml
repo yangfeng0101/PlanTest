@@ -1,0 +1,17 @@
+port: 7880
+rtc:
+  port_range_start: 50000
+  port_range_end: 50100
+  # The host LAN IP is injected through docker-compose environment variables:
+  # NODE_IP / LIVEKIT_RTC_NODE_IP_IPV4. Run ../../dev.sh start to auto-detect it.
+  use_external_ip: false
+
+keys:
+  devkey: "my_secret_key_needs_to_be_at_least_32_characters_long"
+
+redis:
+  address: redis:6379
+  password: redis123
+
+logging:
+  level: info

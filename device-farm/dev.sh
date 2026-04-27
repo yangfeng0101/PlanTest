@@ -45,6 +45,61 @@ setup_env() {
         echo -e "${YELLOW}Creating .env file from template...${NC}"
         cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
     fi
+
+    local livekit_host
+    livekit_host="${LIVEKIT_PUBLIC_HOST:-$(detect_lan_ip)}"
+    if [ -z "$livekit_host" ]; then
+        echo -e "${RED}Error: unable to detect LAN IP for LiveKit${NC}"
+        echo "Set LIVEKIT_PUBLIC_HOST in $PROJECT_ROOT/infra/docker/.env and run again."
+        exit 1
+    fi
+
+    upsert_env "$PROJECT_ROOT/.env" "LIVEKIT_PUBLIC_HOST" "$livekit_host"
+    upsert_env "$PROJECT_ROOT/infra/docker/.env" "LIVEKIT_PUBLIC_HOST" "$livekit_host"
+    echo -e "${GREEN}LiveKit public host: ${livekit_host}${NC}"
+}
+
+detect_lan_ip() {
+    local iface ip
+
+    iface="$(route get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
+    if [ -n "$iface" ]; then
+        ip="$(ipconfig getifaddr "$iface" 2>/dev/null || true)"
+        if [ -n "$ip" ]; then
+            echo "$ip"
+            return 0
+        fi
+    fi
+
+    for iface in en0 en1 bridge100; do
+        ip="$(ipconfig getifaddr "$iface" 2>/dev/null || true)"
+        if [ -n "$ip" ]; then
+            echo "$ip"
+            return 0
+        fi
+    done
+
+    hostname -I 2>/dev/null | awk '{print $1}'
+}
+
+upsert_env() {
+    local file="$1"
+    local key="$2"
+    local value="$3"
+
+    touch "$file"
+    if grep -q "^${key}=" "$file"; then
+        sed -i.bak "s|^${key}=.*|${key}=${value}|" "$file"
+        rm -f "${file}.bak"
+    else
+        {
+            if [ -s "$file" ]; then
+                echo ""
+            fi
+            echo "# Auto-detected by dev.sh. Override when testing from another network."
+            echo "${key}=${value}"
+        } >> "$file"
+    fi
 }
 
 # 启动基础设施服务
@@ -54,9 +109,9 @@ start_infra() {
 
     # 使用 docker compose 或 docker-compose
     if docker compose version &> /dev/null; then
-        docker compose up -d
+        docker compose --env-file "$PROJECT_ROOT/infra/docker/.env" up -d
     else
-        docker-compose up -d
+        docker-compose --env-file "$PROJECT_ROOT/infra/docker/.env" up -d
     fi
 
     echo -e "${GREEN}Waiting for services to be ready...${NC}"
@@ -89,25 +144,12 @@ start_infra() {
 
 # 启动 Mock 服务
 start_mock() {
-    echo -e "${GREEN}Starting Mock server...${NC}"
-    cd "$PROJECT_ROOT/infra/mock"
-
-    if [ ! -d "node_modules" ]; then
-        echo -e "${YELLOW}Installing dependencies...${NC}"
-        npm install
-    fi
-
-    # 检查是否已经在运行
-    if lsof -i :3000 &> /dev/null; then
-        echo -e "${YELLOW}Port 3000 is already in use${NC}"
+    echo -e "${GREEN}Checking Mock server...${NC}"
+    if docker ps --format '{{.Names}}' | grep -q '^device-farm-mock$'; then
+        echo -e "${GREEN}  Mock server is running on port 3001${NC}"
     else
-        npm start &
-        MOCK_PID=$!
-        echo "Mock server PID: $MOCK_PID"
-        sleep 2
+        echo -e "${YELLOW}  Mock server container is not running${NC}"
     fi
-
-    echo -e "${GREEN}  Mock server is running on port 3000${NC}"
 }
 
 # 显示服务状态
@@ -121,7 +163,8 @@ show_status() {
     echo "  Redis:       localhost:6379"
     echo "  MinIO:       localhost:9000 (API)"
     echo "               localhost:9001 (Console)"
-    echo "  Mock API:    http://localhost:3000"
+    echo "  Frontend:    http://localhost:3000"
+    echo "  Mock API:    http://localhost:3001"
     echo ""
     echo -e "${GREEN}=========================================="
     echo "   Quick Links"
@@ -171,14 +214,9 @@ stop_services() {
     cd "$PROJECT_ROOT/infra/docker"
 
     if docker compose version &> /dev/null; then
-        docker compose down
+        docker compose --env-file "$PROJECT_ROOT/infra/docker/.env" down
     else
-        docker-compose down
-    fi
-
-    # 停止 Mock 服务
-    if lsof -i :3000 &> /dev/null; then
-        kill $(lsof -t -i :3000) 2>/dev/null || true
+        docker-compose --env-file "$PROJECT_ROOT/infra/docker/.env" down
     fi
 
     echo -e "${GREEN}All services stopped${NC}"
@@ -189,9 +227,9 @@ show_logs() {
     cd "$PROJECT_ROOT/infra/docker"
 
     if docker compose version &> /dev/null; then
-        docker compose logs -f
+        docker compose --env-file "$PROJECT_ROOT/infra/docker/.env" logs -f
     else
-        docker-compose logs -f
+        docker-compose --env-file "$PROJECT_ROOT/infra/docker/.env" logs -f
     fi
 }
 

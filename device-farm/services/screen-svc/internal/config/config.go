@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -10,7 +11,9 @@ type Config struct {
 	Server   ServerConfig
 	Scrcpy   ScrcpyConfig
 	WebRTC   WebRTCConfig
+	LiveKit  LiveKitConfig
 	Device   DeviceConfig
+	Auth     AuthConfig
 	LogLevel string
 }
 
@@ -19,11 +22,19 @@ type ServerConfig struct {
 	Port int
 }
 
+type LiveKitConfig struct {
+	URL       string
+	PublicURL string
+	APIKey    string
+	APISecret string
+}
+
 type ScrcpyConfig struct {
 	MaxResolution int
 	MaxFPS        int
 	BitRate       int
-	Codec        string
+	Codec         string
+	ServerPath    string
 }
 
 type WebRTCConfig struct {
@@ -42,6 +53,11 @@ type DeviceConfig struct {
 	ServiceURL string
 }
 
+type AuthConfig struct {
+	Enabled        bool
+	TestServiceURL string
+}
+
 func Load() *Config {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -55,6 +71,7 @@ func Load() *Config {
 	viper.SetDefault("scrcpy.max_fps", 30)
 	viper.SetDefault("scrcpy.bit_rate", 2000000)
 	viper.SetDefault("scrcpy.codec", "h264")
+	viper.SetDefault("scrcpy.server_path", "/usr/share/scrcpy/scrcpy-server")
 	viper.SetDefault("webrtc.min_port", 40000)
 	viper.SetDefault("webrtc.max_port", 50000)
 	// Default ICE servers (can be overridden via config file or env)
@@ -64,9 +81,18 @@ func Load() *Config {
 		},
 	})
 	viper.SetDefault("device.service_url", "http://device-svc:8001")
+	viper.SetDefault("auth.enabled", true)
+	viper.SetDefault("auth.test_service_url", "http://test-svc:8001")
 	viper.SetDefault("log_level", "info")
 
+	viper.SetDefault("livekit.url", "ws://livekit:7880")
+	viper.SetDefault("livekit.public_url", "ws://localhost:7880")
+	viper.SetDefault("livekit.api_key", "devkey")
+	viper.SetDefault("livekit.api_secret", "secret")
+
 	// Environment variable overrides
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.BindEnv("auth.test_service_url", "TEST_SVC_URL", "AUTH_TEST_SERVICE_URL")
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -95,15 +121,26 @@ func Load() *Config {
 			MaxResolution: viper.GetInt("scrcpy.max_resolution"),
 			MaxFPS:        viper.GetInt("scrcpy.max_fps"),
 			BitRate:       viper.GetInt("scrcpy.bit_rate"),
-			Codec:        viper.GetString("scrcpy.codec"),
+			Codec:         viper.GetString("scrcpy.codec"),
+			ServerPath:    viper.GetString("scrcpy.server_path"),
 		},
 		WebRTC: WebRTCConfig{
 			ICEServers: iceServers,
 			MinPort:    viper.GetInt("webrtc.min_port"),
 			MaxPort:    viper.GetInt("webrtc.max_port"),
 		},
+		LiveKit: LiveKitConfig{
+			URL:       viper.GetString("livekit.url"),
+			PublicURL: viper.GetString("livekit.public_url"),
+			APIKey:    viper.GetString("livekit.api_key"),
+			APISecret: viper.GetString("livekit.api_secret"),
+		},
 		Device: DeviceConfig{
 			ServiceURL: viper.GetString("device.service_url"),
+		},
+		Auth: AuthConfig{
+			Enabled:        viper.GetBool("auth.enabled"),
+			TestServiceURL: viper.GetString("auth.test_service_url"),
 		},
 		LogLevel: viper.GetString("log_level"),
 	}

@@ -7,6 +7,12 @@ scrcpy:
   max_fps: 30
   bit_rate: 2000000
   codec: "h264"
+  server_path: "/usr/share/scrcpy/scrcpy-server"
+
+livekit:
+  url: "ws://livekit:7880"
+  api_key: "devkey"
+  api_secret: "my_secret_key_needs_to_be_at_least_32_characters_long"
 
 webrtc:
   min_port: 40000
@@ -17,5 +23,9 @@ webrtc:
 
 device:
   service_url: "http://device-svc:8001"
+
+auth:
+  enabled: true
+  test_service_url: "http://test-svc:8001"
 
 log_level: "info"

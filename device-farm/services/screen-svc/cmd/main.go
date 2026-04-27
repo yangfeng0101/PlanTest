@@ -2,14 +2,11 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/pion/webrtc/v3"
 	"github.com/sirupsen/logrus"
 
 	"screen-svc/internal/config"
 	"screen-svc/internal/handler"
-	"screen-svc/internal/harmony"
-	"screen-svc/internal/ios"
-	"screen-svc/internal/scrcpy"
+	"screen-svc/internal/session"
 )
 
 func main() {
@@ -26,40 +23,26 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	logger.Info("Starting Screen Service v2.0...")
+	logger.Info("Starting Screen Service v2.0 (LiveKit Mode)...")
 
-	// Create scrcpy config
-	scrcpyConfig := scrcpy.DefaultConfig()
-	scrcpyConfig.MaxResolution = cfg.Scrcpy.MaxResolution
-	scrcpyConfig.MaxFPS = cfg.Scrcpy.MaxFPS
-	scrcpyConfig.BitRate = cfg.Scrcpy.BitRate
-	scrcpyConfig.Codec = cfg.Scrcpy.Codec
-
-	// Convert ICE servers from config to webrtc format
-	iceServers := make([]webrtc.ICEServer, 0, len(cfg.WebRTC.ICEServers))
-	for _, server := range cfg.WebRTC.ICEServers {
-		iceServers = append(iceServers, webrtc.ICEServer{
-			URLs: server.URLs,
-		})
-	}
-
-	// Create screen manager with ICE servers
-	// Use default iOS and HarmonyOS configs for now
-	iosConfig := ios.DefaultConfig()
-	harmonyConfig := harmony.DefaultConfig()
-	manager := handler.NewScreenManager(scrcpyConfig, iosConfig, harmonyConfig, iceServers)
+	// Create session manager
+	manager := session.NewManager()
 
 	// Create handler
-	h := handler.NewHandler(manager)
+	h := handler.NewHandler(manager, cfg)
 
 	// Create router
 	router := gin.Default()
 
 	// CORS middleware
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Vary", "Origin")
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
@@ -78,18 +61,8 @@ func main() {
 	logger.Infof("Server starting on %s", address)
 	logger.Infof("API endpoints:")
 	logger.Infof("  GET  /api/v1/health")
-	logger.Infof("  GET  /api/v1/sessions")
 	logger.Infof("  POST /api/v1/sessions/:device_id/start")
 	logger.Infof("  POST /api/v1/sessions/:device_id/stop")
-	logger.Infof("  POST /api/v1/sessions/:device_id/touch")
-	logger.Infof("  POST /api/v1/sessions/:device_id/key")
-	logger.Infof("  POST /api/v1/sessions/:device_id/text")
-	logger.Infof("  POST /api/v1/sessions/:device_id/back")
-	logger.Infof("  POST /api/v1/sessions/:device_id/home")
-	logger.Infof("  POST /api/v1/sessions/:device_id/rotate")
-	logger.Infof("WebSocket endpoints:")
-	logger.Infof("  /ws/signaling/:device_id - WebRTC signaling")
-	logger.Infof("  /ws/control/:device_id   - Control channel")
 
 	if err := router.Run(address); err != nil {
 		logger.Fatalf("Failed to start server: %v", err)
