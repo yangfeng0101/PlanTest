@@ -67,7 +67,7 @@ func (c *Controller) sendTouchEvent(msg ControlMsg) error {
 		msg.Y = c.DeviceHeight
 	}
 
-	buf := make([]byte, 28)
+	buf := make([]byte, 32)
 	buf[0] = 2
 
 	switch msg.Action {
@@ -86,6 +86,7 @@ func (c *Controller) sendTouchEvent(msg ControlMsg) error {
 	binary.BigEndian.PutUint16(buf[20:], uint16(c.DeviceHeight))
 	binary.BigEndian.PutUint16(buf[22:], 0xFFFF)
 	binary.BigEndian.PutUint32(buf[24:], 1)
+	binary.BigEndian.PutUint32(buf[28:], 1)
 
 	_, err := c.conn.Write(buf)
 	return err
@@ -129,7 +130,7 @@ func (c *Controller) sendTextEvent(text string) error {
 
 	textBytes := []byte(text)
 	buf := make([]byte, 5+len(textBytes))
-	buf[0] = 9
+	buf[0] = 1
 	binary.BigEndian.PutUint32(buf[1:], uint32(len(textBytes)))
 	copy(buf[5:], textBytes)
 	_, err := c.conn.Write(buf)

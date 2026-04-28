@@ -79,6 +79,7 @@ export default function ScreenPage() {
   const playerContainerRef = useRef<HTMLDivElement>(null)
 
   const [devices, setDevices] = useState<Device[]>([])
+  const [devicesLoaded, setDevicesLoaded] = useState(false)
   const [selectedDevice, setSelectedDevice] = useState<string>(deviceIdFromUrl || '')
   const [deviceInfo, setDeviceInfo] = useState<{ width: number; height: number } | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -92,9 +93,9 @@ export default function ScreenPage() {
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null)
   const [uiScreen, setUiScreen] = useState<{ width: number; height: number } | null>(null)
   const currentDevice = devices.find((d) => d.id === selectedDevice)
-  const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? Boolean(selectedDevice)
-  const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? Boolean(selectedDevice)
-  const uiHierarchySupported = currentDevice?.capabilities.uiHierarchy ?? Boolean(selectedDevice)
+  const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
+  const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
+  const uiHierarchySupported = currentDevice?.capabilities.uiHierarchy ?? false
   
   // LiveKit state
   const [lkSession, setLkSession] = useState<{ url: string; token: string } | null>(null)
@@ -102,6 +103,7 @@ export default function ScreenPage() {
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null)
   const moveTimerRef = useRef<number | null>(null)
   const autoStartedDeviceRef = useRef<string | null>(null)
+  const autoStartBlockedRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (deviceIdFromUrl) {
@@ -125,6 +127,8 @@ export default function ScreenPage() {
         setDevices((data.devices || []).map((d: Record<string, unknown>) => mapDevice(d)))
       } catch (e) {
         console.error('Failed to fetch devices:', e)
+      } finally {
+        setDevicesLoaded(true)
       }
     }
     fetchDevices()
@@ -155,6 +159,14 @@ export default function ScreenPage() {
   // Start session on backend
   const startSession = useCallback(async () => {
     if (!selectedDevice) return
+    if (devicesLoaded && !currentDevice) {
+      message.error('未找到当前设备，请回到设备列表重新选择')
+      return
+    }
+    if (currentDevice?.status === 'offline') {
+      message.error('当前设备离线，无法投屏')
+      return
+    }
     if (currentDevice && !currentDevice.capabilities.screenMirror) {
       message.error('当前设备连接不支持投屏')
       return
@@ -186,14 +198,43 @@ export default function ScreenPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentDevice, selectedDevice])
+  }, [currentDevice, devicesLoaded, selectedDevice])
 
   useEffect(() => {
-    if (!selectedDevice || isPlaying || lkSession || autoStartedDeviceRef.current === selectedDevice) return
+    if (!selectedDevice || !devicesLoaded || isPlaying || lkSession || autoStartedDeviceRef.current === selectedDevice) return
 
+    if (!currentDevice) {
+      setLoading(false)
+      const blockKey = `${selectedDevice}:missing`
+      if (autoStartBlockedRef.current !== blockKey) {
+        autoStartBlockedRef.current = blockKey
+        message.error('未找到当前设备，请回到设备列表重新选择')
+      }
+      return
+    }
+    if (currentDevice.status === 'offline') {
+      setLoading(false)
+      const blockKey = `${selectedDevice}:offline`
+      if (autoStartBlockedRef.current !== blockKey) {
+        autoStartBlockedRef.current = blockKey
+        message.error('当前设备离线，无法投屏')
+      }
+      return
+    }
+    if (!currentDevice.capabilities.screenMirror) {
+      setLoading(false)
+      const blockKey = `${selectedDevice}:unsupported`
+      if (autoStartBlockedRef.current !== blockKey) {
+        autoStartBlockedRef.current = blockKey
+        message.error('当前设备连接不支持投屏')
+      }
+      return
+    }
+
+    autoStartBlockedRef.current = null
     autoStartedDeviceRef.current = selectedDevice
     void startSession()
-  }, [isPlaying, lkSession, selectedDevice, startSession])
+  }, [currentDevice, devicesLoaded, isPlaying, lkSession, selectedDevice, startSession])
 
   const stopSession = async () => {
     if (!selectedDevice) return

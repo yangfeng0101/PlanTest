@@ -31,10 +31,17 @@ func (m *Manager) StartSession(deviceID, userID string, allowReplace bool, livek
 	defer m.mu.Unlock()
 
 	if oldID, ok := m.byDevice[deviceID]; ok {
-		if old, exists := m.sessions[oldID]; exists && old.UserID != userID && !allowReplace {
-			return nil, ErrDeviceInUse
+		if old, exists := m.sessions[oldID]; exists {
+			if old.UserID == userID {
+				return old, nil
+			}
+			if !allowReplace {
+				return nil, ErrDeviceInUse
+			}
+			m.removeLocked(oldID)
+		} else {
+			delete(m.byDevice, deviceID)
 		}
-		m.removeLocked(oldID)
 	}
 
 	sessionID := "screen-" + randomID()

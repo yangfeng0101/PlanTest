@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 
+	livekit "github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 	"screen-svc/internal/config"
 	"screen-svc/internal/scrcpy"
@@ -91,6 +92,7 @@ func (s *Session) Start(ctx context.Context, cfg *config.LiveKitConfig, scrcpyCf
 
 	if _, err = s.room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOptions{
 		Name:        "screen",
+		Source:      livekit.TrackSource_SCREEN_SHARE,
 		VideoWidth:  s.scrcpyServer.VideoWidth,
 		VideoHeight: s.scrcpyServer.VideoHeight,
 	}); err != nil {

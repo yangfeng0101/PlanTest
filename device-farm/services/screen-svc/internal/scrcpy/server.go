@@ -20,6 +20,8 @@ type ServerOptions struct {
 	BitRate       int
 }
 
+const scrcpyServerVersion = "3.2"
+
 type Server struct {
 	SerialNo      string
 	Options       ServerOptions
@@ -94,16 +96,20 @@ func (s *Server) startServer() error {
 		"CLASSPATH=/data/local/tmp/scrcpy-server.jar",
 		"app_process", "/",
 		"com.genymobile.scrcpy.Server",
-		"1.24",
+		scrcpyServerVersion,
 		"log_level=info",
 		"tunnel_forward=true",
-		"bit_rate=" + strconv.Itoa(s.Options.BitRate),
+		"audio=false",
+		"video_bit_rate=" + strconv.Itoa(s.Options.BitRate),
 		"max_size=" + strconv.Itoa(s.Options.MaxResolution),
 		"max_fps=" + strconv.Itoa(s.Options.MaxFPS),
-		"codec_options=i-frame-interval:int=1",
+		"video_codec_options=i-frame-interval:float=0.5",
 		"send_device_meta=true",
+		"send_codec_meta=true",
 		"send_frame_meta=false",
-		"lock_video_orientation=0",
+		"send_dummy_byte=true",
+		"clipboard_autosync=false",
+		"capture_orientation=0",
 	}
 	s.cmd = exec.Command("adb", args...)
 	s.cmd.Stdout = os.Stdout
@@ -155,13 +161,18 @@ func (s *Server) connectSockets() error {
 		return fmt.Errorf("connect control socket: %w", err)
 	}
 
-	header := make([]byte, 68)
-	if _, err = io.ReadFull(s.VideoSocket, header); err != nil {
+	deviceHeader := make([]byte, 64)
+	if _, err = io.ReadFull(s.VideoSocket, deviceHeader); err != nil {
 		return fmt.Errorf("read device header: %w", err)
 	}
-	s.DeviceName = string(bytes.TrimRight(header[:64], "\x00"))
-	s.VideoWidth = int(binary.BigEndian.Uint16(header[64:66]))
-	s.VideoHeight = int(binary.BigEndian.Uint16(header[66:68]))
+	s.DeviceName = string(bytes.TrimRight(deviceHeader, "\x00"))
+
+	videoHeader := make([]byte, 12)
+	if _, err = io.ReadFull(s.VideoSocket, videoHeader); err != nil {
+		return fmt.Errorf("read video header: %w", err)
+	}
+	s.VideoWidth = int(binary.BigEndian.Uint32(videoHeader[4:8]))
+	s.VideoHeight = int(binary.BigEndian.Uint32(videoHeader[8:12]))
 	if s.VideoWidth <= 0 || s.VideoHeight <= 0 {
 		return fmt.Errorf("invalid video size %dx%d", s.VideoWidth, s.VideoHeight)
 	}
