@@ -71,6 +71,16 @@ const formatUptime = (seconds: number) => {
   return `${minutes}m`
 }
 
+interface ScreenSessionDiagnostics {
+  active?: boolean
+  device_id?: string
+  session_id?: string
+  room_name?: string
+  user_id?: string
+  error?: string
+  status?: number
+}
+
 export default function DeviceDetail() {
   const { id: deviceId } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -84,6 +94,10 @@ export default function DeviceDetail() {
   const [metricsHistory, setMetricsHistory] = useState<DeviceMetrics[]>([])
   const [metricsLoading, setMetricsLoading] = useState(true)
   const [wsConnected, setWsConnected] = useState(false)
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
+  const [screenSessionDiagnostics, setScreenSessionDiagnostics] = useState<ScreenSessionDiagnostics | null>(null)
+  const [nginxHealthy, setNginxHealthy] = useState<boolean | null>(null)
+  const [diagnosticsUpdatedAt, setDiagnosticsUpdatedAt] = useState('')
 
   // Threshold config state
   const [thresholdConfig, setThresholdConfig] = useState<DeviceThresholdConfig | null>(null)
@@ -135,6 +149,43 @@ export default function DeviceDetail() {
       metricsHistoryRef.current = []
     } finally {
       setMetricsLoading(false)
+    }
+  }, [deviceId])
+
+  const fetchDiagnostics = useCallback(async () => {
+    if (!deviceId) return
+
+    setDiagnosticsLoading(true)
+    try {
+      const [sessionResult, healthResult, metricsResult] = await Promise.allSettled([
+        fetch(`/api/v1/sessions/${deviceId}`, { credentials: 'include' }),
+        fetch('/health', { credentials: 'include' }),
+        metricsApi.getDevice(deviceId),
+      ])
+
+      if (sessionResult.status === 'fulfilled') {
+        const sessionResponse = sessionResult.value
+        const sessionData = await sessionResponse.json().catch(() => ({}))
+        setScreenSessionDiagnostics({
+          ...(sessionData as ScreenSessionDiagnostics),
+          status: sessionResponse.status,
+          error: sessionResponse.ok ? undefined : ((sessionData as { error?: string }).error || `HTTP ${sessionResponse.status}`),
+        })
+      } else {
+        setScreenSessionDiagnostics({
+          error: sessionResult.reason instanceof Error ? sessionResult.reason.message : 'screen-svc 请求失败',
+        })
+      }
+
+      setNginxHealthy(healthResult.status === 'fulfilled' && healthResult.value.ok)
+
+      if (metricsResult.status === 'fulfilled') {
+        setCurrentMetrics(metricsResult.value.data)
+      }
+
+      setDiagnosticsUpdatedAt(new Date().toLocaleString())
+    } finally {
+      setDiagnosticsLoading(false)
     }
   }, [deviceId])
 
@@ -241,7 +292,8 @@ export default function DeviceDetail() {
   // Fetch initial metrics
   useEffect(() => {
     fetchMetrics()
-  }, [fetchMetrics])
+    fetchDiagnostics()
+  }, [fetchDiagnostics, fetchMetrics])
 
   // Fetch threshold config
   const fetchThresholdConfig = useCallback(async () => {
@@ -747,6 +799,104 @@ export default function DeviceDetail() {
     )
   }
 
+  // Diagnostics Tab Content
+  const DiagnosticsTabContent = () => {
+    if (!device) return null
+
+    const capabilityItems = [
+      { label: '投屏', enabled: device.capabilities.screenMirror, driver: device.drivers.screen },
+      { label: '触控', enabled: device.capabilities.remoteControl, driver: device.drivers.control },
+      { label: '控件树', enabled: device.capabilities.uiHierarchy, driver: device.drivers.uiHierarchy },
+      { label: '监控', enabled: device.capabilities.metrics, driver: device.drivers.metrics },
+      { label: '截图', enabled: device.capabilities.screenshot, driver: device.connectionType },
+      { label: '应用管理', enabled: device.capabilities.appManagement, driver: device.connectionType },
+    ]
+
+    const screenSessionStatus = screenSessionDiagnostics?.error
+      ? <Tag color="red">{screenSessionDiagnostics.error}</Tag>
+      : screenSessionDiagnostics?.active
+        ? <Tag color="green">会话中</Tag>
+        : <Tag color="default">未连接</Tag>
+
+    return (
+      <div>
+        <Space style={{ marginBottom: 16 }}>
+          <Button loading={diagnosticsLoading} onClick={fetchDiagnostics}>
+            刷新诊断
+          </Button>
+          {diagnosticsUpdatedAt && <Text type="secondary">最近刷新：{diagnosticsUpdatedAt}</Text>}
+        </Space>
+
+        <Row gutter={[16, 16]}>
+          <Col xs={24} lg={12}>
+            <Card size="small" title="设备接入">
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="展示系统">{device.displayOs} {device.displayOsVersion}</Descriptions.Item>
+                <Descriptions.Item label="兼容字段">{device.os} {device.osVersion}</Descriptions.Item>
+                <Descriptions.Item label="连接方式">{device.connectionType || '-'}</Descriptions.Item>
+                <Descriptions.Item label="设备状态">
+                  <Tag color={device.status === 'online' ? 'green' : device.status === 'busy' ? 'orange' : 'default'}>{device.status}</Tag>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          </Col>
+
+          <Col xs={24} lg={12}>
+            <Card size="small" title="服务状态">
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="Nginx">
+                  <Tag color={nginxHealthy ? 'green' : nginxHealthy === false ? 'red' : 'default'}>
+                    {nginxHealthy ? '正常' : nginxHealthy === false ? '异常' : '未知'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="设备 WebSocket">
+                  <Tag color={wsConnected ? 'green' : 'red'}>{wsConnected ? '已连接' : '未连接'}</Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="投屏会话">{screenSessionStatus}</Descriptions.Item>
+                <Descriptions.Item label="房间">
+                  {screenSessionDiagnostics?.room_name || '-'}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          </Col>
+
+          <Col span={24}>
+            <Card size="small" title="能力与驱动">
+              <Row gutter={[12, 12]}>
+                {capabilityItems.map((item) => (
+                  <Col xs={24} sm={12} lg={8} key={item.label}>
+                    <Card size="small">
+                      <Space direction="vertical" size={4}>
+                        <Text strong>{item.label}</Text>
+                        <Tag color={item.enabled ? 'green' : 'default'}>{item.enabled ? '可用' : '不可用'}</Tag>
+                        <Text type="secondary">驱动：{item.driver || '-'}</Text>
+                      </Space>
+                    </Card>
+                  </Col>
+                ))}
+              </Row>
+            </Card>
+          </Col>
+
+          <Col span={24}>
+            <Card size="small" title="最近监控">
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="采集驱动">{device.drivers.metrics || '-'}</Descriptions.Item>
+                <Descriptions.Item label="最近时间">{currentMetrics?.timestamp ? new Date(currentMetrics.timestamp + 'Z').toLocaleString() : '-'}</Descriptions.Item>
+                <Descriptions.Item label="CPU">{currentMetrics ? `${currentMetrics.cpu_usage.toFixed(1)}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="内存">{currentMetrics ? `${currentMetrics.memory_usage.toFixed(1)}%` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="网络">
+                  {currentMetrics ? `↓${currentMetrics.network_rx_speed_kbps.toFixed(2)} KB/s ↑${currentMetrics.network_tx_speed_kbps.toFixed(2)} KB/s` : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="电量">{currentMetrics ? `${currentMetrics.battery_level}% ${currentMetrics.battery_status}` : '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+          </Col>
+        </Row>
+      </div>
+    )
+  }
+
   // History Tab Content
   const HistoryTabContent = () => {
     return (
@@ -939,6 +1089,11 @@ export default function DeviceDetail() {
         </span>
       ),
       children: MetricsTabContent(),
+    },
+    {
+      key: 'diagnostics',
+      label: '诊断',
+      children: DiagnosticsTabContent(),
     },
     {
       key: 'thresholds',
