@@ -32,12 +32,10 @@ const getMetricColor = (value: number, type: 'cpu' | 'memory' | 'battery') => {
   return '#52c41a'
 }
 
-const formatOsName = (os: string) => {
-  const normalized = os.toLowerCase()
-  if (normalized === 'harmony') return 'HarmonyOS'
-  if (normalized === 'android') return 'Android'
-  if (normalized === 'ios') return 'iOS'
-  return os
+const formatDeviceOs = (device: Device) => {
+  const name = device.displayOs || device.os
+  const version = device.displayOsVersion || device.osVersion
+  return `${name} ${version}`.trim()
 }
 
 export default function DeviceCard({
@@ -57,6 +55,7 @@ export default function DeviceCard({
 
   const { color, text } = statusConfig[device.status] || { color: 'default', text: '未知' }
   const batteryLevel = metrics?.battery_level ?? device.batteryLevel
+  const canScreenMirror = device.status !== 'offline' && device.capabilities.screenMirror
 
   // Check if device has abnormal metrics
   const hasWarning = metrics && (
@@ -96,7 +95,7 @@ export default function DeviceCard({
             e.stopPropagation()
             onScreen(device.id)
           }}
-          disabled={device.status === 'offline'}
+          disabled={!canScreenMirror}
         >
           投屏
         </Button>,
@@ -136,7 +135,7 @@ export default function DeviceCard({
               <span>{device.model}</span>
             </div>
             <div className="device-meta">
-              <span>{formatOsName(device.os)} {device.osVersion}</span>
+              <span>{formatDeviceOs(device)}</span>
             </div>
             <Space direction="vertical" style={{ width: '100%', marginTop: 8 }}>
               {/* Performance metrics mini indicators */}

@@ -17,6 +17,7 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { deviceApi, metricsApi } from '@/services/api'
 import type { Device, DeviceMetrics, DeviceThresholdConfig } from '@/types'
+import { mapDevice } from '@/utils/device'
 
 const { Title, Text } = Typography
 
@@ -70,14 +71,6 @@ const formatUptime = (seconds: number) => {
   return `${minutes}m`
 }
 
-const formatOsName = (os: string) => {
-  const normalized = os.toLowerCase()
-  if (normalized === 'harmony') return 'HarmonyOS'
-  if (normalized === 'android') return 'Android'
-  if (normalized === 'ios') return 'iOS'
-  return os
-}
-
 export default function DeviceDetail() {
   const { id: deviceId } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -111,26 +104,7 @@ export default function DeviceDetail() {
         const response = await deviceApi.getDetail(deviceId)
         // Convert snake_case to camelCase
         const d = response.data as unknown as Record<string, unknown>
-        const device: Device = {
-          id: d.id as string,
-          name: d.name as string,
-          model: d.model as string,
-          brand: d.brand as string,
-          os: (d.os as string) || 'android',
-          osVersion: (d.os_version as string) || '',
-          status: d.status as 'online' | 'offline' | 'busy' | 'maintaining',
-          screenResolution: (d.screen_resolution as string) || '',
-          screenSize: (d.screen_size as number) || 5.5,
-          cpu: (d.cpu as string) || '',
-          memory: (d.memory as string) || '',
-          storage: (d.storage as string) || '',
-          batteryLevel: (d.battery_level as number) || 100,
-          occupiedBy: d.occupied_by as string | undefined,
-          occupiedAt: d.occupied_at as string | undefined,
-          lastActiveAt: (d.last_active_at as string) || '',
-          tags: (d.tags as string[]) || [],
-          thumbnail: d.thumbnail as string | undefined,
-        }
+        const device = mapDevice(d)
         setDevice(device)
       } catch (error) {
         console.error('Failed to fetch device:', error)
@@ -737,8 +711,9 @@ export default function DeviceDetail() {
           </Descriptions.Item>
           <Descriptions.Item label="品牌">{device.brand}</Descriptions.Item>
           <Descriptions.Item label="型号">{device.model}</Descriptions.Item>
-          <Descriptions.Item label="操作系统">{formatOsName(device.os)}</Descriptions.Item>
-          <Descriptions.Item label="系统版本">{device.osVersion}</Descriptions.Item>
+          <Descriptions.Item label="操作系统">{device.displayOs}</Descriptions.Item>
+          <Descriptions.Item label="系统版本">{device.displayOsVersion}</Descriptions.Item>
+          <Descriptions.Item label="连接方式">{device.connectionType || '-'}</Descriptions.Item>
           <Descriptions.Item label="分辨率">{device.screenResolution}</Descriptions.Item>
           <Descriptions.Item label="屏幕尺寸">{device.screenSize}英寸</Descriptions.Item>
           <Descriptions.Item label="CPU">{device.cpu}</Descriptions.Item>
@@ -757,7 +732,7 @@ export default function DeviceDetail() {
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
-            disabled={!deviceId || device.status === 'offline'}
+            disabled={!deviceId || device.status === 'offline' || !device.capabilities.screenMirror}
             onClick={() => window.open(`/screen?deviceId=${encodeURIComponent(device.id)}`, '_blank', 'noopener,noreferrer')}
           >
             开始投屏

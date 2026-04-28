@@ -14,6 +14,7 @@ import { Room } from 'livekit-client'
 import type { Device } from '@/types'
 import WebrtcPlayer from '@/components/WebrtcPlayer'
 import { TouchOverlay } from '@/components/TouchHandler'
+import { formatDeviceOs, mapDevice } from '@/utils/device'
 import './ScreenPage.css'
 
 const { Text } = Typography
@@ -90,6 +91,10 @@ export default function ScreenPage() {
   const [loadingUiHierarchy, setLoadingUiHierarchy] = useState(false)
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null)
   const [uiScreen, setUiScreen] = useState<{ width: number; height: number } | null>(null)
+  const currentDevice = devices.find((d) => d.id === selectedDevice)
+  const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? Boolean(selectedDevice)
+  const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? Boolean(selectedDevice)
+  const uiHierarchySupported = currentDevice?.capabilities.uiHierarchy ?? Boolean(selectedDevice)
   
   // LiveKit state
   const [lkSession, setLkSession] = useState<{ url: string; token: string } | null>(null)
@@ -117,7 +122,7 @@ export default function ScreenPage() {
       try {
         const res = await fetch('/api/v1/devices')
         const data = await res.json()
-        setDevices(data.devices || [])
+        setDevices((data.devices || []).map((d: Record<string, unknown>) => mapDevice(d)))
       } catch (e) {
         console.error('Failed to fetch devices:', e)
       }
@@ -150,6 +155,10 @@ export default function ScreenPage() {
   // Start session on backend
   const startSession = useCallback(async () => {
     if (!selectedDevice) return
+    if (currentDevice && !currentDevice.capabilities.screenMirror) {
+      message.error('当前设备连接不支持投屏')
+      return
+    }
     setLoading(true)
     try {
       const res = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/start`, {
@@ -177,7 +186,7 @@ export default function ScreenPage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedDevice])
+  }, [currentDevice, selectedDevice])
 
   useEffect(() => {
     if (!selectedDevice || isPlaying || lkSession || autoStartedDeviceRef.current === selectedDevice) return
@@ -249,6 +258,7 @@ export default function ScreenPage() {
   // Handle touch input via DataChannel
   const handleTouchInput = useCallback(
     (type: string, x: number, y: number, extra?: Record<string, unknown>) => {
+      if (!remoteControlSupported) return
       if (type !== 'touch') return
       const action = extra?.action || 'move'
       if (action === 'move') {
@@ -259,7 +269,7 @@ export default function ScreenPage() {
       flushPendingMove()
       publishControl({ type: 'touch', action, x, y }, true)
     },
-    [flushPendingMove, publishControl, scheduleMove]
+    [flushPendingMove, publishControl, remoteControlSupported, scheduleMove]
   )
 
   const handleWebRTCStats = useCallback((stats: { fps: number; bytesReceived: number }) => {
@@ -276,6 +286,10 @@ export default function ScreenPage() {
     if (!selectedDevice) return
     if (!isPlaying) {
       message.warning('请先连接投屏后再获取控件')
+      return
+    }
+    if (currentDevice && !currentDevice.capabilities.uiHierarchy) {
+      message.warning('当前设备连接不支持获取控件')
       return
     }
 
@@ -302,7 +316,7 @@ export default function ScreenPage() {
     } finally {
       setLoadingUiHierarchy(false)
     }
-  }, [isPlaying, selectedDevice])
+  }, [currentDevice, isPlaying, selectedDevice])
 
   const handleConnectionStateChange = useCallback((state: string) => {
     setConnectionState(state)
@@ -388,7 +402,7 @@ export default function ScreenPage() {
   // Send key event via DataChannel
   const sendKey = (keycode: string) => {
     const room = lkRoomRef.current
-    if (!room || room.state !== 'connected') return
+    if (!room || room.state !== 'connected' || !remoteControlSupported) return
 
     const keyMap: Record<string, number> = {
       'KEYCODE_HOME': 3,
@@ -420,13 +434,14 @@ export default function ScreenPage() {
           <div className="device-stage-header">
             <div className="device-context">
               <VideoCameraOutlined />
-              <span>{devices.find((d) => d.id === selectedDevice)?.name || selectedDevice || '未选择设备'}</span>
+              <span>{currentDevice?.name || selectedDevice || '未选择设备'}</span>
+              {currentDevice && <Text type="secondary">{formatDeviceOs(currentDevice)}</Text>}
             </div>
             <Button
               type={isPlaying ? 'default' : 'primary'}
               icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
               onClick={() => isPlaying ? stopSession() : startSession()}
-              disabled={!selectedDevice}
+              disabled={!selectedDevice || !screenMirrorSupported}
               loading={loading}
             >
               {loading ? '连接中' : isPlaying ? '断开' : '重新连接'}
@@ -507,9 +522,9 @@ export default function ScreenPage() {
             </div>
 
             <div className="device-rail">
-              <Button shape="circle" icon={<HomeOutlined />} onClick={() => sendKey('KEYCODE_HOME')} />
-              <Button shape="circle" icon={<RollbackOutlined />} onClick={() => sendKey('KEYCODE_BACK')} />
-              <Button shape="circle" icon={<AppstoreOutlined />} onClick={() => sendKey('KEYCODE_APP_SWITCH')} />
+              <Button shape="circle" icon={<HomeOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_HOME')} />
+              <Button shape="circle" icon={<RollbackOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_BACK')} />
+              <Button shape="circle" icon={<AppstoreOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_APP_SWITCH')} />
               <Button shape="circle" icon={<FullscreenOutlined />} onClick={handleFullscreen} />
             </div>
           </div>
@@ -531,7 +546,7 @@ export default function ScreenPage() {
           <div className="workspace-panel inspector-panel">
             <div className="workspace-toolbar">
               <Space>
-                <Button type="primary" loading={loadingUiHierarchy} disabled={!selectedDevice || !isPlaying} onClick={fetchUiHierarchy}>
+                <Button type="primary" loading={loadingUiHierarchy} disabled={!selectedDevice || !isPlaying || !uiHierarchySupported} onClick={fetchUiHierarchy}>
                   获取控件
                 </Button>
                 <Button danger disabled={uiElements.length === 0} onClick={clearUiHierarchy}>
@@ -539,7 +554,7 @@ export default function ScreenPage() {
                 </Button>
               </Space>
               <Space size={20}>
-                <Text type="secondary">当前设备：{devices.find((d) => d.id === selectedDevice)?.name || selectedDevice || '-'}</Text>
+                <Text type="secondary">当前设备：{currentDevice?.name || selectedDevice || '-'}</Text>
                 <Text type="secondary">选中：{selectedUiElement?.class_name || '-'}</Text>
               </Space>
             </div>

@@ -27,9 +27,9 @@
 *   `POST /api/v1/devices/:id/acquire`: 占用设备
 *   `POST /api/v1/devices/:id/release`: 释放设备
 *   `POST /api/v1/devices/:id/reserve`: 预约设备
-*   `GET /api/v1/devices/:id/ui-hierarchy`: 获取 Android 当前屏幕控件树和自动化选择器建议
+*   `GET /api/v1/devices/:id/ui-hierarchy`: 获取当前屏幕控件树和自动化选择器建议
 
-`ui-hierarchy` 使用 Android UIAutomator dump 获取原生控件信息，返回 `resource_id`、`text`、`content_desc`、`class_name`、`bounds`、`center`、`xpath` 和 `selector_suggestions`。第一版仅支持 Android，结果不持久化。
+`ui-hierarchy` 基于设备 `capabilities.ui_hierarchy` 判断是否可用。Android 设备和通过 ADB 接入的 HarmonyOS 手机使用 Android UIAutomator dump 获取原生控件信息，返回 `resource_id`、`text`、`content_desc`、`class_name`、`bounds`、`center`、`xpath` 和 `selector_suggestions`。结果不持久化。
 
 ### 3. 投屏与控制 (Screen)
 *   `GET /api/v1/health`: screen-svc 健康检查
@@ -58,12 +58,33 @@
 ```json
 {
   "id": "device-001",
-  "serial": "ABC123456789",
-  "platform": "android",
-  "model": "Pixel 6",
+  "name": "华为 P50 Pro",
+  "model": "JAD-AL50",
+  "brand": "HUAWEI",
+  "os": "harmony",
+  "os_version": "4.2.0",
+  "display_os": "HarmonyOS",
+  "display_os_version": "4.2.0",
+  "connection_type": "adb",
+  "drivers": {
+    "metrics": "adb",
+    "screen": "scrcpy",
+    "ui_hierarchy": "uiautomator",
+    "control": "scrcpy"
+  },
+  "capabilities": {
+    "screen_mirror": true,
+    "remote_control": true,
+    "ui_hierarchy": true,
+    "metrics": true,
+    "screenshot": true,
+    "app_management": true
+  },
   "status": "online"
 }
 ```
+
+`os/os_version` 保留兼容；新前端和新能力判断应优先使用 `display_os/display_os_version` 做展示，使用 `drivers/capabilities` 判断实际可用能力。通过 ADB 接入的 HarmonyOS 手机属于 Android-compatible 设备，不等同于 HDC 接入。
 
 ## 完整 API 规范
 详细的 OpenAPI 规范请参考项目中的 `infra/api/api-spec.yaml`。

@@ -1,6 +1,8 @@
 # Models package
 from app.models.device import (
     Device,
+    DeviceCapabilities,
+    DeviceDrivers,
     DeviceStatus,
     DeviceCreate,
     DeviceUpdate,
@@ -51,6 +53,8 @@ from app.models.ui_hierarchy import (
 
 __all__ = [
     "Device",
+    "DeviceCapabilities",
+    "DeviceDrivers",
     "DeviceStatus",
     "DeviceCreate",
     "DeviceUpdate",

@@ -102,6 +102,12 @@ async def release_device(device_id: str):
 @router.get("/{device_id}/screenshot")
 async def get_screenshot(device_id: str):
     """Get device screenshot"""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not device.capabilities.screenshot:
+        raise HTTPException(status_code=400, detail="Screenshot is not supported by this device connection")
+
     screenshot = await device_service.get_screenshot(device_id)
     if not screenshot:
         raise HTTPException(status_code=404, detail="Device not found or screenshot failed")
@@ -121,10 +127,10 @@ async def get_ui_hierarchy(device_id: str):
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    if str(device.os).lower() not in {"android", "harmony"}:
+    if not device.capabilities.ui_hierarchy:
         raise HTTPException(
             status_code=400,
-            detail="UI hierarchy is currently supported for Android-compatible devices only",
+            detail="UI hierarchy is not supported by this device connection",
         )
 
     try:
@@ -154,6 +160,12 @@ async def execute_command(
             detail="Only admin users can execute commands on devices"
         )
 
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.connection_type != "adb":
+        raise HTTPException(status_code=400, detail="Shell command is only supported for ADB-connected devices")
+
     user_id = current_user.get("id", "unknown")
 
     # Log the operation
@@ -181,6 +193,12 @@ async def execute_command(
 @router.get("/{device_id}/logs")
 async def get_device_logs(device_id: str, lines: int = 100):
     """Get device logcat"""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.connection_type != "adb":
+        raise HTTPException(status_code=400, detail="Logcat is only supported for ADB-connected devices")
+
     from app.services.adb_service import adb_service
     try:
         logs = await adb_service.get_device_logs(device_id, lines)

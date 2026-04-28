@@ -39,6 +39,8 @@ async def get_device_metrics(device_id: str):
     device = await device_service.get_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    if not device.capabilities.metrics:
+        raise HTTPException(status_code=400, detail="Metrics are not supported by this device connection")
 
     # Try to get cached metrics first
     metrics = metrics_collector.get_current_metrics(device_id)
@@ -85,6 +87,8 @@ async def get_device_metrics_history(
     device = await device_service.get_device(device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    if not device.capabilities.metrics:
+        raise HTTPException(status_code=400, detail="Metrics are not supported by this device connection")
 
     # Determine time range
     if not end_time:

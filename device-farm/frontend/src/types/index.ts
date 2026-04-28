@@ -1,4 +1,20 @@
 // 设备类型
+export interface DeviceDrivers {
+  metrics: string
+  screen: string
+  uiHierarchy: string
+  control: string
+}
+
+export interface DeviceCapabilities {
+  screenMirror: boolean
+  remoteControl: boolean
+  uiHierarchy: boolean
+  metrics: boolean
+  screenshot: boolean
+  appManagement: boolean
+}
+
 export interface Device {
   id: string
   name: string
@@ -6,6 +22,11 @@ export interface Device {
   brand: string
   os: string
   osVersion: string
+  displayOs: string
+  displayOsVersion: string
+  connectionType: string
+  drivers: DeviceDrivers
+  capabilities: DeviceCapabilities
   status: 'online' | 'offline' | 'busy' | 'maintaining'
   screenResolution: string
   screenSize: number

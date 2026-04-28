@@ -105,6 +105,7 @@ class DeviceService:
                 os=device.os,
                 os_version=device.os_version,
             )
+        device.refresh_runtime_fields()
 
     async def _scan_loop(self):
         """Background device scanning loop"""
@@ -130,6 +131,7 @@ class DeviceService:
                 self._devices[device_id].status = device_info["status"]
                 self._devices[device_id].last_active_at = datetime.now()
                 await self._refresh_existing_device_metadata(self._devices[device_id])
+                self._devices[device_id].refresh_runtime_fields()
                 # Persist status update to database
                 await device_db_service.update_device_status(
                     device_id,
@@ -144,6 +146,7 @@ class DeviceService:
                         name=info.get("name", device_id),
                         model=info.get("model", "Unknown"),
                         brand=info.get("brand", "Unknown"),
+                        os=info.get("os", "android"),
                         os_version=info.get("os_version", "Unknown"),
                         status=device_info["status"],
                         screen_resolution=info.get("screen_resolution", "Unknown"),
@@ -165,6 +168,7 @@ class DeviceService:
         offline_ids = [did for did in self._devices if did not in current_ids]
         for device_id in offline_ids:
             self._devices[device_id].status = DeviceStatus.OFFLINE
+            self._devices[device_id].refresh_runtime_fields()
 
         # Batch update offline status in database
         if offline_ids:
@@ -280,6 +284,7 @@ class DeviceService:
             device.tags = update.tags
 
         device.updated_at = datetime.now()
+        device.refresh_runtime_fields()
 
         # Persist to database
         await device_db_service.update_device_info(

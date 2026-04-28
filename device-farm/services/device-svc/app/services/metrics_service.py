@@ -450,18 +450,17 @@ class MetricsCollector:
             return result
 
     async def collect_device_metrics(self, device: Device) -> Optional[DeviceMetrics]:
-        """Collect metrics for a device based on its OS type"""
-        if device.os == "android":
+        """Collect metrics using the device runtime capability model."""
+        metrics_driver = device.drivers.metrics
+
+        if metrics_driver == "adb":
             return await self.collect_android_metrics(device.id)
-        elif device.os == "ios":
+        elif metrics_driver == "pymobiledevice3":
             return await self.collect_ios_metrics(device.id)
-        elif device.os == "harmony":
-            adb_metrics = await self.collect_android_metrics(device.id)
-            if adb_metrics:
-                return adb_metrics
+        elif metrics_driver == "hdc":
             return await self.collect_harmony_metrics(device.id)
         else:
-            logger.warning(f"Unknown OS type for device {device.id}: {device.os}")
+            logger.warning(f"No metrics driver available for device {device.id}: {device.drivers.model_dump()}")
             return None
 
     async def store_metrics(self, metrics: DeviceMetrics):

@@ -6,7 +6,7 @@ from pathlib import Path
 os.environ.setdefault("DEBUG", "false")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.models import Device, DeviceMetrics
+from app.models import Device, DeviceDrivers, DeviceMetrics
 from app.services.metrics_service import MetricsCollector
 
 
@@ -46,7 +46,7 @@ class MetricsCollectorTest(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result, adb_metrics)
         self.assertEqual(calls, [("adb", device.id)])
 
-    async def test_harmony_device_falls_back_to_hdc_when_adb_unavailable(self):
+    async def test_collects_with_hdc_when_metrics_driver_is_hdc(self):
         collector = MetricsCollector()
         device = Device(
             id="serial-1",
@@ -61,6 +61,7 @@ class MetricsCollectorTest(unittest.IsolatedAsyncioTestCase):
             memory="Unknown",
             storage="Unknown",
         )
+        device.drivers = DeviceDrivers(metrics="hdc")
 
         hdc_metrics = DeviceMetrics(device_id=device.id, cpu_usage=9.0)
         calls = []
@@ -79,7 +80,7 @@ class MetricsCollectorTest(unittest.IsolatedAsyncioTestCase):
         result = await collector.collect_device_metrics(device)
 
         self.assertIs(result, hdc_metrics)
-        self.assertEqual(calls, [("adb", device.id), ("hdc", device.id)])
+        self.assertEqual(calls, [("hdc", device.id)])
 
 
 if __name__ == "__main__":

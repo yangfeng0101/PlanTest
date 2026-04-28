@@ -15,20 +15,13 @@ import DeviceCard from '@/components/DeviceCard'
 import { useDeviceStore } from '@/stores/deviceStore'
 import { metricsApi } from '@/services/api'
 import type { Device, DeviceMetrics } from '@/types'
+import { formatDeviceOs } from '@/utils/device'
 
 const { Search } = Input
 const { Option } = Select
 
 type SortField = 'name' | 'cpu' | 'memory' | 'battery'
 type SortOrder = 'asc' | 'desc'
-
-const formatOsName = (os: string) => {
-  const normalized = os.toLowerCase()
-  if (normalized === 'harmony') return 'HarmonyOS'
-  if (normalized === 'android') return 'Android'
-  if (normalized === 'ios') return 'iOS'
-  return os
-}
 
 export default function DevicesPage() {
   const navigate = useNavigate()
@@ -300,7 +293,7 @@ export default function DevicesPage() {
       title: '系统版本',
       dataIndex: 'osVersion',
       key: 'osVersion',
-      render: (_: string, record: Device) => `${formatOsName(record.os)} ${record.osVersion}`,
+      render: (_: string, record: Device) => formatDeviceOs(record),
     },
     {
       title: '状态',
@@ -375,6 +368,7 @@ export default function DevicesPage() {
             size="small"
             onClick={() => handleScreen(record.id)}
             icon={<PlayCircleOutlined />}
+            disabled={record.status === 'offline' || !record.capabilities.screenMirror}
           >
             投屏
           </Button>

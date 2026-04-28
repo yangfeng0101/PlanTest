@@ -273,6 +273,21 @@ DEVICE_MODEL_MAP = {
 }
 ```
 
+### 问题: HarmonyOS 显示后监控或控件获取不可用
+**原因**: HarmonyOS 手机通过 ADB 接入时仍然是 Android-compatible 能力链路。如果业务逻辑直接用 `os === "android"` 判断能力，显示为 `harmony` 后会误判为不支持。
+
+**解决方案**:
+使用设备响应中的运行时能力字段，而不是直接判断 `os`：
+```typescript
+device.displayOs           // 展示名称，如 HarmonyOS
+device.connectionType      // 接入方式，如 adb
+device.drivers.metrics     // 采集驱动，如 adb
+device.capabilities.uiHierarchy
+device.capabilities.screenMirror
+```
+
+后端能力判断也应基于 `drivers/capabilities`。当前通过 ADB 接入的 HarmonyOS 手机应显示为 `HarmonyOS`，但监控、投屏、触控和 UIAutomator 控件树仍走 ADB/scrcpy/uiautomator。
+
 ### 问题: 监控页面显示 "WebSocket 断开"
 **原因**: Vite 代理未启用 WebSocket 支持
 

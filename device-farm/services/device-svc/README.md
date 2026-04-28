@@ -1,6 +1,6 @@
 # Device Service
 
-Device management service for Android devices via ADB.
+Device management service for Android-compatible devices via ADB.
 
 ## Features
 
@@ -10,6 +10,18 @@ Device management service for Android devices via ADB.
 - Screenshot capture
 - Shell command execution
 - Real-time WebSocket updates
+- Runtime device capability model for display OS, connection type, drivers, and supported features
+
+## Device Capability Model
+
+Device responses keep legacy `os/os_version` fields, and also include runtime fields:
+
+- `display_os` / `display_os_version` for user-facing platform display
+- `connection_type` for the active connection, such as `adb`
+- `drivers` for metrics, screen, UI hierarchy, and control backends
+- `capabilities` for feature availability
+
+HarmonyOS phones connected through ADB are treated as Android-compatible devices: they display as HarmonyOS, while metrics, scrcpy screen streaming, remote control, screenshots, and UIAutomator hierarchy still use the ADB-compatible drivers.
 
 ## Prerequisites
 

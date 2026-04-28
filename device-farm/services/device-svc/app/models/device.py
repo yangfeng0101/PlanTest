@@ -13,6 +13,24 @@ class DeviceStatus(str, Enum):
     MAINTENANCE = "maintenance"  # Legacy alias
 
 
+class DeviceDrivers(BaseModel):
+    """Runtime drivers used by each device capability."""
+    metrics: str = Field(default="", description="Metrics collection driver")
+    screen: str = Field(default="", description="Screen streaming driver")
+    ui_hierarchy: str = Field(default="", description="UI hierarchy driver")
+    control: str = Field(default="", description="Remote control driver")
+
+
+class DeviceCapabilities(BaseModel):
+    """Runtime capabilities derived from current connection and drivers."""
+    screen_mirror: bool = False
+    remote_control: bool = False
+    ui_hierarchy: bool = False
+    metrics: bool = False
+    screenshot: bool = False
+    app_management: bool = False
+
+
 class Device(BaseModel):
     """Device model"""
     id: str = Field(..., description="Device unique identifier (serial number)")
@@ -46,8 +64,67 @@ class Device(BaseModel):
     # Thumbnail
     thumbnail: Optional[str] = Field(default=None, description="Device thumbnail URL")
 
+    # Runtime display/capability info. These fields are not persisted.
+    display_os: str = Field(default="", description="User-facing OS name")
+    display_os_version: str = Field(default="", description="User-facing OS version")
+    connection_type: str = Field(default="", description="Current connection type: adb, hdc, wda")
+    drivers: DeviceDrivers = Field(default_factory=DeviceDrivers, description="Runtime driver mapping")
+    capabilities: DeviceCapabilities = Field(default_factory=DeviceCapabilities, description="Runtime capability flags")
+
     class Config:
         use_enum_values = True
+
+    def model_post_init(self, __context) -> None:
+        self.refresh_runtime_fields()
+
+    def refresh_runtime_fields(self) -> None:
+        """Derive user-facing platform fields separately from runtime drivers."""
+        normalized_os = (self.os or "").lower()
+
+        if normalized_os == "harmony":
+            self.display_os = "HarmonyOS"
+            self.display_os_version = self.os_version
+            self.connection_type = "adb"
+            self.drivers = DeviceDrivers(
+                metrics="adb",
+                screen="scrcpy",
+                ui_hierarchy="uiautomator",
+                control="scrcpy",
+            )
+        elif normalized_os == "android":
+            self.display_os = "Android"
+            self.display_os_version = self.os_version
+            self.connection_type = "adb"
+            self.drivers = DeviceDrivers(
+                metrics="adb",
+                screen="scrcpy",
+                ui_hierarchy="uiautomator",
+                control="scrcpy",
+            )
+        elif normalized_os == "ios":
+            self.display_os = "iOS"
+            self.display_os_version = self.os_version
+            self.connection_type = "wda"
+            self.drivers = DeviceDrivers(
+                metrics="pymobiledevice3",
+                screen="wda",
+                ui_hierarchy="wda",
+                control="wda",
+            )
+        else:
+            self.display_os = self.os or "Unknown"
+            self.display_os_version = self.os_version or "Unknown"
+            self.connection_type = ""
+            self.drivers = DeviceDrivers()
+
+        self.capabilities = DeviceCapabilities(
+            screen_mirror=bool(self.drivers.screen),
+            remote_control=bool(self.drivers.control),
+            ui_hierarchy=bool(self.drivers.ui_hierarchy),
+            metrics=bool(self.drivers.metrics),
+            screenshot=self.connection_type in {"adb", "wda"},
+            app_management=self.connection_type == "adb",
+        )
 
 
 class DeviceCreate(BaseModel):
