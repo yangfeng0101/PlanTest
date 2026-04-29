@@ -296,9 +296,16 @@
   word-break: break-all;
 }
 
-.gesture-panel,
-.quick-input {
+.gesture-panel {
   padding: 8px 0;
+}
+
+.virtual-keyboard-panel {
+  width: min(320px, 76vw);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .ant-card-body {

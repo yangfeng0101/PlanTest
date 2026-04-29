@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Space, message, Typography, Table } from 'antd'
+import { Button, Input, Popover, Space, message, Typography, Table } from 'antd'
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -9,6 +9,8 @@ import {
   HomeOutlined,
   RollbackOutlined,
   AppstoreOutlined,
+  KeyOutlined,
+  SendOutlined,
 } from '@ant-design/icons'
 import { Room } from 'livekit-client'
 import type { Device } from '@/types'
@@ -21,6 +23,17 @@ const { Text } = Typography
 
 const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || ''
 const TOUCH_MOVE_INTERVAL_MS = 16
+const KEYBOARD_KEY_CODE_MAP: Record<string, number> = {
+  Backspace: 67,
+  Enter: 66,
+  Tab: 61,
+  Escape: 111,
+  Delete: 112,
+  ArrowUp: 19,
+  ArrowDown: 20,
+  ArrowLeft: 21,
+  ArrowRight: 22,
+}
 
 function requestStopSession(deviceId: string) {
   void fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(deviceId)}/stop`, {
@@ -30,6 +43,12 @@ function requestStopSession(deviceId: string) {
   }).catch((error) => {
     console.error('Failed to stop session:', error)
   })
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  const tagName = target.tagName.toLowerCase()
+  return tagName === 'input' || tagName === 'textarea' || target.isContentEditable
 }
 
 interface UIElementBounds {
@@ -115,6 +134,8 @@ export default function ScreenPage() {
   const [sessionDiagnostics, setSessionDiagnostics] = useState<ScreenSessionDiagnostics | null>(null)
   const [browserFirstFrameMs, setBrowserFirstFrameMs] = useState<number | null>(null)
   const [networkLatencyMs, setNetworkLatencyMs] = useState<number | null>(null)
+  const [quickInputText, setQuickInputText] = useState('')
+  const [virtualKeyboardOpen, setVirtualKeyboardOpen] = useState(false)
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -293,6 +314,15 @@ export default function ScreenPage() {
     })
   }, [])
 
+  const sendAndroidKey = useCallback((keyCode: number) => {
+    if (!remoteControlSupported || keyCode <= 0) return
+
+    publishControl({ type: 'key', action: 'down', keyCode }, true)
+    window.setTimeout(() => {
+      publishControl({ type: 'key', action: 'up', keyCode }, true)
+    }, 50)
+  }, [publishControl, remoteControlSupported])
+
   const flushPendingMove = useCallback(() => {
     if (moveTimerRef.current) {
       window.clearTimeout(moveTimerRef.current)
@@ -437,6 +467,30 @@ export default function ScreenPage() {
   }, [])
 
   useEffect(() => {
+    if (!virtualKeyboardOpen || !isPlaying || !remoteControlSupported) return
+
+    const handleKeyboardInput = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
+      if (isEditableTarget(event.target)) return
+
+      const keyCode = KEYBOARD_KEY_CODE_MAP[event.key]
+      if (keyCode) {
+        event.preventDefault()
+        sendAndroidKey(keyCode)
+        return
+      }
+
+      if (event.key.length === 1) {
+        event.preventDefault()
+        publishControl({ type: 'text', text: event.key }, true)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyboardInput)
+    return () => window.removeEventListener('keydown', handleKeyboardInput)
+  }, [isPlaying, publishControl, remoteControlSupported, sendAndroidKey, virtualKeyboardOpen])
+
+  useEffect(() => {
     const container = playerContainerRef.current
     if (!container || !deviceInfo) {
       setRenderMetrics(null)
@@ -510,9 +564,6 @@ export default function ScreenPage() {
 
   // Send key event via DataChannel
   const sendKey = (keycode: string) => {
-    const room = lkRoomRef.current
-    if (!room || room.state !== 'connected' || !remoteControlSupported) return
-
     const keyMap: Record<string, number> = {
       'KEYCODE_HOME': 3,
       'KEYCODE_BACK': 4,
@@ -522,11 +573,16 @@ export default function ScreenPage() {
 
     const keyCode = keyMap[keycode]
     if (!keyCode) return
+    sendAndroidKey(keyCode)
+  }
 
-    publishControl({ type: 'key', action: 'down', keyCode }, true)
-    window.setTimeout(() => {
-      publishControl({ type: 'key', action: 'up', keyCode }, true)
-    }, 50)
+  const sendText = () => {
+    const text = quickInputText
+    if (!text || !remoteControlSupported) return
+
+    publishControl({ type: 'text', text }, true)
+    setQuickInputText('')
+    setVirtualKeyboardOpen(false)
   }
 
   // Fullscreen
@@ -535,6 +591,27 @@ export default function ScreenPage() {
       playerContainerRef.current.requestFullscreen()
     }
   }
+
+  const virtualKeyboardContent = (
+    <div className="virtual-keyboard-panel">
+      <Input.Password
+        value={quickInputText}
+        onChange={(event) => setQuickInputText(event.target.value)}
+        onPressEnter={sendText}
+        placeholder="输入文本或密码"
+        autoComplete="off"
+        disabled={!isPlaying || !remoteControlSupported}
+      />
+      <Button
+        type="primary"
+        icon={<SendOutlined />}
+        disabled={!quickInputText || !isPlaying || !remoteControlSupported}
+        onClick={sendText}
+      >
+        输入
+      </Button>
+    </div>
+  )
 
   return (
     <div className="screen-page">
@@ -646,6 +723,22 @@ export default function ScreenPage() {
               <Button shape="circle" icon={<RollbackOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_BACK')} />
               <Button shape="circle" icon={<AppstoreOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_APP_SWITCH')} />
               <Button shape="circle" icon={<FullscreenOutlined />} onClick={handleFullscreen} />
+              <Popover
+                content={virtualKeyboardContent}
+                trigger="click"
+                placement="left"
+                open={virtualKeyboardOpen}
+                onOpenChange={setVirtualKeyboardOpen}
+              >
+                <Button
+                  shape="circle"
+                  type={virtualKeyboardOpen ? 'primary' : 'default'}
+                  icon={<KeyOutlined />}
+                  disabled={!isPlaying || !remoteControlSupported}
+                  aria-label="电脑键盘输入"
+                  title="电脑键盘输入"
+                />
+              </Popover>
             </div>
           </div>
 

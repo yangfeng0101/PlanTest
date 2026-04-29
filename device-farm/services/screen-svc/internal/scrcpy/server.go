@@ -110,6 +110,7 @@ func (s *Server) startServer() error {
 		"send_dummy_byte=true",
 		"clipboard_autosync=false",
 		"capture_orientation=0",
+		"display_ime_policy=hide",
 	}
 	s.cmd = exec.Command("adb", args...)
 	s.cmd.Stdout = os.Stdout
