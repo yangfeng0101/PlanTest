@@ -38,7 +38,7 @@ export default function ReportsPage() {
     } catch (error) {
       console.error('Failed to fetch reports:', error)
       // 使用模拟数据
-      setReports([
+      const fallbackReports: Report[] = [
         {
           id: '1',
           task_id: 'task-001',
@@ -66,7 +66,8 @@ export default function ReportsPage() {
           created_at: '2024-01-15 12:00:00',
           updated_at: '2024-01-15 12:00:00',
         },
-      ] as any)
+      ]
+      setReports(fallbackReports)
     } finally {
       setLoading(false)
     }

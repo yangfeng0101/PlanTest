@@ -22,6 +22,16 @@ const { Text } = Typography
 const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || ''
 const TOUCH_MOVE_INTERVAL_MS = 16
 
+function requestStopSession(deviceId: string) {
+  void fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(deviceId)}/stop`, {
+    method: 'POST',
+    credentials: 'include',
+    keepalive: true,
+  }).catch((error) => {
+    console.error('Failed to stop session:', error)
+  })
+}
+
 interface UIElementBounds {
   x: number
   y: number
@@ -71,6 +81,17 @@ interface RenderMetrics {
   height: number
 }
 
+interface ScreenSessionDiagnostics {
+  active?: boolean
+  stage?: string
+  stage_label?: string
+  durations_ms?: Record<string, number>
+  frame_count?: number
+  key_frame_count?: number
+  last_error?: string
+  reused?: boolean
+}
+
 export default function ScreenPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -85,13 +106,15 @@ export default function ScreenPage() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [loading, setLoading] = useState(Boolean(deviceIdFromUrl))
   const [fps, setFps] = useState(0)
-  const [connectionState, setConnectionState] = useState<string>('idle')
   const [hasVideoFrame, setHasVideoFrame] = useState(false)
   const [uiElements, setUiElements] = useState<UIElementNode[]>([])
   const [selectedUiElement, setSelectedUiElement] = useState<UIElementNode | null>(null)
   const [loadingUiHierarchy, setLoadingUiHierarchy] = useState(false)
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null)
   const [uiScreen, setUiScreen] = useState<{ width: number; height: number } | null>(null)
+  const [sessionDiagnostics, setSessionDiagnostics] = useState<ScreenSessionDiagnostics | null>(null)
+  const [browserFirstFrameMs, setBrowserFirstFrameMs] = useState<number | null>(null)
+  const [networkLatencyMs, setNetworkLatencyMs] = useState<number | null>(null)
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -104,6 +127,8 @@ export default function ScreenPage() {
   const moveTimerRef = useRef<number | null>(null)
   const autoStartedDeviceRef = useRef<string | null>(null)
   const autoStartBlockedRef = useRef<string | null>(null)
+  const startRequestedAtRef = useRef<number | null>(null)
+  const activeSessionDeviceRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (deviceIdFromUrl) {
@@ -149,7 +174,7 @@ export default function ScreenPage() {
         const resolution = data.screen_resolution || data.screenResolution || '1080x1920'
         const [width, height] = resolution.split('x').map(Number)
         setDeviceInfo({ width: width || 1080, height: height || 1920 })
-      } catch (e) {
+      } catch {
         setDeviceInfo({ width: 1080, height: 1920 })
       }
     }
@@ -172,6 +197,10 @@ export default function ScreenPage() {
       return
     }
     setLoading(true)
+    setSessionDiagnostics(null)
+    setBrowserFirstFrameMs(null)
+    setNetworkLatencyMs(null)
+    startRequestedAtRef.current = performance.now()
     try {
       const res = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/start`, {
         method: 'POST',
@@ -186,7 +215,8 @@ export default function ScreenPage() {
           setDeviceInfo({ width: videoWidth, height: videoHeight })
         }
         setHasVideoFrame(false)
-        setConnectionState('connecting')
+        setSessionDiagnostics(data as ScreenSessionDiagnostics)
+        activeSessionDeviceRef.current = selectedDevice
         setLkSession({ url: data.livekit_url || 'ws://localhost:7880', token: data.token })
         setIsPlaying(true)
       } else {
@@ -241,18 +271,15 @@ export default function ScreenPage() {
     setIsPlaying(false)
     setLkSession(null)
     setHasVideoFrame(false)
-    setConnectionState('idle')
+    setSessionDiagnostics(null)
+    setBrowserFirstFrameMs(null)
+    setNetworkLatencyMs(null)
+    startRequestedAtRef.current = null
+    activeSessionDeviceRef.current = null
     clearUiHierarchy()
     flushPendingMove()
     lkRoomRef.current = null
-    try {
-      await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/stop`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-    } catch (e) {
-      console.error('Failed to stop session:', e)
-    }
+    requestStopSession(selectedDevice)
   }
 
   const publishControl = useCallback((payload: Record<string, unknown>, reliable = false) => {
@@ -313,8 +340,11 @@ export default function ScreenPage() {
     [flushPendingMove, publishControl, remoteControlSupported, scheduleMove]
   )
 
-  const handleWebRTCStats = useCallback((stats: { fps: number; bytesReceived: number }) => {
+  const handleWebRTCStats = useCallback((stats: { fps: number; bytesReceived: number; latencyMs?: number }) => {
     setFps(stats.fps)
+    if (typeof stats.latencyMs === 'number') {
+      setNetworkLatencyMs(stats.latencyMs)
+    }
   }, [])
 
   const clearUiHierarchy = useCallback(() => {
@@ -360,7 +390,6 @@ export default function ScreenPage() {
   }, [currentDevice, isPlaying, selectedDevice])
 
   const handleConnectionStateChange = useCallback((state: string) => {
-    setConnectionState(state)
     if (state === 'disconnected') {
       setHasVideoFrame(false)
     }
@@ -370,9 +399,39 @@ export default function ScreenPage() {
   }, [])
 
   useEffect(() => {
+    if (!selectedDevice || !isPlaying || hasVideoFrame) return
+
+    let cancelled = false
+    const fetchSessionDiagnostics = async () => {
+      try {
+        const res = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}`, {
+          credentials: 'include',
+        })
+        const data = await res.json()
+        if (!cancelled && res.ok) {
+          setSessionDiagnostics(data as ScreenSessionDiagnostics)
+        }
+      } catch (e) {
+        console.error('Failed to fetch screen session diagnostics:', e)
+      }
+    }
+
+    void fetchSessionDiagnostics()
+    const interval = window.setInterval(fetchSessionDiagnostics, 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [hasVideoFrame, isPlaying, selectedDevice])
+
+  useEffect(() => {
     return () => {
       if (moveTimerRef.current) {
         window.clearTimeout(moveTimerRef.current)
+      }
+      const activeDevice = activeSessionDeviceRef.current
+      if (activeDevice) {
+        requestStopSession(activeDevice)
       }
     }
   }, [])
@@ -440,6 +499,15 @@ export default function ScreenPage() {
     .filter((element) => element.bounds.width > 0 && element.bounds.height > 0)
     .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
 
+  const hasStartupError = Boolean(sessionDiagnostics?.last_error)
+  const isInitializing = !hasVideoFrame && !hasStartupError
+  const startupStatusText = '正在初始化设备，请稍后...'
+  const statusDotClassName = hasVideoFrame
+    ? 'connected'
+    : hasStartupError
+      ? 'error'
+      : 'connecting'
+
   // Send key event via DataChannel
   const sendKey = (keycode: string) => {
     const room = lkRoomRef.current
@@ -477,6 +545,11 @@ export default function ScreenPage() {
               <VideoCameraOutlined />
               <span>{currentDevice?.name || selectedDevice || '未选择设备'}</span>
               {currentDevice && <Text type="secondary">{formatDeviceOs(currentDevice)}</Text>}
+              <span
+                className={`connection-status-dot ${statusDotClassName}`}
+                aria-label={hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
+                title={hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
+              />
             </div>
             <Button
               type={isPlaying ? 'default' : 'primary'}
@@ -505,17 +578,23 @@ export default function ScreenPage() {
                     deviceId={selectedDevice}
                     token={lkSession.token}
                     serverUrl={lkSession.url}
+                    waitingText={isInitializing ? startupStatusText : ''}
                     onConnectionStateChange={handleConnectionStateChange}
                     onStats={handleWebRTCStats}
                     onFirstFrame={() => {
                       setHasVideoFrame(true)
                       setLoading(false)
+                      if (startRequestedAtRef.current !== null) {
+                        setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
+                      }
                     }}
                     onRoomCreated={(room) => { lkRoomRef.current = room; }}
                   />
-                  {!hasVideoFrame && (
+                  {isInitializing && (
                     <div className="video-waiting-overlay">
-                      等待视频画面...
+                      <div className="video-waiting-content">
+                        <span>{startupStatusText}</span>
+                      </div>
                     </div>
                   )}
                   {uiElements.length > 0 && renderMetrics && uiScreen && (
@@ -571,9 +650,9 @@ export default function ScreenPage() {
           </div>
 
           <div className="device-stage-footer">
-            <Text type="secondary">状态：{connectionState}</Text>
             <Text type="secondary">FPS：{fps}</Text>
-            {uiElements.length > 0 && <Text type="secondary">控件：{uiElements.length}</Text>}
+            <Text type="secondary">网络延迟：{networkLatencyMs !== null ? `${networkLatencyMs}ms` : '--'}</Text>
+            <Text type="secondary">首帧：{browserFirstFrameMs !== null ? `${browserFirstFrameMs}ms` : '--'}</Text>
           </div>
         </section>
 

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useCallback, useRef, useState, useEffect } from 'react'
 
 interface TouchHandlerOptions {

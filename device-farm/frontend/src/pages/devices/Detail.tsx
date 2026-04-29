@@ -4,8 +4,6 @@ import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Tabs, Pro
 import {
   ArrowLeftOutlined,
   PlayCircleOutlined,
-  LockOutlined,
-  UnlockOutlined,
   FundOutlined,
   CloudOutlined,
   ThunderboltOutlined,
@@ -279,7 +277,7 @@ export default function DeviceDetail() {
         if (ws.readyState === WebSocket.OPEN) {
           try {
             ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
-          } catch (e) {
+          } catch {
             // Ignore error during cleanup
           }
         }
@@ -294,6 +292,11 @@ export default function DeviceDetail() {
     fetchMetrics()
     fetchDiagnostics()
   }, [fetchDiagnostics, fetchMetrics])
+
+  useEffect(() => {
+    const timer = window.setInterval(fetchDiagnostics, 5000)
+    return () => window.clearInterval(timer)
+  }, [fetchDiagnostics])
 
   // Fetch threshold config
   const fetchThresholdConfig = useCallback(async () => {
@@ -753,6 +756,7 @@ export default function DeviceDetail() {
     if (!device) return null
 
     const { color, text } = statusConfig[device.status] || { color: 'default', text: '未知' }
+    const isScreenSessionActive = Boolean(screenSessionDiagnostics?.active)
 
     return (
       <div>
@@ -784,16 +788,12 @@ export default function DeviceDetail() {
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
-            disabled={!deviceId || device.status === 'offline' || !device.capabilities.screenMirror}
+            disabled={!deviceId || device.status === 'offline' || !device.capabilities.screenMirror || isScreenSessionActive}
+            title={isScreenSessionActive ? '设备已被投屏会话占用' : undefined}
             onClick={() => window.open(`/screen?deviceId=${encodeURIComponent(device.id)}`, '_blank', 'noopener,noreferrer')}
           >
-            开始投屏
+            {isScreenSessionActive ? '占用中' : '开始投屏'}
           </Button>
-          {device.status === 'online' ? (
-            <Button icon={<LockOutlined />}>占用设备</Button>
-          ) : device.status === 'busy' ? (
-            <Button icon={<UnlockOutlined />}>释放设备</Button>
-          ) : null}
         </Space>
       </div>
     )

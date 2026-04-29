@@ -26,17 +26,17 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) StartSession(deviceID, userID string, allowReplace bool, livekitCfg *config.LiveKitConfig, scrcpyCfg *config.ScrcpyConfig) (*Session, error) {
+func (m *Manager) StartSession(deviceID, userID string, allowReplace bool, livekitCfg *config.LiveKitConfig, scrcpyCfg *config.ScrcpyConfig) (*Session, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if oldID, ok := m.byDevice[deviceID]; ok {
 		if old, exists := m.sessions[oldID]; exists {
 			if old.UserID == userID {
-				return old, nil
+				return old, true, nil
 			}
 			if !allowReplace {
-				return nil, ErrDeviceInUse
+				return nil, false, ErrDeviceInUse
 			}
 			m.removeLocked(oldID)
 		} else {
@@ -48,13 +48,13 @@ func (m *Manager) StartSession(deviceID, userID string, allowReplace bool, livek
 	s := NewSession(deviceID, userID, sessionID)
 	if err := s.Start(context.Background(), livekitCfg, scrcpyCfg); err != nil {
 		s.Destroy()
-		return nil, err
+		return nil, false, err
 	}
 
 	m.sessions[sessionID] = s
 	m.byDevice[deviceID] = sessionID
 	go m.cleanupWhenDone(sessionID, s)
-	return s, nil
+	return s, false, nil
 }
 
 func (m *Manager) GetSession(sessionID string) (*Session, bool) {

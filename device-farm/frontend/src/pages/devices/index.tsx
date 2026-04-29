@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Card, Row, Col, Tag, Button, Input, Select, Space, Switch, Table, Statistic, Badge, message, Dropdown } from 'antd'
+import { Card, Row, Col, Tag, Button, Input, Select, Space, Switch, Table, Statistic, Badge, Dropdown, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   MobileOutlined,
@@ -25,11 +25,12 @@ type SortOrder = 'asc' | 'desc'
 
 export default function DevicesPage() {
   const navigate = useNavigate()
-  const { devices, loading, viewMode, fetchDevices, setViewMode, occupyDevice, releaseDevice } = useDeviceStore()
+  const { devices, loading, viewMode, fetchDevices, setViewMode } = useDeviceStore()
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [perfFilter, setPerfFilter] = useState<string>('all')
   const [metricsMap, setMetricsMap] = useState<Record<string, DeviceMetrics>>({})
+  const [screenSessions, setScreenSessions] = useState<Record<string, boolean>>({})
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const wsRef = useRef<WebSocket | null>(null)
@@ -45,6 +46,35 @@ export default function DevicesPage() {
   useEffect(() => {
     fetchDevices()
   }, [fetchDevices])
+
+  const fetchScreenSessions = useCallback(async () => {
+    const candidates = devices.filter((device) => device.status !== 'offline' && device.capabilities.screenMirror)
+    if (candidates.length === 0) {
+      setScreenSessions({})
+      return
+    }
+
+    const entries = await Promise.all(candidates.map(async (device) => {
+      try {
+        const response = await fetch(`/api/v1/sessions/${encodeURIComponent(device.id)}`, {
+          credentials: 'include',
+        })
+        const data = await response.json().catch(() => ({}))
+        return [device.id, response.ok && Boolean((data as { active?: boolean }).active)] as const
+      } catch (error) {
+        console.error(`Failed to fetch screen session for ${device.id}:`, error)
+        return [device.id, false] as const
+      }
+    }))
+
+    setScreenSessions(Object.fromEntries(entries))
+  }, [devices])
+
+  useEffect(() => {
+    void fetchScreenSessions()
+    const timer = window.setInterval(fetchScreenSessions, 5000)
+    return () => window.clearInterval(timer)
+  }, [fetchScreenSessions])
 
   // Fetch initial metrics
   useEffect(() => {
@@ -138,7 +168,7 @@ export default function DevicesPage() {
         clearTimeout(reconnectTimeoutRef.current)
       }
     }
-  }, [connectWebSocket])
+  }, [connectWebSocket, devices.length])
 
   // Filter and sort devices
   const filteredDevices = devices
@@ -147,7 +177,9 @@ export default function DevicesPage() {
         device.name.includes(keyword) ||
         device.model.includes(keyword) ||
         device.brand.includes(keyword)
-      const matchStatus = statusFilter === 'all' || device.status === statusFilter
+      const isScreenActive = Boolean(screenSessions[device.id])
+      const isBusy = device.status === 'busy' || isScreenActive
+      const matchStatus = statusFilter === 'all' || (statusFilter === 'busy' ? isBusy : device.status === statusFilter)
 
       // Performance filter
       const metrics = metricsMap[device.id]
@@ -205,22 +237,13 @@ export default function DevicesPage() {
         : (valueB as number) - (valueA as number)
     })
 
-  const handleOccupy = async (id: string) => {
-    await occupyDevice(id)
-    message.success('设备占用成功')
-  }
-
-  const handleRelease = async (id: string) => {
-    await releaseDevice(id)
-    message.success('设备释放成功')
-  }
-
   const handleScreen = (id: string) => {
+    setScreenSessions(prev => ({ ...prev, [id]: true }))
     window.open(`/screen?deviceId=${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer')
   }
 
-  const onlineCount = devices.filter((d) => d.status === 'online').length
-  const busyCount = devices.filter((d) => d.status === 'busy').length
+  const onlineCount = devices.filter((d) => d.status === 'online' && !screenSessions[d.id]).length
+  const busyCount = devices.filter((d) => d.status === 'busy' || Boolean(screenSessions[d.id])).length
   const offlineCount = devices.filter((d) => d.status === 'offline').length
 
   // Count devices with performance issues
@@ -299,7 +322,8 @@ export default function DevicesPage() {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => {
+      render: (status: string, record: Device) => {
+        const displayStatus = screenSessions[record.id] ? 'busy' : status
         const colorMap: Record<string, string> = {
           online: 'green',
           offline: 'default',
@@ -312,7 +336,7 @@ export default function DevicesPage() {
           busy: '占用中',
           maintaining: '维护中',
         }
-        return <Tag color={colorMap[status]}>{textMap[status]}</Tag>
+        return <Tag color={colorMap[displayStatus]}>{textMap[displayStatus]}</Tag>
       },
     },
     {
@@ -361,29 +385,26 @@ export default function DevicesPage() {
     {
       title: '操作',
       key: 'action',
-      render: (_: unknown, record: Device) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => handleScreen(record.id)}
-            icon={<PlayCircleOutlined />}
-            disabled={record.status === 'offline' || !record.capabilities.screenMirror}
-          >
-            投屏
-          </Button>
-          {record.status === 'online' && (
-            <Button type="link" size="small" onClick={() => handleOccupy(record.id)}>
-              占用
-            </Button>
-          )}
-          {record.status === 'busy' && (
-            <Button type="link" size="small" onClick={() => handleRelease(record.id)}>
-              释放
-            </Button>
-          )}
-        </Space>
-      ),
+      render: (_: unknown, record: Device) => {
+        const screenActive = Boolean(screenSessions[record.id])
+        const screenDisabled = record.status === 'offline' || !record.capabilities.screenMirror || screenActive
+
+        return (
+          <Space>
+            <Tooltip title={screenActive ? '设备已被投屏会话占用' : undefined}>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => handleScreen(record.id)}
+                icon={<PlayCircleOutlined />}
+                disabled={screenDisabled}
+              >
+                {screenActive ? '占用中' : '投屏'}
+              </Button>
+            </Tooltip>
+          </Space>
+        )
+      },
     },
   ]
 
@@ -508,8 +529,7 @@ export default function DevicesPage() {
                 <DeviceCard
                   device={device}
                   metrics={metricsMap[device.id]}
-                  onOccupy={handleOccupy}
-                  onRelease={handleRelease}
+                  screenActive={Boolean(screenSessions[device.id])}
                   onScreen={handleScreen}
                   onClick={() => navigate(`/devices/${device.id}`)}
                 />

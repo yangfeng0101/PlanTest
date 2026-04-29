@@ -90,6 +90,7 @@ export default function UsersPage() {
 
   // Check admin permission
   const canManageUsers = hasPermission(currentUser, 'user:write')
+  const { current, pageSize } = pagination
 
   const fetchUsers = useCallback(async () => {
     if (!canManageUsers) {
@@ -100,8 +101,8 @@ export default function UsersPage() {
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      params.set('page', String(pagination.current))
-      params.set('page_size', String(pagination.pageSize))
+      params.set('page', String(current))
+      params.set('page_size', String(pageSize))
       if (filters.role) params.set('role', filters.role)
       if (filters.status) params.set('status', filters.status)
       if (filters.keyword) params.set('keyword', filters.keyword)
@@ -120,7 +121,7 @@ export default function UsersPage() {
     } finally {
       setLoading(false)
     }
-  }, [canManageUsers, fetchWithAuth, pagination.current, pagination.pageSize, filters])
+  }, [canManageUsers, fetchWithAuth, current, pageSize, filters])
 
   useEffect(() => {
     fetchUsers()

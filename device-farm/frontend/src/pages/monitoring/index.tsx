@@ -53,13 +53,8 @@ export default function MonitoringPage() {
   const metricsHistoryRef = useRef<DeviceMetrics[]>([])
   const lastDeviceIdRef = useRef<string | undefined>(undefined)
 
-  // Fetch devices on mount
-  useEffect(() => {
-    fetchDevices()
-  }, [])
-
   // Fetch devices
-  const fetchDevices = async () => {
+  const fetchDevices = useCallback(async () => {
     try {
       setLoading(true)
       const response = await deviceApi.getList()
@@ -76,7 +71,12 @@ export default function MonitoringPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedDeviceId])
+
+  // Fetch devices on mount
+  useEffect(() => {
+    fetchDevices()
+  }, [fetchDevices])
 
   // Fetch metrics for selected device
   const fetchMetrics = useCallback(async () => {
@@ -195,7 +195,7 @@ export default function MonitoringPage() {
         if (ws.readyState === WebSocket.OPEN) {
           try {
             ws.send(JSON.stringify({ type: 'unsubscribe_metrics' }))
-          } catch (e) {
+          } catch {
             // Ignore error during cleanup
           }
         }

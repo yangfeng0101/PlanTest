@@ -30,7 +30,7 @@ export default function LoginPage() {
       } else {
         message.error(error || '登录失败，请检查用户名和密码')
       }
-    } catch (err) {
+    } catch {
       message.error('登录失败，请稍后重试')
     } finally {
       setLoading(false)

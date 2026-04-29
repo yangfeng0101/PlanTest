@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Row, Col, Card, DatePicker, Select, Space, Statistic, Spin, Typography, Progress } from 'antd'
 import {
   MobileOutlined,
@@ -62,7 +62,7 @@ export default function TrendPage() {
   const [topUsers, setTopUsers] = useState<TopUser[]>([])
 
   // Fetch statistics data
-  const fetchStatistics = async () => {
+  const fetchStatistics = useCallback(async () => {
     setLoading(true)
     try {
       // Fetch device usage trend
@@ -133,11 +133,11 @@ export default function TrendPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [dateRange, granularity])
 
   useEffect(() => {
     fetchStatistics()
-  }, [dateRange, granularity])
+  }, [fetchStatistics])
 
   const handleDateRangeChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
     if (dates && dates[0] && dates[1]) {

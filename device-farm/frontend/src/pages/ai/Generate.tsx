@@ -122,7 +122,7 @@ export default function GeneratePage() {
       }
       const data = await response.json()
       setTemplates(data)
-    } catch (error) {
+    } catch {
       message.error('加载模板失败')
     }
   }
@@ -186,7 +186,7 @@ export default function GeneratePage() {
       const data = await response.json()
       setSuggestions(data)
       message.success(`获得 ${data.length} 条改进建议`)
-    } catch (error) {
+    } catch {
       message.error('获取建议失败')
     } finally {
       setLoading(false)
@@ -216,7 +216,7 @@ export default function GeneratePage() {
       const data = await response.json()
       setExportedScript(data.script)
       message.success('导出成功')
-    } catch (error) {
+    } catch {
       message.error('导出失败')
     } finally {
       setLoading(false)

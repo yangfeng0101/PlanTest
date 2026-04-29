@@ -98,13 +98,7 @@ func (h *Handler) GetSession(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"active":     true,
-			"session_id": s.SessionID,
-			"device_id":  s.SerialNo,
-			"user_id":    s.UserID,
-			"room_name":  s.SessionID,
-		})
+		c.JSON(http.StatusOK, h.sessionResponse(s, true))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -121,7 +115,7 @@ func (h *Handler) StartSession(c *gin.Context) {
 
 	deviceID := c.Param("device_id")
 	allowReplace := !h.cfg.Auth.Enabled || user.Role == "admin"
-	s, err := h.manager.StartSession(deviceID, user.ID, allowReplace, &h.cfg.LiveKit, &h.cfg.Scrcpy)
+	s, reused, err := h.manager.StartSession(deviceID, user.ID, allowReplace, &h.cfg.LiveKit, &h.cfg.Scrcpy)
 	if err != nil {
 		if errors.Is(err, session.ErrDeviceInUse) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "device is already in use"})
@@ -140,16 +134,40 @@ func (h *Handler) StartSession(c *gin.Context) {
 	}
 	videoWidth, videoHeight := s.VideoSize()
 
-	c.JSON(http.StatusOK, gin.H{
-		"session_id":   s.SessionID,
-		"device_id":    deviceID,
-		"room_name":    s.SessionID,
-		"livekit_url":  h.cfg.LiveKit.PublicURL,
-		"token":        token,
-		"video_width":  videoWidth,
-		"video_height": videoHeight,
-		"message":      "session started",
-	})
+	payload := h.sessionResponse(s, true)
+	payload["device_id"] = deviceID
+	payload["livekit_url"] = h.cfg.LiveKit.PublicURL
+	payload["token"] = token
+	payload["video_width"] = videoWidth
+	payload["video_height"] = videoHeight
+	payload["reused"] = reused
+	payload["message"] = "session started"
+
+	c.JSON(http.StatusOK, payload)
+}
+
+func (h *Handler) sessionResponse(s *session.Session, includeUser bool) gin.H {
+	diag := s.Diagnostics()
+	payload := gin.H{
+		"active":          true,
+		"session_id":      s.SessionID,
+		"device_id":       s.SerialNo,
+		"room_name":       s.SessionID,
+		"stage":           diag.Stage,
+		"stage_label":     diag.StageLabel,
+		"created_at":      diag.CreatedAt,
+		"timeline":        diag.Timeline,
+		"durations_ms":    diag.DurationsMS,
+		"frame_count":     diag.FrameCount,
+		"key_frame_count": diag.KeyFrameCount,
+	}
+	if diag.LastError != "" {
+		payload["last_error"] = diag.LastError
+	}
+	if includeUser {
+		payload["user_id"] = s.UserID
+	}
+	return payload
 }
 
 func (h *Handler) StopSession(c *gin.Context) {

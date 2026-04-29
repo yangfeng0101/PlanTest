@@ -2,8 +2,6 @@ import { Card, Tag, Progress, Space, Button, Tooltip, Row, Col } from 'antd'
 import {
   MobileOutlined,
   PlayCircleOutlined,
-  LockOutlined,
-  UnlockOutlined,
   FundOutlined,
   CloudOutlined,
   WarningOutlined,
@@ -14,8 +12,7 @@ import './DeviceCard.css'
 interface DeviceCardProps {
   device: Device
   metrics?: DeviceMetrics | null
-  onOccupy: (id: string) => void
-  onRelease: (id: string) => void
+  screenActive?: boolean
   onScreen: (id: string) => void
   onClick: () => void
 }
@@ -41,8 +38,7 @@ const formatDeviceOs = (device: Device) => {
 export default function DeviceCard({
   device,
   metrics,
-  onOccupy,
-  onRelease,
+  screenActive = false,
   onScreen,
   onClick,
 }: DeviceCardProps) {
@@ -53,9 +49,11 @@ export default function DeviceCard({
     maintaining: { color: 'red', text: '维护中' },
   }
 
-  const { color, text } = statusConfig[device.status] || { color: 'default', text: '未知' }
+  const { color, text } = screenActive
+    ? { color: 'orange', text: '占用中' }
+    : statusConfig[device.status] || { color: 'default', text: '未知' }
   const batteryLevel = metrics?.battery_level ?? device.batteryLevel
-  const canScreenMirror = device.status !== 'offline' && device.capabilities.screenMirror
+  const canScreenMirror = device.status !== 'offline' && device.capabilities.screenMirror && !screenActive
 
   // Check if device has abnormal metrics
   const hasWarning = metrics && (
@@ -96,34 +94,10 @@ export default function DeviceCard({
             onScreen(device.id)
           }}
           disabled={!canScreenMirror}
+          title={screenActive ? '设备已被投屏会话占用' : undefined}
         >
-          投屏
+          {screenActive ? '占用中' : '投屏'}
         </Button>,
-        device.status === 'online' ? (
-          <Button
-            key="occupy"
-            type="text"
-            icon={<LockOutlined />}
-            onClick={(e) => {
-              e.stopPropagation()
-              onOccupy(device.id)
-            }}
-          >
-            占用
-          </Button>
-        ) : device.status === 'busy' ? (
-          <Button
-            key="release"
-            type="text"
-            icon={<UnlockOutlined />}
-            onClick={(e) => {
-              e.stopPropagation()
-              onRelease(device.id)
-            }}
-          >
-            释放
-          </Button>
-        ) : null,
       ]}
     >
       <Card.Meta
