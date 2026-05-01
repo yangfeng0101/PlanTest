@@ -22,6 +22,14 @@ class StorageService:
             access_key=settings.MINIO_ACCESS_KEY,
             secret_key=settings.MINIO_SECRET_KEY,
             secure=settings.MINIO_SECURE,
+            region=settings.MINIO_REGION,
+        )
+        self.public_client = Minio(
+            settings.MINIO_PUBLIC_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+            region=settings.MINIO_REGION,
         )
         self.bucket = settings.MINIO_BUCKET
         self._ensure_bucket()
@@ -38,6 +46,13 @@ class StorageService:
     def _get_object_name(self, task_id: str, filename: str, folder: str) -> str:
         """Generate object name for storage"""
         return f"{folder}/{task_id}/{filename}"
+
+    def _presigned_get_object(self, object_name: str, expires_days: int = 7) -> str:
+        return self.public_client.presigned_get_object(
+            self.bucket,
+            object_name,
+            expires=timedelta(days=expires_days),
+        )
 
     async def upload_screenshot(
         self,
@@ -84,11 +99,7 @@ class StorageService:
             # Generate presigned URL (valid for 7 days)
             url = await loop.run_in_executor(
                 None,
-                lambda: self.client.presigned_get_object(
-                    self.bucket,
-                    object_name,
-                    expires=timedelta(days=7),
-                )
+                lambda: self._presigned_get_object(object_name)
             )
 
             return object_name, url
@@ -137,11 +148,7 @@ class StorageService:
             # Generate presigned URL (valid for 7 days)
             url = await loop.run_in_executor(
                 None,
-                lambda: self.client.presigned_get_object(
-                    self.bucket,
-                    object_name,
-                    expires=timedelta(days=7),
-                )
+                lambda: self._presigned_get_object(object_name)
             )
 
             return object_name, url
@@ -194,11 +201,7 @@ class StorageService:
             # Generate presigned URL
             url = await loop.run_in_executor(
                 None,
-                lambda: self.client.presigned_get_object(
-                    self.bucket,
-                    object_name,
-                    expires=timedelta(days=7),
-                )
+                lambda: self._presigned_get_object(object_name)
             )
 
             return object_name, url
@@ -243,11 +246,7 @@ class StorageService:
 
             url = await loop.run_in_executor(
                 None,
-                lambda: self.client.presigned_get_object(
-                    self.bucket,
-                    object_name,
-                    expires=timedelta(days=7),
-                )
+                lambda: self._presigned_get_object(object_name)
             )
 
             return object_name, url
@@ -267,11 +266,7 @@ class StorageService:
             Presigned URL
         """
         try:
-            return self.client.presigned_get_object(
-                self.bucket,
-                object_name,
-                expires=timedelta(days=expires_days),
-            )
+            return self._presigned_get_object(object_name, expires_days)
         except S3Error as e:
             logger.error(f"Failed to get presigned URL: {e}")
             raise

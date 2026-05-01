@@ -9,7 +9,6 @@ from uuid import uuid4
 # Enums
 class ScriptType(str, Enum):
     PYTHON = "python"
-    JAVASCRIPT = "javascript"
 
 
 class ScriptStatus(str, Enum):

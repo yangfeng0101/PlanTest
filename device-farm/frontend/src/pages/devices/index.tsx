@@ -2,15 +2,13 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Row, Col, Tag, Button, Input, Select, Space, Switch, Table, Statistic, Badge, Dropdown, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
-import {
-  MobileOutlined,
-  SearchOutlined,
-  AppstoreOutlined,
-  UnorderedListOutlined,
-  PlayCircleOutlined,
-  SortAscendingOutlined,
-  SortDescendingOutlined,
-} from '@ant-design/icons'
+import MobileOutlined from '@ant-design/icons/MobileOutlined'
+import SearchOutlined from '@ant-design/icons/SearchOutlined'
+import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined'
+import UnorderedListOutlined from '@ant-design/icons/UnorderedListOutlined'
+import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
+import SortAscendingOutlined from '@ant-design/icons/SortAscendingOutlined'
+import SortDescendingOutlined from '@ant-design/icons/SortDescendingOutlined'
 import DeviceCard from '@/components/DeviceCard'
 import { useDeviceStore } from '@/stores/deviceStore'
 import { metricsApi } from '@/services/api'

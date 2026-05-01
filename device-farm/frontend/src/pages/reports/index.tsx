@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Card, Table, Tag, Button, Space, Progress, Modal, Descriptions, Timeline, Tabs, Statistic, Row, Col, DatePicker, Select, Badge } from 'antd'
-import {
-  FileTextOutlined,
-  DownloadOutlined,
-  EyeOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  ClockCircleOutlined,
-  LineChartOutlined,
-} from '@ant-design/icons'
+import FileTextOutlined from '@ant-design/icons/FileTextOutlined'
+import DownloadOutlined from '@ant-design/icons/DownloadOutlined'
+import EyeOutlined from '@ant-design/icons/EyeOutlined'
+import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined'
+import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined'
+import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined'
+import LineChartOutlined from '@ant-design/icons/LineChartOutlined'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import type { Report } from '@/types'

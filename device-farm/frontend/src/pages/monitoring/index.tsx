@@ -1,17 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card, Row, Col, Select, Spin, Statistic, Progress, Tag, Empty, Tooltip, Typography, Button, Modal, DatePicker, Checkbox, message } from 'antd'
-import {
-  DashboardOutlined,
-  MobileOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  WarningOutlined,
-  FundOutlined,
-  CloudOutlined,
-  ThunderboltOutlined,
-  FireOutlined,
-  DownloadOutlined,
-} from '@ant-design/icons'
+import DashboardOutlined from '@ant-design/icons/DashboardOutlined'
+import MobileOutlined from '@ant-design/icons/MobileOutlined'
+import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined'
+import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined'
+import WarningOutlined from '@ant-design/icons/WarningOutlined'
+import FundOutlined from '@ant-design/icons/FundOutlined'
+import CloudOutlined from '@ant-design/icons/CloudOutlined'
+import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined'
+import FireOutlined from '@ant-design/icons/FireOutlined'
+import DownloadOutlined from '@ant-design/icons/DownloadOutlined'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { deviceApi, metricsApi } from '@/services/api'

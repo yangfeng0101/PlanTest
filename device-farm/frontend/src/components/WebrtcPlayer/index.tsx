@@ -138,7 +138,7 @@ function VideoContainer({
         width: '100%',
         height: '100%',
         objectFit: 'contain',
-        backgroundColor: '#000',
+        backgroundColor: '#f2f4f7',
       }}
     />
   )

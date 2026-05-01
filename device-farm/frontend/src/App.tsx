@@ -1,21 +1,19 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Space } from 'antd'
-import {
-  MobileOutlined,
-  CodeOutlined,
-  FileTextOutlined,
-  TeamOutlined,
-  LogoutOutlined,
-  UserOutlined,
-  SettingOutlined,
-  RobotOutlined,
-  ScanOutlined,
-  AimOutlined,
-  ThunderboltOutlined,
-  UsergroupAddOutlined,
-  AlertOutlined,
-  DashboardOutlined,
-} from '@ant-design/icons'
+import MobileOutlined from '@ant-design/icons/MobileOutlined'
+import CodeOutlined from '@ant-design/icons/CodeOutlined'
+import FileTextOutlined from '@ant-design/icons/FileTextOutlined'
+import TeamOutlined from '@ant-design/icons/TeamOutlined'
+import LogoutOutlined from '@ant-design/icons/LogoutOutlined'
+import UserOutlined from '@ant-design/icons/UserOutlined'
+import SettingOutlined from '@ant-design/icons/SettingOutlined'
+import RobotOutlined from '@ant-design/icons/RobotOutlined'
+import ScanOutlined from '@ant-design/icons/ScanOutlined'
+import AimOutlined from '@ant-design/icons/AimOutlined'
+import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined'
+import UsergroupAddOutlined from '@ant-design/icons/UsergroupAddOutlined'
+import AlertOutlined from '@ant-design/icons/AlertOutlined'
+import DashboardOutlined from '@ant-design/icons/DashboardOutlined'
 import DevicesPage from './pages/devices'
 import DeviceDetailPage from './pages/devices/Detail'
 import ScreenPage from './pages/screen'

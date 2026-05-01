@@ -17,17 +17,15 @@ import {
   Tabs,
   Switch,
 } from 'antd'
-import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  BellOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  WarningOutlined,
-  InfoCircleOutlined,
-  AlertOutlined,
-} from '@ant-design/icons'
+import PlusOutlined from '@ant-design/icons/PlusOutlined'
+import EditOutlined from '@ant-design/icons/EditOutlined'
+import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
+import BellOutlined from '@ant-design/icons/BellOutlined'
+import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined'
+import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined'
+import WarningOutlined from '@ant-design/icons/WarningOutlined'
+import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined'
+import AlertOutlined from '@ant-design/icons/AlertOutlined'
 import type { ColumnsType } from 'antd/es/table'
 import { useAuthStore, hasPermission, useAuthenticatedFetch } from '@/stores'
 

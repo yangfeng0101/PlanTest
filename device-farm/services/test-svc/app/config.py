@@ -38,14 +38,17 @@ class Settings(BaseSettings):
 
     # MinIO
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+    MINIO_PUBLIC_ENDPOINT: str = os.getenv("MINIO_PUBLIC_ENDPOINT", MINIO_ENDPOINT)
     MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     MINIO_SECRET_KEY: str = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     MINIO_BUCKET: str = os.getenv("MINIO_BUCKET", "device-farm")
     MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
+    MINIO_REGION: str = os.getenv("MINIO_REGION", "us-east-1")
 
     # Appium
     APPIUM_HOST: str = os.getenv("APPIUM_HOST", "http://localhost:4723")
     APPIUM_TIMEOUT: int = int(os.getenv("APPIUM_TIMEOUT", "300"))
+    APPIUM_REMOTE_ADB_HOST: str = os.getenv("APPIUM_REMOTE_ADB_HOST", "")
 
     # Script Storage
     SCRIPT_STORAGE_PATH: str = os.getenv(

@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Row, Col, Card, DatePicker, Select, Space, Statistic, Spin, Typography, Progress } from 'antd'
-import {
-  MobileOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  RiseOutlined,
-} from '@ant-design/icons'
+import MobileOutlined from '@ant-design/icons/MobileOutlined'
+import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined'
+import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined'
+import RiseOutlined from '@ant-design/icons/RiseOutlined'
 import dayjs, { Dayjs } from 'dayjs'
 import TrendChart from '@/components/TrendChart'
 import type { DataPoint } from '@/components/TrendChart'

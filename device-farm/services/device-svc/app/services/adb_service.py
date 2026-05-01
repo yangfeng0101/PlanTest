@@ -65,14 +65,19 @@ class ADBService:
 
                 if process.returncode != 0:
                     err_msg = stderr.decode().strip()
+                    stdout_msg = stdout.decode().strip()
+                    if not err_msg and not stdout_msg and process.returncode in {-9, 137}:
+                        detail = "command was killed while waiting for device response"
+                    else:
+                        detail = err_msg or stdout_msg or f"exit code {process.returncode}"
                     # If it's a daemon not running error, try one more time
-                    if "daemon not running" in err_msg:
+                    if "daemon not running" in detail:
                         await asyncio.sleep(1)
                         # Recursive call with same timeout
                         return await self.execute_adb(*args, device_id=device_id, timeout=timeout)
 
-                    logger.error(f"ADB command failed: {err_msg}")
-                    raise Exception(f"ADB command failed: {err_msg}")
+                    logger.error(f"ADB command failed: {detail}")
+                    raise Exception(f"ADB command failed: {detail}")
 
                 return stdout.decode().strip()
             except Exception as e:

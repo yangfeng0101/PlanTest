@@ -17,12 +17,10 @@ import {
   Spin,
   message,
 } from 'antd'
-import {
-  ReloadOutlined,
-  EyeOutlined,
-  DownloadOutlined,
-  MobileOutlined,
-} from '@ant-design/icons'
+import ReloadOutlined from '@ant-design/icons/ReloadOutlined'
+import EyeOutlined from '@ant-design/icons/EyeOutlined'
+import DownloadOutlined from '@ant-design/icons/DownloadOutlined'
+import MobileOutlined from '@ant-design/icons/MobileOutlined'
 import type { ColumnsType } from 'antd/es/table'
 
 interface SubTask {

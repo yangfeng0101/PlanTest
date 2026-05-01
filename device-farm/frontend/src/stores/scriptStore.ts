@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Script } from '@/types'
+import { scriptApi } from '@/services/api'
 
 interface ScriptState {
   scripts: Script[]
@@ -20,8 +21,8 @@ export const useScriptStore = create<ScriptState>((set, get) => ({
   fetchScripts: async () => {
     set({ loading: true })
     try {
-      const data = await fetch('/api/v1/scripts').then((res) => res.json())
-      set({ scripts: data?.items || data || [], loading: false })
+      const response = await scriptApi.getList()
+      set({ scripts: response.data.items || [], loading: false })
     } catch (error) {
       console.error('Failed to fetch scripts:', error)
       set({ loading: false })
@@ -32,11 +33,7 @@ export const useScriptStore = create<ScriptState>((set, get) => ({
 
   createScript: async (script) => {
     try {
-      await fetch('/api/v1/scripts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(script),
-      })
+      await scriptApi.create(script)
       const { fetchScripts } = get()
       await fetchScripts()
     } catch (error) {
@@ -46,11 +43,7 @@ export const useScriptStore = create<ScriptState>((set, get) => ({
 
   updateScript: async (id, script) => {
     try {
-      await fetch(`/api/v1/scripts/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(script),
-      })
+      await scriptApi.update(id, script)
       const { fetchScripts } = get()
       await fetchScripts()
     } catch (error) {
@@ -60,7 +53,7 @@ export const useScriptStore = create<ScriptState>((set, get) => ({
 
   deleteScript: async (id) => {
     try {
-      await fetch(`/api/v1/scripts/${id}`, { method: 'DELETE' })
+      await scriptApi.delete(id)
       const { fetchScripts } = get()
       await fetchScripts()
     } catch (error) {

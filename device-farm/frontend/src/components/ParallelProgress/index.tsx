@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Card, Progress, Tag, Space, Table, Badge, Spin, Alert, Row, Col, Statistic, Button, Modal, Descriptions, Empty } from 'antd'
-import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  LoadingOutlined,
-  ClockCircleOutlined,
-  SyncOutlined,
-  EyeOutlined,
-} from '@ant-design/icons'
+import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined'
+import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined'
+import LoadingOutlined from '@ant-design/icons/LoadingOutlined'
+import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined'
+import SyncOutlined from '@ant-design/icons/SyncOutlined'
+import EyeOutlined from '@ant-design/icons/EyeOutlined'
 import type { ParallelTask, SubTask } from '@/types'
 
 interface ParallelProgressProps {

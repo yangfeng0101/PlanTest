@@ -1,5 +1,24 @@
 import axios from 'axios'
-import type { Device, Script, Task, Report, PaginatedResponse, DeviceMetrics, MetricsAggregation, DeviceThresholdConfig, MetricAlert } from '@/types'
+import type { Device, Script, Task, TaskLogEntry, Report, PaginatedResponse, DeviceMetrics, MetricsAggregation, DeviceThresholdConfig, MetricAlert } from '@/types'
+
+interface BackendListResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+interface DeviceListResponse {
+  devices: Device[]
+  total: number
+}
+
+export interface ScriptValidationResponse {
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+}
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -67,7 +86,7 @@ api.interceptors.response.use(
 export const deviceApi = {
   // 获取设备列表
   getList: (params?: { status?: string; keyword?: string }) =>
-    api.get<Device[]>('/devices', { params }),
+    api.get<DeviceListResponse>('/devices', { params }),
 
   // 获取设备详情
   getDetail: (id: string) =>
@@ -85,16 +104,20 @@ export const deviceApi = {
 // 脚本 API
 export const scriptApi = {
   // 获取脚本列表
-  getList: (params?: { keyword?: string }) =>
-    api.get<Script[]>('/scripts', { params }),
+  getList: (params?: { search?: string }) =>
+    api.get<BackendListResponse<Script>>('/scripts', { params }),
 
   // 获取脚本详情
   getDetail: (id: string) =>
     api.get<Script>(`/scripts/${id}`),
 
   // 创建脚本
-  create: (data: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>) =>
+  create: (data: Omit<Script, 'id' | 'created_at' | 'updated_at'>) =>
     api.post<Script>('/scripts', data),
+
+  // 校验脚本
+  validate: (content: string) =>
+    api.post<ScriptValidationResponse>('/scripts/validate', { content }),
 
   // 更新脚本
   update: (id: string, data: Partial<Script>) =>
@@ -108,16 +131,30 @@ export const scriptApi = {
 // 任务 API
 export const taskApi = {
   // 获取任务列表
-  getList: (params?: { status?: string; deviceId?: string }) =>
-    api.get<Task[]>('/tasks', { params }),
+  getList: (params?: { status?: string; device_id?: string; script_id?: string }) =>
+    api.get<BackendListResponse<Task>>('/tasks', { params }),
 
   // 创建任务
-  create: (data: { deviceId: string; scriptId: string }) =>
+  create: (data: {
+    device_id: string
+    script_id: string
+    device_platform?: 'android' | 'ios'
+    device_capabilities?: Record<string, unknown>
+    parameters?: Record<string, unknown>
+  }) =>
     api.post<Task>('/tasks', data),
+
+  // 获取任务详情
+  getDetail: (id: string) =>
+    api.get<Task>(`/tasks/${id}`),
+
+  // 获取任务日志
+  getLogs: (id: string) =>
+    api.get<TaskLogEntry[]>(`/tasks/${id}/logs`),
 
   // 取消任务
   cancel: (id: string) =>
-    api.post(`/tasks/${id}/cancel`),
+    api.delete(`/tasks/${id}`),
 }
 
 // 报告 API

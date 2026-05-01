@@ -2,6 +2,8 @@
 import asyncio
 import json
 import logging
+import os
+import subprocess
 from typing import Optional, Dict, Any
 from functools import wraps
 
@@ -57,6 +59,76 @@ class AppiumDriver:
         self.session_id: Optional[str] = None
         self._initialized = False
 
+    def _adb_command(self, *args: str) -> list[str]:
+        command = ["adb"]
+        adb_host = settings.APPIUM_REMOTE_ADB_HOST or os.getenv("ADB_SERVER_HOST")
+        adb_port = os.getenv("ADB_SERVER_PORT", "5037")
+
+        if adb_host:
+            command.extend(["-H", adb_host])
+        if adb_port:
+            command.extend(["-P", adb_port])
+        if self.udid:
+            command.extend(["-s", self.udid])
+
+        command.extend(args)
+        return command
+
+    def _resolve_launch_activity(self, package_name: str) -> str:
+        command = self._adb_command(
+            "shell",
+            "cmd",
+            "package",
+            "resolve-activity",
+            "--brief",
+            package_name,
+        )
+
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("ADB is not installed in the test worker image") from exc
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            stdout = (exc.stdout or "").strip()
+            detail = stderr or stdout or str(exc)
+            raise RuntimeError(f"Failed to resolve launch activity for {package_name}: {detail}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Timed out resolving launch activity for {package_name}") from exc
+
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        for line in reversed(lines):
+            if "/" in line and not line.startswith("No activity found"):
+                component = line
+                break
+        else:
+            raise RuntimeError(f"No launch activity found for package {package_name}")
+
+        if component.startswith(package_name + "/"):
+            activity = component.split("/", 1)[1]
+            logger.info("Resolved launch activity for %s: %s", package_name, activity)
+            return activity
+
+        logger.info("Resolved launch component for %s: %s", package_name, component)
+        return component
+
+    def _normalize_android_launch_caps(self, caps: Dict[str, Any]) -> Dict[str, Any]:
+        app_package = caps.get("appPackage")
+        app_activity = caps.get("appActivity")
+
+        if app_package and not app_activity:
+            caps["appActivity"] = self._resolve_launch_activity(str(app_package))
+            caps.setdefault("appWaitPackage", app_package)
+            caps.setdefault("appWaitActivity", "*")
+
+        return caps
+
     def _build_options(self) -> AppiumOptions:
         """Build Appium options based on platform and capabilities"""
         options = AppiumOptions()
@@ -70,13 +142,15 @@ class AppiumDriver:
                 "udid": self.udid,
                 "noReset": True,
                 "newCommandTimeout": settings.APPIUM_TIMEOUT,
-                # Enable real device connection
-                "skipServerInstallation": True,  # Skip uiautomator2 server installation if already present
-                "skipDeviceInitialization": True,  # Skip device initialization
+                "adbExecTimeout": 120000,
+                "uiautomator2ServerInstallTimeout": 120000,
+                "uiautomator2ServerLaunchTimeout": 120000,
                 "disableWindowAnimation": True,
                 "ignoreUnimportantViews": True,
                 "enablePerformanceLogging": True,
             }
+            if settings.APPIUM_REMOTE_ADB_HOST:
+                default_caps["remoteAdbHost"] = settings.APPIUM_REMOTE_ADB_HOST
             # Add app path if provided
             if self.app_path:
                 default_caps["app"] = self.app_path
@@ -106,12 +180,20 @@ class AppiumDriver:
 
         # Merge with user capabilities
         caps = {**default_caps, **self.capabilities}
+        if self.platform == "android":
+            caps = self._normalize_android_launch_caps(caps)
 
         for key, value in caps.items():
             if value is not None:  # Skip None values
                 options.set_capability(key, value)
 
         return options
+
+    def __getattr__(self, name: str):
+        """Delegate unknown attributes to the underlying Appium WebDriver."""
+        if self.driver is not None and hasattr(self.driver, name):
+            return getattr(self.driver, name)
+        raise AttributeError(f"{self.__class__.__name__!s} has no attribute {name!r}")
 
     @retry_on_failure(max_retries=3, delay=2)
     def initialize(self) -> "AppiumDriver":
@@ -216,6 +298,20 @@ class AppiumDriver:
         if hasattr(self.driver, "launch_app"):
             self.driver.launch_app()
 
+    def activate_app(self, package_name: str):
+        """Activate an installed app by package name or bundle id."""
+        if hasattr(self.driver, "activate_app"):
+            self.driver.activate_app(package_name)
+            return
+        raise RuntimeError("activate_app is not supported by this Appium session")
+
+    def terminate_app(self, package_name: str):
+        """Terminate an installed app by package name or bundle id."""
+        if hasattr(self.driver, "terminate_app"):
+            self.driver.terminate_app(package_name)
+            return
+        raise RuntimeError("terminate_app is not supported by this Appium session")
+
     def close_app(self):
         """Close the app"""
         if hasattr(self.driver, "close_app"):
@@ -246,6 +342,10 @@ class AppiumDriver:
     # Screenshot and recording
     def take_screenshot(self) -> bytes:
         """Take a screenshot"""
+        return self.driver.get_screenshot_as_png()
+
+    def get_screenshot_as_png(self) -> bytes:
+        """Expose the standard Selenium/Appium screenshot method."""
         return self.driver.get_screenshot_as_png()
 
     def save_screenshot(self, file_path: str):

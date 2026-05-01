@@ -1,16 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Card, Descriptions, Tag, Button, Space, Timeline, Typography, Tabs, Progress, Spin, Row, Col, Statistic, Tooltip, Form, InputNumber, message } from 'antd'
-import {
-  ArrowLeftOutlined,
-  PlayCircleOutlined,
-  FundOutlined,
-  CloudOutlined,
-  ThunderboltOutlined,
-  FireOutlined,
-  SettingOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons'
+import ArrowLeftOutlined from '@ant-design/icons/ArrowLeftOutlined'
+import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
+import FundOutlined from '@ant-design/icons/FundOutlined'
+import CloudOutlined from '@ant-design/icons/CloudOutlined'
+import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined'
+import FireOutlined from '@ant-design/icons/FireOutlined'
+import SettingOutlined from '@ant-design/icons/SettingOutlined'
+import ReloadOutlined from '@ant-design/icons/ReloadOutlined'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { deviceApi, metricsApi } from '@/services/api'

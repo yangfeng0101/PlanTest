@@ -1,11 +1,16 @@
 # Test Execution Task
-import asyncio
 import json
+import math
 import os
+import random
+import re
 import sys
 import tempfile
 import traceback
-from datetime import datetime
+import time
+import uuid
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from celery import shared_task
@@ -21,10 +26,216 @@ logger = get_task_logger(__name__)
 # Import tasks API for database operations
 from app.api import tasks as tasks_api
 
+SDK_VERSION = "1.1.0"
+
+ALLOWED_IMPORTS = {
+    "datetime": __import__("datetime"),
+    "decimal": __import__("decimal"),
+    "json": json,
+    "math": math,
+    "random": random,
+    "re": re,
+    "time": time,
+    "uuid": uuid,
+}
+
+
+def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    """Allow scripts to import approved utility modules only."""
+    if level != 0:
+        raise ImportError("Relative imports are not supported")
+
+    root_name = name.split(".", 1)[0]
+    if root_name not in ALLOWED_IMPORTS:
+        raise ImportError(f"Import of '{name}' is not allowed")
+
+    return __import__(name, globals, locals, fromlist, level)
+
+
+class DeviceFarmApp:
+    """Small SDK exposed to test scripts for common mobile automation actions."""
+
+    def __init__(self, context: dict):
+        self.context = context
+
+    @property
+    def driver(self):
+        return self.context["driver"]
+
+    def log(self, message: str, level: str = "INFO"):
+        log_message(self.context, message, level)
+
+    def version(self) -> str:
+        return SDK_VERSION
+
+    def wait(self, seconds: float = 1):
+        time.sleep(float(seconds))
+
+    def screenshot(self) -> str:
+        return run_async(take_screenshot_async(self.context))
+
+    def activate_app(self, package_name: str):
+        raw = _raw_driver(self.driver)
+        raw.activate_app(str(package_name))
+        log_message(self.context, f"Activated app: {package_name}", "INFO")
+
+    def launch_app(self, package_name: Optional[str] = None):
+        if package_name:
+            self.activate_app(package_name)
+            return
+
+        driver = self.driver
+        raw = _raw_driver(driver)
+        if hasattr(driver, "launch_app"):
+            driver.launch_app()
+        elif hasattr(raw, "launch_app"):
+            raw.launch_app()
+        else:
+            raise RuntimeError("launch_app is not supported by this Appium session")
+        log_message(self.context, "Launched current app", "INFO")
+
+    def terminate_app(self, package_name: str):
+        raw = _raw_driver(self.driver)
+        raw.terminate_app(str(package_name))
+        log_message(self.context, f"Terminated app: {package_name}", "INFO")
+
+    def close_app(self, package_name: Optional[str] = None):
+        if package_name:
+            self.terminate_app(package_name)
+            return
+
+        driver = self.driver
+        raw = _raw_driver(driver)
+        if hasattr(driver, "close_app"):
+            driver.close_app()
+        elif hasattr(raw, "close_app"):
+            raw.close_app()
+        else:
+            raise RuntimeError("close_app is not supported by this Appium session")
+        log_message(self.context, "Closed current app", "INFO")
+
+    def restart_app(self, package_name: str, wait_seconds: float = 1):
+        self.terminate_app(package_name)
+        self.wait(wait_seconds)
+        self.activate_app(package_name)
+
+    def back(self):
+        raw = _raw_driver(self.driver)
+        raw.back()
+        log_message(self.context, "Pressed back", "INFO")
+
+    def home(self):
+        self.press_key(3)
+
+    def tap(self, x: int, y: int):
+        tap(self.context, x, y)
+
+    def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: int = 500):
+        driver = self.context["driver"]
+        if hasattr(driver, "swipe"):
+            driver.swipe(int(start_x), int(start_y), int(end_x), int(end_y), int(duration))
+        else:
+            raw = _raw_driver(driver)
+            raw.swipe(int(start_x), int(start_y), int(end_x), int(end_y), int(duration))
+        log_message(self.context, f"Swiped from ({start_x}, {start_y}) to ({end_x}, {end_y})", "INFO")
+
+    def input_text(self, text: str):
+        input_text(self.context, text)
+
+    def clear_text(self, by=None, value: Optional[str] = None, timeout: float = 0):
+        if by is not None and value is not None:
+            element = self.find(by, value, timeout)
+        else:
+            element = _raw_driver(self.driver).switch_to.active_element
+        element.clear()
+        log_message(self.context, "Cleared text", "INFO")
+        return element
+
+    def press_key(self, keycode: int):
+        press_key(self.context, keycode)
+
+    def source(self) -> str:
+        return self.driver.get_page_source()
+
+    def has_text(self, text: str) -> bool:
+        return str(text) in self.source()
+
+    def assert_text(self, text: str):
+        assert_text(self.context, text)
+
+    def find(self, by, value: str, timeout: float = 0):
+        if timeout and timeout > 0:
+            deadline = time.time() + float(timeout)
+            last_error = None
+            while time.time() < deadline:
+                try:
+                    return self.driver.find_element(by, value)
+                except Exception as exc:
+                    last_error = exc
+                    time.sleep(0.5)
+            raise last_error or RuntimeError(f"Element not found: {value}")
+
+        return self.driver.find_element(by, value)
+
+    def find_all(self, by, value: str):
+        return self.driver.find_elements(by, value)
+
+    def wait_element(self, by, value: str, timeout: float = 10):
+        return self.find(by, value, timeout)
+
+    def exists(self, by, value: str, timeout: float = 0) -> bool:
+        try:
+            self.find(by, value, timeout)
+            return True
+        except Exception:
+            return False
+
+    def click(self, by, value: str, timeout: float = 0):
+        element = self.find(by, value, timeout)
+        element.click()
+        log_message(self.context, f"Clicked element: {value}", "INFO")
+        return element
+
+    def get_text(self, by, value: str, timeout: float = 0) -> str:
+        return self.find(by, value, timeout).text
+
+    def click_text(self, text: str, timeout: float = 5):
+        from appium.webdriver.common.appiumby import AppiumBy
+
+        xpath = f"//*[@text={json.dumps(str(text))} or @content-desc={json.dumps(str(text))}]"
+        return self.click(AppiumBy.XPATH, xpath, timeout)
+
+    def tap_text(self, text: str, timeout: float = 5):
+        return self.click_text(text, timeout)
+
+    def wait_text(self, text: str, timeout: float = 10):
+        deadline = time.time() + float(timeout)
+        while time.time() < deadline:
+            if self.has_text(text):
+                log_message(self.context, f"Text appeared: {text}", "INFO")
+                return True
+            time.sleep(0.5)
+        raise AssertionError(f"Text not found within {timeout}s: {text}")
+
+
+def assert_true(value, message: str = "Assertion failed"):
+    if not value:
+        raise AssertionError(message)
+
+
+def assert_equal(actual, expected, message: Optional[str] = None):
+    if actual != expected:
+        raise AssertionError(message or f"Expected {expected!r}, got {actual!r}")
+
 
 def update_task_status(task_id: str, status: TaskStatus, **kwargs):
     """Update task status in database"""
     return tasks_api.update_task_status(task_id, status, **kwargs)
+
+
+def run_async(coro):
+    """Run async helpers on the worker's stable async loop."""
+    return tasks_api._run_async(coro)
 
 
 @celery_app.task(bind=True, name="execute_test_task")
@@ -42,6 +253,15 @@ def execute_test_task(self, task_id: str):
         logger.error(f"Task {task_id} not found")
         return {"success": False, "error": "Task not found"}
 
+    if task.status == TaskStatus.CANCELLED:
+        logger.info(f"Task {task_id} was cancelled before execution")
+        if task.device_id:
+            try:
+                run_async(release_task_device(task.device_id))
+            except Exception as release_error:
+                logger.warning(f"Failed to release device {task.device_id}: {release_error}")
+        return {"success": False, "error": "Task cancelled"}
+
     # Update status to running
     update_task_status(
         task_id,
@@ -50,23 +270,24 @@ def execute_test_task(self, task_id: str):
     )
 
     # Send log
-    asyncio.run(send_log(task_id, "INFO", f"Task {task_id} started"))
+    run_async(send_log(task_id, "INFO", f"Task {task_id} started"))
 
+    task_finished = False
     try:
         # Load script
         script = load_script(task.script_id)
         if not script:
             raise Exception(f"Script {task.script_id} not found")
 
-        asyncio.run(send_log(task_id, "INFO", f"Loaded script: {script.name}"))
+        run_async(send_log(task_id, "INFO", f"Loaded script: {script.name}"))
 
-        # Initialize Appium driver (simulation for now)
-        asyncio.run(send_log(task_id, "INFO", "Initializing Appium driver..."))
+        # Initialize Appium driver. Real execution must fail loudly if Appium is unavailable.
+        run_async(send_log(task_id, "INFO", "Initializing Appium driver..."))
         driver = initialize_driver(task)
 
         try:
             # Execute the test script
-            asyncio.run(send_log(task_id, "INFO", "Executing test script..."))
+            run_async(send_log(task_id, "INFO", "Executing test script..."))
             result = execute_script(
                 script,
                 driver,
@@ -74,23 +295,33 @@ def execute_test_task(self, task_id: str):
                 task_id
             )
 
-            # Update task with success result
+            final_status = TaskStatus.SUCCESS if result.success else TaskStatus.FAILED
+
+            if result.success:
+                run_async(send_log(
+                    task_id,
+                    "INFO",
+                    f"Task completed successfully. Passed: {result.passed_tests}, Failed: {result.failed_tests}"
+                ))
+            else:
+                run_async(send_log(
+                    task_id,
+                    "ERROR",
+                    f"Task completed with failures. Passed: {result.passed_tests}, Failed: {result.failed_tests}"
+                ))
+
             update_task_status(
                 task_id,
-                TaskStatus.SUCCESS,
+                final_status,
                 finished_at=datetime.utcnow(),
-                result=result.model_dump()
+                result=result.model_dump(mode="json"),
+                error="; ".join(result.errors) if result.errors else None,
             )
-
-            asyncio.run(send_log(
-                task_id,
-                "INFO",
-                f"Task completed successfully. Passed: {result.passed_tests}, Failed: {result.failed_tests}"
-            ))
+            task_finished = True
 
             return {
-                "success": True,
-                "result": result.model_dump()
+                "success": result.success,
+                "result": result.model_dump(mode="json")
             }
 
         finally:
@@ -113,13 +344,22 @@ def execute_test_task(self, task_id: str):
             error=error_msg
         )
 
-        asyncio.run(send_log(task_id, "ERROR", f"Task failed: {error_msg}"))
+        run_async(send_log(task_id, "ERROR", f"Task failed: {error_msg}"))
+        task_finished = True
 
         return {
             "success": False,
             "error": error_msg,
             "traceback": error_trace
         }
+    finally:
+        if task.device_id:
+            try:
+                run_async(release_task_device(task.device_id))
+                if not task_finished:
+                    run_async(send_log(task_id, "INFO", "Device released"))
+            except Exception as release_error:
+                logger.warning(f"Failed to release device {task.device_id}: {release_error}")
 
 
 def load_script(script_id: str):
@@ -132,19 +372,13 @@ def initialize_driver(task: Task):
     """Initialize Appium driver for the device"""
     from app.drivers.appium import AppiumDriver
 
-    try:
-        driver = AppiumDriver(
-            platform=task.device_platform.value,
-            device_id=task.device_id,
-            capabilities=task.device_capabilities
-        )
-        driver.initialize()
-        return driver
-    except Exception as e:
-        logger.warning(f"Failed to initialize real Appium driver: {e}")
-        logger.info("Using simulated driver for testing")
-        # Return a simulated driver for testing
-        return SimulatedDriver()
+    driver = AppiumDriver(
+        platform=task.device_platform.value,
+        device_id=task.device_id,
+        capabilities=task.device_capabilities
+    )
+    driver.initialize()
+    return driver
 
 
 def execute_script(script, driver, parameters: dict, task_id: str) -> ExecutionResult:
@@ -168,21 +402,13 @@ def execute_script(script, driver, parameters: dict, task_id: str) -> ExecutionR
     try:
         if script.script_type.value == "python":
             execute_python_script(script.content, context)
-        elif script.script_type.value == "javascript":
-            # Use JavaScript executor
-            from app.executors.javascript import execute_javascript_script
-            js_result = execute_javascript_script(script.content, driver, parameters, task_id)
-            context["passed"] = js_result.get("passed", 0)
-            context["failed"] = js_result.get("failed", 0)
-            context["skipped"] = js_result.get("skipped", 0)
-            context["screenshots"] = js_result.get("screenshots", [])
-            context["errors"] = js_result.get("errors", [])
         else:
             raise ValueError(f"Unsupported script type: {script.script_type}")
 
     except Exception as e:
         context["errors"].append(str(e))
         context["failed"] += 1
+        log_message(context, f"Script failed: {e}", "ERROR")
 
     # Calculate duration
     duration = (datetime.utcnow() - start_time).total_seconds()
@@ -274,11 +500,12 @@ SAFE_BUILTINS = {
 
     # Math functions (safe)
     'complex': complex,
+    '__import__': safe_import,
 
     # Removed dangerous functions:
     # - open (file access)
     # - exec, eval, compile (code execution)
-    # - __import__, import (module loading)
+    # - unrestricted __import__/import (module loading)
     # - globals, locals, vars (introspection)
     # - dir (introspection)
     # - input (user input)
@@ -304,15 +531,33 @@ def execute_python_script(content: str, context: dict):
     try:
         # Prepare execution namespace with restricted builtins
         # This prevents code injection by limiting available functions
+        from appium.webdriver.common.appiumby import AppiumBy
+        app = DeviceFarmApp(context)
+
         namespace = {
             "__builtins__": SAFE_BUILTINS,
             "driver": context["driver"],
             "params": context["parameters"],
             "task_id": context["task_id"],
+            "app": app,
+            "AppiumBy": AppiumBy,
+            "Decimal": Decimal,
+            "date": date,
+            "datetime": datetime,
+            "timedelta": timedelta,
             "test_pass": lambda: test_pass(context),
             "test_fail": lambda msg="": test_fail(context, msg),
             "test_skip": lambda: test_skip(context),
-            "take_screenshot": lambda: asyncio.run(take_screenshot_async(context)),
+            "assert_true": assert_true,
+            "assert_equal": assert_equal,
+            "take_screenshot": lambda: run_async(take_screenshot_async(context)),
+            "screenshot": lambda: run_async(take_screenshot_async(context)),
+            "wait": lambda seconds=1: time.sleep(float(seconds)),
+            "swipe": lambda start_x, start_y, end_x, end_y, duration=500: app.swipe(start_x, start_y, end_x, end_y, duration),
+            "tap": lambda x, y: tap(context, x, y),
+            "input_text": lambda text: input_text(context, text),
+            "press_key": lambda keycode: press_key(context, keycode),
+            "assert_text": lambda text: assert_text(context, text),
             "log": lambda msg, level="INFO": log_message(context, msg, level),
         }
 
@@ -350,8 +595,7 @@ def test_skip(context: dict):
 
 def take_screenshot(context: dict) -> str:
     """Take a screenshot and save it to MinIO"""
-    import asyncio
-    return asyncio.run(take_screenshot_async(context))
+    return run_async(take_screenshot_async(context))
 
 
 async def take_screenshot_async(context: dict) -> str:
@@ -367,15 +611,12 @@ async def take_screenshot_async(context: dict) -> str:
 
         if driver and hasattr(driver, "get_screenshot_as_png"):
             screenshot_data = driver.get_screenshot_as_png()
+        elif driver and hasattr(driver, "take_screenshot"):
+            screenshot_data = driver.take_screenshot()
+        elif driver and getattr(driver, "driver", None) and hasattr(driver.driver, "get_screenshot_as_png"):
+            screenshot_data = driver.driver.get_screenshot_as_png()
         else:
-            # Simulate screenshot (placeholder image)
-            import io
-            from PIL import Image
-
-            img = Image.new("RGB", (1080, 1920), color="gray")
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            screenshot_data = buffer.getvalue()
+            raise RuntimeError("Driver does not support screenshots")
 
         # Upload to MinIO
         object_name, url = await storage.upload_screenshot_bytes(
@@ -385,12 +626,16 @@ async def take_screenshot_async(context: dict) -> str:
         )
 
         context["screenshots"].append(url)
-        log_message(context, f"Screenshot saved: {object_name}", "DEBUG")
+        from app.models.models import TaskLogEntry
+
+        context["logs"].append(TaskLogEntry(level="DEBUG", message=f"Screenshot saved: {object_name}"))
+        await send_log(task_id, "DEBUG", f"Screenshot saved: {object_name}")
         return url
 
     except Exception as e:
         logger.error(f"Failed to take screenshot: {e}")
-        return f"error_{len(context['screenshots'])}"
+        context["errors"].append(f"Screenshot failed: {e}")
+        raise
 
 
 def log_message(context: dict, message: str, level: str = "INFO"):
@@ -398,53 +643,58 @@ def log_message(context: dict, message: str, level: str = "INFO"):
     from app.models.models import TaskLogEntry
     entry = TaskLogEntry(level=level, message=message)
     context["logs"].append(entry)
-    asyncio.run(send_log(context["task_id"], level, message))
+    run_async(send_log(context["task_id"], level, message))
 
 
 async def send_log(task_id: str, level: str, message: str):
-    """Send log via WebSocket"""
-    from app.api.tasks import send_task_log
-    await send_task_log(task_id, level, message)
+    """Persist log and broadcast it via WebSocket."""
+    from app.api.tasks import save_task_log
+    from app.database import get_db_session
+
+    async with get_db_session() as db:
+        await save_task_log(db, task_id, level, message)
 
 
-# Simulated driver for testing without real Appium
-class SimulatedDriver:
-    """Simulated driver for testing"""
+async def release_task_device(device_id: str):
+    import httpx
 
-    def __init__(self):
-        self.session_id = None
-
-    def initialize(self):
-        self.session_id = "simulated_session"
-        return self
-
-    def find_element(self, *args, **kwargs):
-        return SimulatedElement()
-
-    def find_elements(self, *args, **kwargs):
-        return [SimulatedElement()]
-
-    def get(self, url):
-        pass
-
-    def back(self):
-        pass
-
-    def quit(self):
-        self.session_id = None
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(f"{settings.DEVICE_SERVICE_URL}/api/v1/devices/{device_id}/release")
+    response.raise_for_status()
 
 
-class SimulatedElement:
-    """Simulated element for testing"""
+def _raw_driver(driver):
+    return getattr(driver, "driver", driver)
 
-    def click(self):
-        pass
 
-    def send_keys(self, text):
-        pass
+def tap(context: dict, x: int, y: int):
+    driver = context["driver"]
+    if hasattr(driver, "tap"):
+        driver.tap(int(x), int(y))
+    else:
+        raw = _raw_driver(driver)
+        raw.tap([(int(x), int(y))])
+    log_message(context, f"Tapped at ({x}, {y})", "INFO")
 
-    def text(self):
-        return ""
 
-    def get_attribute(self, name):
-        return ""
+def input_text(context: dict, text: str):
+    raw = _raw_driver(context["driver"])
+    active = raw.switch_to.active_element
+    active.send_keys(str(text))
+    log_message(context, "Input text sent", "INFO")
+
+
+def press_key(context: dict, keycode: int):
+    raw = _raw_driver(context["driver"])
+    if hasattr(raw, "press_keycode"):
+        raw.press_keycode(int(keycode))
+    else:
+        raise RuntimeError("press_key is only supported by Android Appium sessions")
+    log_message(context, f"Pressed keycode {keycode}", "INFO")
+
+
+def assert_text(context: dict, text: str):
+    page_source = context["driver"].get_page_source()
+    if str(text) not in page_source:
+        raise AssertionError(f"Text not found: {text}")
+    log_message(context, f"Text found: {text}", "INFO")

@@ -1,14 +1,16 @@
 # Tasks API Router (Database-backed)
 import asyncio
 import json
+import threading
 from datetime import datetime
 from typing import Optional, List, Dict, Set
+import httpx
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 
-from app.database import get_db
+from app.database import get_db, get_db_session
 from app.models.models import (
     Task,
     TaskCreate,
@@ -16,7 +18,7 @@ from app.models.models import (
     TaskStatus,
     TaskLogEntry,
 )
-from app.models.database import TaskDB, TaskLogDB, TaskStatus as TaskStatusDB
+from app.models.database import TaskDB, TaskLogDB, ScriptDB, TaskStatus as TaskStatusDB
 from app.tasks.executor import execute_test_task
 from app.config import settings
 from app.auth import verify_api_key
@@ -37,6 +39,60 @@ import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_async_loop = None
+_async_loop_thread = None
+_async_loop_lock = threading.Lock()
+
+
+async def _get_device(device_id: str) -> dict:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(f"{settings.DEVICE_SERVICE_URL}/api/v1/devices/{device_id}")
+
+    if response.status_code == 404:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Device service error: {response.text}")
+    return response.json()
+
+
+async def _occupy_device(device_id: str, user_id: str):
+    device = await _get_device(device_id)
+    if device.get("status") != "online":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device is occupied or unavailable",
+        )
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"{settings.DEVICE_SERVICE_URL}/api/v1/devices/{device_id}/occupy",
+            json={"user_id": user_id},
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=response.json().get("detail", "Failed to occupy device"),
+        )
+
+
+async def _release_device(device_id: str):
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(f"{settings.DEVICE_SERVICE_URL}/api/v1/devices/{device_id}/release")
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to release device: {response.text}",
+        )
+
+
+async def _release_device_best_effort(device_id: str):
+    try:
+        await _release_device(device_id)
+    except Exception as exc:
+        logger.warning("Failed to release device %s during cancellation: %s", device_id, exc)
 
 
 # Convert between enum types
@@ -147,6 +203,7 @@ async def list_tasks(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[TaskStatus] = None,
     script_id: Optional[str] = None,
+    device_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
@@ -160,6 +217,8 @@ async def list_tasks(
         conditions.append(TaskDB.status == _to_db_status(status))
     if script_id:
         conditions.append(TaskDB.script_id == script_id)
+    if device_id:
+        conditions.append(TaskDB.device_id == device_id)
 
     if conditions:
         query = query.where(and_(*conditions))
@@ -194,25 +253,64 @@ async def list_tasks(
 async def create_task(
     task: TaskCreate,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    user_id: str = Depends(verify_api_key),
 ):
     """Create a new test task"""
+    if not task.device_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="device_id is required for real device execution",
+        )
+
+    script_result = await db.execute(select(ScriptDB).where(ScriptDB.id == task.script_id))
+    script_db = script_result.scalar_one_or_none()
+    if not script_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Script {task.script_id} not found",
+        )
+    if getattr(script_db.script_type, "value", script_db.script_type) != "python":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only Python scripts are supported",
+        )
+
+    await _occupy_device(task.device_id, user_id or "test-svc")
+
     # Create database model
-    task_db = TaskDB(
-        script_id=task.script_id,
-        device_id=task.device_id,
-        device_platform=task.device_platform.value,
-        device_capabilities=task.device_capabilities,
-        parameters=task.parameters,
-        status=TaskStatusDB.PENDING,
-    )
+    try:
+        task_db = TaskDB(
+            script_id=task.script_id,
+            device_id=task.device_id,
+            device_platform=task.device_platform.value,
+            device_capabilities=task.device_capabilities,
+            parameters=task.parameters,
+            status=TaskStatusDB.PENDING,
+        )
 
-    db.add(task_db)
-    await db.flush()
-    await db.refresh(task_db)
+        db.add(task_db)
+        await db.flush()
+        await db.refresh(task_db)
+    except Exception:
+        await _release_device(task.device_id)
+        raise
 
-    # Queue the task for execution
-    execute_test_task.delay(task_db.id)
+    # Commit before queueing so workers cannot consume a task that is not visible yet.
+    await db.commit()
+
+    try:
+        execute_test_task.apply_async(args=[task_db.id], task_id=task_db.id)
+    except Exception as exc:
+        logger.exception("Failed to enqueue task %s", task_db.id)
+        task_db.status = TaskStatusDB.FAILED
+        task_db.finished_at = datetime.utcnow()
+        task_db.error = f"Failed to enqueue task: {exc}"
+        await db.commit()
+        await _release_device(task.device_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to enqueue task",
+        )
 
     return _task_db_to_pydantic(task_db)
 
@@ -254,18 +352,20 @@ async def cancel_task(
             detail=f"Task {task_id} not found",
         )
 
-    if task_db.status == TaskStatusDB.RUNNING:
-        # Revoke Celery task
+    if task_db.status in {TaskStatusDB.RUNNING, TaskStatusDB.PENDING}:
         from app.tasks.executor import celery_app
 
-        celery_app.control.revoke(task_id, terminate=True)
+        await save_task_log(db, task_id, "WARN", "User requested cancellation")
+        celery_app.control.revoke(task_id, terminate=task_db.status == TaskStatusDB.RUNNING)
         task_db.status = TaskStatusDB.CANCELLED
         task_db.finished_at = datetime.utcnow()
-
-    elif task_db.status == TaskStatusDB.PENDING:
-        task_db.status = TaskStatusDB.CANCELLED
-
-    await db.flush()
+        await save_task_log(db, task_id, "WARN", "Task cancellation acknowledged")
+        await db.flush()
+        await db.commit()
+        if task_db.device_id:
+            await _release_device_best_effort(task_db.device_id)
+            async with get_db_session() as release_log_db:
+                await save_task_log(release_log_db, task_id, "INFO", "Device released")
 
     return None
 
@@ -374,19 +474,28 @@ async def update_task_status_db(
 
 
 def _run_async(coro):
-    """Run async coroutine, handling existing event loops"""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop, safe to use asyncio.run()
-        return asyncio.run(coro)
+    """Run async coroutine from sync worker code on a stable event loop."""
+    global _async_loop, _async_loop_thread
 
-    # There's a running loop, need to run in a new thread
-    # This is needed when called from Celery workers that have their own event loop
-    import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        future = executor.submit(asyncio.run, coro)
-        return future.result()
+    with _async_loop_lock:
+        if _async_loop is None or not _async_loop.is_running():
+            _async_loop = asyncio.new_event_loop()
+
+            def run_loop():
+                asyncio.set_event_loop(_async_loop)
+                _async_loop.run_forever()
+
+            _async_loop_thread = threading.Thread(
+                target=run_loop,
+                name="test-svc-sync-async-loop",
+                daemon=True,
+            )
+            _async_loop_thread.start()
+
+        loop = _async_loop
+
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result()
 
 
 def update_task_status(task_id: str, status: TaskStatus, **kwargs) -> Optional[Task]:

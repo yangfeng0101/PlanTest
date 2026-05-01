@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Form, Input, Button, Card, message, Typography } from 'antd'
-import { UserOutlined, LockOutlined, MobileOutlined } from '@ant-design/icons'
+import UserOutlined from '@ant-design/icons/UserOutlined'
+import LockOutlined from '@ant-design/icons/LockOutlined'
+import MobileOutlined from '@ant-design/icons/MobileOutlined'
 import { useAuthStore } from '@/stores/authStore'
 import './Login.css'
 

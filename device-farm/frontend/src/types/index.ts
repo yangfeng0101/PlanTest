@@ -114,9 +114,10 @@ export interface MetricAlert {
 export interface Script {
   id: string
   name: string
-  description: string
-  script_type: 'python' | 'javascript'
+  description?: string
+  script_type: 'python'
   content: string
+  status?: 'draft' | 'active' | 'deprecated'
   created_at: string
   updated_at: string
   created_by?: string
@@ -126,16 +127,36 @@ export interface Script {
 // 任务类型
 export interface Task {
   id: string
-  deviceId: string
-  deviceName: string
-  scriptId: string
-  scriptName: string
+  script_id: string
+  device_id?: string
+  device_platform: 'android' | 'ios'
+  device_capabilities: Record<string, unknown>
+  parameters: Record<string, unknown>
   status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
-  createdAt: string
-  startedAt?: string
-  finishedAt?: string
-  duration?: number
-  result?: string
+  created_at: string
+  started_at?: string
+  finished_at?: string
+  result?: {
+    success?: boolean
+    duration?: number
+    total_tests?: number
+    passed_tests?: number
+    failed_tests?: number
+    skipped_tests?: number
+    errors?: string[]
+    screenshots?: string[]
+    videos?: string[]
+    logs?: Array<{ timestamp: string; level: string; message: string }>
+  }
+  error?: string
+  log_file?: string
+  report_id?: string
+}
+
+export interface TaskLogEntry {
+  timestamp: string
+  level: string
+  message: string
 }
 
 // 报告类型

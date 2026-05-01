@@ -1,11 +1,9 @@
 import { Card, Tag, Progress, Space, Button, Tooltip, Row, Col } from 'antd'
-import {
-  MobileOutlined,
-  PlayCircleOutlined,
-  FundOutlined,
-  CloudOutlined,
-  WarningOutlined,
-} from '@ant-design/icons'
+import MobileOutlined from '@ant-design/icons/MobileOutlined'
+import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
+import FundOutlined from '@ant-design/icons/FundOutlined'
+import CloudOutlined from '@ant-design/icons/CloudOutlined'
+import WarningOutlined from '@ant-design/icons/WarningOutlined'
 import type { Device, DeviceMetrics } from '@/types'
 import './DeviceCard.css'
 

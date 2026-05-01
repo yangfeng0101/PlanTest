@@ -12,12 +12,10 @@ import {
   Typography,
   Divider,
 } from 'antd'
-import {
-  UploadOutlined,
-  ScanOutlined,
-  CopyOutlined,
-  FileImageOutlined,
-} from '@ant-design/icons'
+import UploadOutlined from '@ant-design/icons/UploadOutlined'
+import ScanOutlined from '@ant-design/icons/ScanOutlined'
+import CopyOutlined from '@ant-design/icons/CopyOutlined'
+import FileImageOutlined from '@ant-design/icons/FileImageOutlined'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useAuthenticatedFetch } from '@/stores'
 

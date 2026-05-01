@@ -27,7 +27,23 @@ class UIHierarchyService:
         screen = self._screen_from_resolution(screen_resolution)
         return self.parse_android_hierarchy(xml_text, device_id, screen)
 
+    def _is_busy_dump_error(self, detail: str) -> bool:
+        lowered = detail.lower()
+        return (
+            "could not get idle state" in lowered
+            or "timed out" in lowered
+            or "was killed while waiting" in lowered
+            or "exit code 137" in lowered
+        )
+
+    def _busy_dump_error(self) -> UIHierarchyError:
+        return UIHierarchyError(
+            "设备当前页面一直处于忙碌状态或 UIAutomator 无响应，无法获取控件树。"
+            "请先等待页面停止加载/动画，或返回一个稳定页面后再获取控件。"
+        )
+
     async def dump_android_hierarchy(self, device_id: str) -> str:
+        first_error = ""
         try:
             output = await adb_service.execute_adb(
                 "exec-out",
@@ -36,13 +52,15 @@ class UIHierarchyService:
                 "--compressed",
                 "/dev/tty",
                 device_id=device_id,
-                timeout=12.0,
+                timeout=8.0,
             )
             xml_text = self._extract_xml(output)
             if xml_text:
                 return xml_text
-        except Exception:
-            pass
+        except Exception as exc:
+            first_error = str(exc)
+            if self._is_busy_dump_error(first_error):
+                raise self._busy_dump_error() from exc
 
         dump_path = self.DUMP_PATH_TEMPLATE.format(stamp=int(time.time() * 1000))
         try:
@@ -53,14 +71,14 @@ class UIHierarchyService:
                 "--compressed",
                 dump_path,
                 device_id=device_id,
-                timeout=12.0,
+                timeout=8.0,
             )
             output = await adb_service.execute_adb(
                 "exec-out",
                 "cat",
                 dump_path,
                 device_id=device_id,
-                timeout=8.0,
+                timeout=5.0,
             )
             xml_text = self._extract_xml(output)
             if not xml_text:
@@ -69,7 +87,10 @@ class UIHierarchyService:
         except UIHierarchyError:
             raise
         except Exception as exc:
-            raise UIHierarchyError(f"Failed to dump UI hierarchy: {exc}") from exc
+            detail = str(exc) or first_error or "unknown error"
+            if self._is_busy_dump_error(detail):
+                raise self._busy_dump_error() from exc
+            raise UIHierarchyError(f"Failed to dump UI hierarchy: {detail}") from exc
         finally:
             try:
                 await adb_service.execute_adb("shell", "rm", "-f", dump_path, device_id=device_id, timeout=3.0)

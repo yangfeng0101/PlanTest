@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Input, Popover, Space, message, Typography, Table } from 'antd'
-import {
-  PlayCircleOutlined,
-  PauseCircleOutlined,
-  FullscreenOutlined,
-  VideoCameraOutlined,
-  HomeOutlined,
-  RollbackOutlined,
-  AppstoreOutlined,
-  KeyOutlined,
-  SendOutlined,
-} from '@ant-design/icons'
+import { Button, Divider, Form, Input, Modal, Popover, Select, Space, Table, Typography, message } from 'antd'
+import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
+import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined'
+import FullscreenOutlined from '@ant-design/icons/FullscreenOutlined'
+import VideoCameraOutlined from '@ant-design/icons/VideoCameraOutlined'
+import HomeOutlined from '@ant-design/icons/HomeOutlined'
+import RollbackOutlined from '@ant-design/icons/RollbackOutlined'
+import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined'
+import KeyOutlined from '@ant-design/icons/KeyOutlined'
+import SendOutlined from '@ant-design/icons/SendOutlined'
+import SaveOutlined from '@ant-design/icons/SaveOutlined'
 import { Room } from 'livekit-client'
 import type { Device } from '@/types'
 import WebrtcPlayer from '@/components/WebrtcPlayer'
 import { TouchOverlay } from '@/components/TouchHandler'
+import CodeEditor from '@/components/CodeEditor'
+import { scriptApi } from '@/services/api'
 import { formatDeviceOs, mapDevice } from '@/utils/device'
 import './ScreenPage.css'
 
@@ -111,11 +112,104 @@ interface ScreenSessionDiagnostics {
   reused?: boolean
 }
 
+interface LocatorSnippet {
+  key: string
+  title: string
+  description: string
+  code: string
+}
+
+type WorkspaceTab = 'inspect' | 'script' | 'logcat'
+
+function pythonString(value: string) {
+  return JSON.stringify(value)
+}
+
+function createDefaultScreenScript(packageName = 'com.example.app') {
+  return [
+    `package = ${pythonString(packageName || 'com.example.app')}`,
+    '',
+    'app.log("script start")',
+    'app.activate_app(package)',
+    'app.wait(3)',
+    'app.screenshot()',
+    '',
+    '# 在投屏页选择控件后，点击“插入脚本”生成定位代码',
+    '',
+    'test_pass()',
+  ].join('\n')
+}
+
+function buildLocatorSnippets(element: UIElementNode | null): LocatorSnippet[] {
+  if (!element) return []
+
+  const snippets: LocatorSnippet[] = []
+  if (element.resource_id) {
+    snippets.push({
+      key: 'click-id',
+      title: '按 resource-id 点击',
+      description: '推荐用于稳定控件，优先级最高。',
+      code: `app.click(AppiumBy.ID, ${pythonString(element.resource_id)}, timeout=10)`,
+    })
+    snippets.push({
+      key: 'get-text-id',
+      title: '按 resource-id 读取文本',
+      description: '适合断言标题、按钮文案或输入框内容。',
+      code: `text = app.get_text(AppiumBy.ID, ${pythonString(element.resource_id)}, timeout=10)\napp.log(f"element text: {text}")`,
+    })
+  }
+
+  if (element.content_desc) {
+    snippets.push({
+      key: 'click-accessibility',
+      title: '按 accessibility-id 点击',
+      description: '适合有 content-desc 的图标按钮。',
+      code: `app.click(AppiumBy.ACCESSIBILITY_ID, ${pythonString(element.content_desc)}, timeout=10)`,
+    })
+  }
+
+  if (element.text) {
+    if (element.clickable) {
+      snippets.push({
+        key: 'click-text',
+        title: '按文本点击',
+        description: '适合弹窗按钮、菜单项等短文本控件。',
+        code: `app.click_text(${pythonString(element.text)}, timeout=5)`,
+      })
+    }
+    snippets.push({
+      key: 'assert-text',
+      title: '断言文本存在',
+      description: element.clickable ? '适合验证页面是否进入预期状态。' : '当前控件不可点击，建议用于断言；点击请优先选择可点击父级控件。',
+      code: `app.assert_text(${pythonString(element.text)})`,
+    })
+  }
+
+  if (element.xpath) {
+    snippets.push({
+      key: 'click-xpath',
+      title: '按 XPath 点击',
+      description: '当没有稳定 ID 时使用，页面结构变化时需要维护。',
+      code: `app.click(AppiumBy.XPATH, ${pythonString(element.xpath)}, timeout=10)`,
+    })
+  }
+
+  snippets.push({
+    key: 'tap-coordinate',
+    title: '按坐标点击',
+    description: '兜底方案，分辨率或布局变化时稳定性较弱。',
+    code: `app.tap(${Math.round(element.center.x)}, ${Math.round(element.center.y)})`,
+  })
+
+  return snippets
+}
+
 export default function ScreenPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const deviceIdFromUrl = searchParams.get('deviceId')
   const missingDeviceMessageShownRef = useRef(false)
+  const playerViewportRef = useRef<HTMLDivElement>(null)
   const playerContainerRef = useRef<HTMLDivElement>(null)
 
   const [devices, setDevices] = useState<Device[]>([])
@@ -129,6 +223,7 @@ export default function ScreenPage() {
   const [uiElements, setUiElements] = useState<UIElementNode[]>([])
   const [selectedUiElement, setSelectedUiElement] = useState<UIElementNode | null>(null)
   const [loadingUiHierarchy, setLoadingUiHierarchy] = useState(false)
+  const [playerBoxSize, setPlayerBoxSize] = useState<{ width: number; height: number } | null>(null)
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null)
   const [uiScreen, setUiScreen] = useState<{ width: number; height: number } | null>(null)
   const [sessionDiagnostics, setSessionDiagnostics] = useState<ScreenSessionDiagnostics | null>(null)
@@ -136,6 +231,14 @@ export default function ScreenPage() {
   const [networkLatencyMs, setNetworkLatencyMs] = useState<number | null>(null)
   const [quickInputText, setQuickInputText] = useState('')
   const [virtualKeyboardOpen, setVirtualKeyboardOpen] = useState(false)
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>('inspect')
+  const [scriptSaving, setScriptSaving] = useState(false)
+  const [scriptSaveModalOpen, setScriptSaveModalOpen] = useState(false)
+  const [scriptSaveNavigateAfter, setScriptSaveNavigateAfter] = useState(false)
+  const [scriptName, setScriptName] = useState('')
+  const [scriptDescription, setScriptDescription] = useState('')
+  const [scriptTags, setScriptTags] = useState<string[]>(['screen-debug'])
+  const [scriptContent, setScriptContent] = useState('')
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -395,9 +498,12 @@ export default function ScreenPage() {
     }
 
     setLoadingUiHierarchy(true)
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 18000)
     try {
       const res = await fetch(`/api/v1/devices/${selectedDevice}/ui-hierarchy`, {
         credentials: 'include',
+        signal: controller.signal,
       })
       const data = await res.json()
       if (!res.ok) {
@@ -413,8 +519,13 @@ export default function ScreenPage() {
       message.success(`获取到 ${result.elements?.length || 0} 个控件，点击控件框查看属性`)
     } catch (e) {
       const error = e as Error
-      message.error(error.message || '获取控件失败')
+      if (error.name === 'AbortError') {
+        message.error('获取控件超时，请确认设备页面已稳定后重试')
+      } else {
+        message.error(error.message || '获取控件失败')
+      }
     } finally {
+      window.clearTimeout(timeoutId)
       setLoadingUiHierarchy(false)
     }
   }, [currentDevice, isPlaying, selectedDevice])
@@ -521,6 +632,38 @@ export default function ScreenPage() {
     }
   }, [deviceInfo, isPlaying])
 
+  useEffect(() => {
+    const viewport = playerViewportRef.current
+    if (!viewport || !deviceInfo) {
+      setPlayerBoxSize(null)
+      return
+    }
+
+    const updateBoxSize = () => {
+      const rect = viewport.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) {
+        setPlayerBoxSize(null)
+        return
+      }
+
+      const screenRatio = deviceInfo.width / deviceInfo.height
+      const viewportRatio = rect.width / rect.height
+      const height = viewportRatio > screenRatio ? rect.height : rect.width / screenRatio
+      const width = viewportRatio > screenRatio ? rect.height * screenRatio : rect.width
+
+      setPlayerBoxSize({ width, height })
+    }
+
+    updateBoxSize()
+    const observer = new ResizeObserver(updateBoxSize)
+    observer.observe(viewport)
+    window.addEventListener('resize', updateBoxSize)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateBoxSize)
+    }
+  }, [deviceInfo])
+
   const uiPropertyRows = selectedUiElement
     ? [
         { key: 'uid', property: 'uid', value: selectedUiElement.uid },
@@ -552,6 +695,7 @@ export default function ScreenPage() {
   const visibleUiElements = uiElements
     .filter((element) => element.bounds.width > 0 && element.bounds.height > 0)
     .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
+  const locatorSnippets = useMemo(() => buildLocatorSnippets(selectedUiElement), [selectedUiElement])
 
   const hasStartupError = Boolean(sessionDiagnostics?.last_error)
   const isInitializing = !hasVideoFrame && !hasStartupError
@@ -583,6 +727,92 @@ export default function ScreenPage() {
     publishControl({ type: 'text', text }, true)
     setQuickInputText('')
     setVirtualKeyboardOpen(false)
+  }
+
+  const getCurrentPackageName = () => (
+    selectedUiElement?.package || uiElements.find((element) => element.package)?.package || 'com.example.app'
+  )
+
+  const getDefaultScriptName = () => `${currentDevice?.name || selectedDevice || '投屏'} 自动化脚本`
+
+  const ensureScriptDraft = () => {
+    const packageName = getCurrentPackageName()
+    if (!scriptContent.trim()) {
+      setScriptContent(createDefaultScreenScript(packageName))
+    }
+  }
+
+  const activateScriptWriter = () => {
+    ensureScriptDraft()
+    setActiveWorkspaceTab('script')
+  }
+
+  const appendScriptSnippet = (snippet: LocatorSnippet) => {
+    ensureScriptDraft()
+    const packageName = getCurrentPackageName()
+    setScriptContent((current) => {
+      const base = (current.trim() ? current : createDefaultScreenScript(packageName)).trimEnd()
+      return `${base}${base ? '\n\n' : ''}${snippet.code}\n`
+    })
+    setActiveWorkspaceTab('script')
+    message.success('已插入脚本')
+  }
+
+  const openSaveScriptModal = (goToScriptList = false) => {
+    if (!scriptContent.trim()) {
+      message.warning('请填写脚本内容')
+      return
+    }
+    if (!scriptName.trim()) {
+      setScriptName(getDefaultScriptName())
+    }
+    if (!scriptDescription.trim()) {
+      setScriptDescription('从投屏页编写并保存的自动化脚本')
+    }
+    setScriptSaveNavigateAfter(goToScriptList)
+    setScriptSaveModalOpen(true)
+  }
+
+  const saveScript = async () => {
+    if (!scriptName.trim()) {
+      message.warning('请填写脚本名称')
+      return
+    }
+    if (!scriptContent.trim()) {
+      message.warning('请填写脚本内容')
+      return
+    }
+
+    setScriptSaving(true)
+    try {
+      const validation = await scriptApi.validate(scriptContent)
+      if (!validation.data.valid) {
+        message.error(validation.data.errors[0] || '脚本校验失败')
+        return
+      }
+      if (validation.data.warnings.length > 0) {
+        message.warning(validation.data.warnings[0])
+      }
+
+      await scriptApi.create({
+        name: scriptName.trim(),
+        description: scriptDescription.trim(),
+        script_type: 'python',
+        content: scriptContent,
+        status: 'draft',
+        tags: scriptTags,
+      })
+      message.success('脚本已保存到脚本管理')
+      setScriptSaveModalOpen(false)
+      if (scriptSaveNavigateAfter) {
+        navigate('/scripts')
+      }
+    } catch (error) {
+      console.error('Failed to save script from screen page:', error)
+      message.error('保存脚本失败')
+    } finally {
+      setScriptSaving(false)
+    }
   }
 
   // Fullscreen
@@ -640,82 +870,85 @@ export default function ScreenPage() {
           </div>
 
           <div className="device-frame-wrap">
-            <div
-              ref={playerContainerRef}
-              className={`player-container ${isPlaying ? 'active' : ''}`}
-            >
-              {isPlaying && lkSession ? (
-                <TouchOverlay
-                  screenWidth={deviceInfo?.width || 1080}
-                  screenHeight={deviceInfo?.height || 1920}
-                  onInput={handleTouchInput}
-                  disabled={uiElements.length > 0}
-                >
-                  <WebrtcPlayer
-                    deviceId={selectedDevice}
-                    token={lkSession.token}
-                    serverUrl={lkSession.url}
-                    waitingText={isInitializing ? startupStatusText : ''}
-                    onConnectionStateChange={handleConnectionStateChange}
-                    onStats={handleWebRTCStats}
-                    onFirstFrame={() => {
-                      setHasVideoFrame(true)
-                      setLoading(false)
-                      if (startRequestedAtRef.current !== null) {
-                        setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
-                      }
-                    }}
-                    onRoomCreated={(room) => { lkRoomRef.current = room; }}
-                  />
-                  {isInitializing && (
-                    <div className="video-waiting-overlay">
-                      <div className="video-waiting-content">
-                        <span>{startupStatusText}</span>
-                      </div>
-                    </div>
-                  )}
-                  {uiElements.length > 0 && renderMetrics && uiScreen && (
-                    <div
-                      className="ui-element-layer"
-                      style={{
-                        left: renderMetrics.left,
-                        top: renderMetrics.top,
-                        width: renderMetrics.width,
-                        height: renderMetrics.height,
+            <div ref={playerViewportRef} className="player-viewport">
+              <div
+                ref={playerContainerRef}
+                className={`player-container ${isPlaying ? 'active' : ''}`}
+                style={playerBoxSize ? { width: playerBoxSize.width, height: playerBoxSize.height } : undefined}
+              >
+                {isPlaying && lkSession ? (
+                  <TouchOverlay
+                    screenWidth={deviceInfo?.width || 1080}
+                    screenHeight={deviceInfo?.height || 1920}
+                    onInput={handleTouchInput}
+                    disabled={uiElements.length > 0}
+                  >
+                    <WebrtcPlayer
+                      deviceId={selectedDevice}
+                      token={lkSession.token}
+                      serverUrl={lkSession.url}
+                      waitingText={isInitializing ? startupStatusText : ''}
+                      onConnectionStateChange={handleConnectionStateChange}
+                      onStats={handleWebRTCStats}
+                      onFirstFrame={() => {
+                        setHasVideoFrame(true)
+                        setLoading(false)
+                        if (startRequestedAtRef.current !== null) {
+                          setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
+                        }
                       }}
-                    >
-                      {visibleUiElements.map((element) => {
-                        const isSelected = selectedUiElement?.uid === element.uid
-                        return (
-                          <button
-                            key={element.uid}
-                            type="button"
-                            className={`ui-element-box ${isSelected ? 'selected' : ''} ${element.clickable ? 'clickable' : ''}`}
-                            title={element.resource_id || element.content_desc || element.text || element.class_name}
-                            style={{
-                              left: `${(element.bounds.x / uiScreen.width) * 100}%`,
-                              top: `${(element.bounds.y / uiScreen.height) * 100}%`,
-                              width: `${(element.bounds.width / uiScreen.width) * 100}%`,
-                              height: `${(element.bounds.height / uiScreen.height) * 100}%`,
-                              zIndex: element.depth + 1,
-                            }}
-                            onClick={(event) => {
-                              event.preventDefault()
-                              event.stopPropagation()
-                              setSelectedUiElement(element)
-                            }}
-                          />
-                        )
-                      })}
-                    </div>
-                  )}
-                </TouchOverlay>
-              ) : (
-                <div className="player-placeholder">
-                  <VideoCameraOutlined style={{ fontSize: 56, marginBottom: 16 }} />
-                  <p>从设备管理选择设备后点击连接开始投屏</p>
-                </div>
-              )}
+                      onRoomCreated={(room) => { lkRoomRef.current = room; }}
+                    />
+                    {isInitializing && (
+                      <div className="video-waiting-overlay">
+                        <div className="video-waiting-content">
+                          <span>{startupStatusText}</span>
+                        </div>
+                      </div>
+                    )}
+                    {uiElements.length > 0 && renderMetrics && uiScreen && (
+                      <div
+                        className="ui-element-layer"
+                        style={{
+                          left: renderMetrics.left,
+                          top: renderMetrics.top,
+                          width: renderMetrics.width,
+                          height: renderMetrics.height,
+                        }}
+                      >
+                        {visibleUiElements.map((element) => {
+                          const isSelected = selectedUiElement?.uid === element.uid
+                          return (
+                            <button
+                              key={element.uid}
+                              type="button"
+                              className={`ui-element-box ${isSelected ? 'selected' : ''} ${element.clickable ? 'clickable' : ''}`}
+                              title={element.resource_id || element.content_desc || element.text || element.class_name}
+                              style={{
+                                left: `${(element.bounds.x / uiScreen.width) * 100}%`,
+                                top: `${(element.bounds.y / uiScreen.height) * 100}%`,
+                                width: `${(element.bounds.width / uiScreen.width) * 100}%`,
+                                height: `${(element.bounds.height / uiScreen.height) * 100}%`,
+                                zIndex: element.depth + 1,
+                              }}
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                setSelectedUiElement(element)
+                              }}
+                            />
+                          )
+                        })}
+                      </div>
+                    )}
+                  </TouchOverlay>
+                ) : (
+                  <div className="player-placeholder">
+                    <VideoCameraOutlined style={{ fontSize: 56, marginBottom: 16 }} />
+                    <p>从设备管理选择设备后点击连接开始投屏</p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="device-rail">
@@ -751,76 +984,204 @@ export default function ScreenPage() {
 
         <section className="screen-workspace">
           <div className="workspace-tabs">
-            <button type="button" className="workspace-tab active">控件检查</button>
-            <button type="button" className="workspace-tab">脚本辅助</button>
-            <button type="button" className="workspace-tab">Logcat</button>
+            <button
+              type="button"
+              className={`workspace-tab ${activeWorkspaceTab === 'inspect' ? 'active' : ''}`}
+              onClick={() => setActiveWorkspaceTab('inspect')}
+            >
+              控件检查
+            </button>
+            <button
+              type="button"
+              className={`workspace-tab ${activeWorkspaceTab === 'script' ? 'active' : ''}`}
+              onClick={activateScriptWriter}
+            >
+              编写脚本
+            </button>
+            <button
+              type="button"
+              className={`workspace-tab ${activeWorkspaceTab === 'logcat' ? 'active' : ''}`}
+              onClick={() => setActiveWorkspaceTab('logcat')}
+            >
+              Logcat
+            </button>
           </div>
 
-          <div className="workspace-panel inspector-panel">
-            <div className="workspace-toolbar">
-              <Space>
-                <Button type="primary" loading={loadingUiHierarchy} disabled={!selectedDevice || !isPlaying || !uiHierarchySupported} onClick={fetchUiHierarchy}>
-                  获取控件
-                </Button>
-                <Button danger disabled={uiElements.length === 0} onClick={clearUiHierarchy}>
-                  清理控件
-                </Button>
-              </Space>
-              <Space size={20}>
-                <Text type="secondary">当前设备：{currentDevice?.name || selectedDevice || '-'}</Text>
-                <Text type="secondary">选中：{selectedUiElement?.class_name || '-'}</Text>
-              </Space>
-            </div>
+          {activeWorkspaceTab === 'inspect' && (
+            <>
+              <div className="workspace-panel inspector-panel">
+                <div className="workspace-toolbar">
+                  <Space>
+                    <Button type="primary" loading={loadingUiHierarchy} disabled={!selectedDevice || !isPlaying || !uiHierarchySupported} onClick={fetchUiHierarchy}>
+                      获取控件
+                    </Button>
+                    <Button danger disabled={uiElements.length === 0} onClick={clearUiHierarchy}>
+                      清理控件
+                    </Button>
+                  </Space>
+                  <Space size={20}>
+                    <Text type="secondary">当前设备：{currentDevice?.name || selectedDevice || '-'}</Text>
+                    <Text type="secondary">选中：{selectedUiElement?.class_name || '-'}</Text>
+                  </Space>
+                </div>
 
-            <Table
-              className="ui-property-table"
-              size="small"
-              pagination={false}
-              rowKey="key"
-              scroll={{ y: 330 }}
-              columns={[
-                {
-                  title: '属性',
-                  dataIndex: 'property',
-                  width: 180,
-                },
-                {
-                  title: '值',
-                  dataIndex: 'value',
-                  render: (value: string) => value ? (
-                    <Text copyable={{ text: value }} className="property-value">
-                      {value}
-                    </Text>
+                <Table
+                  className="ui-property-table"
+                  size="small"
+                  pagination={false}
+                  rowKey="key"
+                  scroll={{ y: 330 }}
+                  columns={[
+                    {
+                      title: '属性',
+                      dataIndex: 'property',
+                      width: 180,
+                    },
+                    {
+                      title: '值',
+                      dataIndex: 'value',
+                      render: (value: string) => value ? (
+                        <Text copyable={{ text: value }} className="property-value">
+                          {value}
+                        </Text>
+                      ) : (
+                        <Text type="secondary">空</Text>
+                      ),
+                    },
+                  ]}
+                  dataSource={uiPropertyRows}
+                  locale={{ emptyText: uiElements.length > 0 ? '点击左侧控件框查看属性' : '暂无数据' }}
+                />
+              </div>
+
+              <div className="workspace-panel log-panel">
+                <div className="workspace-toolbar compact">
+                  <Text strong>自动化选择器</Text>
+                  <Text type="secondary">点击属性值右侧图标可复制</Text>
+                </div>
+                <div className="selector-preview">
+                  {selectedUiElement ? (
+                    <>
+                      {selectedUiElement.selector_suggestions.map((selector) => (
+                        <div className="selector-row" key={`${selector.type}-${selector.value}`}>
+                          <Text className="selector-type">{selector.type}</Text>
+                          <Text copyable={{ text: selector.value }} className="selector-value">{selector.value}</Text>
+                        </div>
+                      ))}
+                      <Divider orientation="left">推荐脚本片段</Divider>
+                      <div className="script-snippet-list">
+                        {locatorSnippets.map((snippet) => (
+                          <div className="script-snippet-item" key={snippet.key}>
+                            <div className="script-snippet-meta">
+                              <Text strong>{snippet.title}</Text>
+                              <Text type="secondary">{snippet.description}</Text>
+                              <pre>{snippet.code}</pre>
+                            </div>
+                            <Button size="small" type="primary" onClick={() => appendScriptSnippet(snippet)}>
+                              插入脚本
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   ) : (
-                    <Text type="secondary">空</Text>
-                  ),
-                },
-              ]}
-              dataSource={uiPropertyRows}
-              locale={{ emptyText: uiElements.length > 0 ? '点击左侧控件框查看属性' : '暂无数据' }}
-            />
-          </div>
+                    <Text type="secondary">选择控件后显示可用于自动化脚本的 id、accessibility_id、text 和 xpath。</Text>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
-          <div className="workspace-panel log-panel">
-            <div className="workspace-toolbar compact">
-              <Text strong>自动化选择器</Text>
-              <Text type="secondary">点击属性值右侧图标可复制</Text>
-            </div>
-            <div className="selector-preview">
-              {selectedUiElement ? (
-                selectedUiElement.selector_suggestions.map((selector) => (
-                  <div className="selector-row" key={`${selector.type}-${selector.value}`}>
-                    <Text className="selector-type">{selector.type}</Text>
-                    <Text copyable={{ text: selector.value }} className="selector-value">{selector.value}</Text>
+          {activeWorkspaceTab === 'script' && (
+            <div className="workspace-panel script-panel">
+              <div className="workspace-toolbar">
+                <Space direction="vertical" size={0}>
+                  <Text strong>编写自动化脚本</Text>
+                  <Text type="secondary">保存后进入脚本管理列表</Text>
+                </Space>
+                <Space>
+                  <Button icon={<SaveOutlined />} onClick={() => openSaveScriptModal(false)}>
+                    保存
+                  </Button>
+                  <Button type="primary" onClick={() => openSaveScriptModal(true)}>
+                    保存并查看
+                  </Button>
+                </Space>
+              </div>
+
+              <div className="script-workspace-body">
+                <div className="script-editor-wrap">
+                  <CodeEditor value={scriptContent} onChange={setScriptContent} height="100%" />
+                </div>
+
+                <Divider orientation="left">当前控件代码</Divider>
+                {selectedUiElement ? (
+                  <div className="script-snippet-list script-inline-snippets">
+                    {locatorSnippets.map((snippet) => (
+                      <div className="script-snippet-item" key={snippet.key}>
+                        <div className="script-snippet-meta">
+                          <Text strong>{snippet.title}</Text>
+                          <Text type="secondary">{snippet.description}</Text>
+                          <pre>{snippet.code}</pre>
+                        </div>
+                        <Button size="small" onClick={() => appendScriptSnippet(snippet)}>
+                          插入
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                ))
-              ) : (
-                <Text type="secondary">选择控件后显示可用于自动化脚本的 id、accessibility_id、text 和 xpath。</Text>
-              )}
+                ) : (
+                  <Text type="secondary">还没有选中控件。获取控件树并点击投屏上的控件后，这里会显示可插入的脚本片段。</Text>
+                )}
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeWorkspaceTab === 'logcat' && (
+            <div className="workspace-panel logcat-panel">
+              <div className="workspace-toolbar compact">
+                <Text strong>Logcat</Text>
+              </div>
+              <div className="logcat-placeholder">
+                <Text type="secondary">Logcat 能力待接入。</Text>
+              </div>
+            </div>
+          )}
         </section>
       </div>
+
+      <Modal
+        title="保存脚本"
+        open={scriptSaveModalOpen}
+        confirmLoading={scriptSaving}
+        okText={scriptSaveNavigateAfter ? '保存并查看' : '保存'}
+        cancelText="取消"
+        onOk={saveScript}
+        onCancel={() => setScriptSaveModalOpen(false)}
+      >
+        <Form layout="vertical">
+          <Form.Item label="脚本名称" required>
+            <Input value={scriptName} onChange={(event) => setScriptName(event.target.value)} placeholder="请输入脚本名称" />
+          </Form.Item>
+          <Form.Item label="标签">
+            <Select
+              mode="tags"
+              value={scriptTags}
+              onChange={setScriptTags}
+              tokenSeparators={[',']}
+              placeholder="输入标签后回车"
+            />
+          </Form.Item>
+          <Form.Item label="描述">
+            <Input.TextArea
+              value={scriptDescription}
+              rows={3}
+              onChange={(event) => setScriptDescription(event.target.value)}
+              placeholder="简单描述脚本用途"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

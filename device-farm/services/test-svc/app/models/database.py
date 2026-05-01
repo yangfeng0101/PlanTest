@@ -13,7 +13,6 @@ class Base(DeclarativeBase):
 
 class ScriptType(str, Enum):
     PYTHON = "python"
-    JAVASCRIPT = "javascript"
 
 
 class ScriptStatus(str, Enum):
@@ -35,6 +34,14 @@ class DevicePlatform(str, Enum):
     IOS = "ios"
 
 
+def _enum_values(enum_cls):
+    return [member.value for member in enum_cls]
+
+
+def _value_enum(enum_cls):
+    return SQLEnum(enum_cls, values_callable=_enum_values, native_enum=False)
+
+
 class ScriptDB(Base):
     """Script database model"""
     __tablename__ = "scripts"
@@ -42,9 +49,9 @@ class ScriptDB(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    script_type = Column(SQLEnum(ScriptType), default=ScriptType.PYTHON, nullable=False)
+    script_type = Column(_value_enum(ScriptType), default=ScriptType.PYTHON, nullable=False)
     content = Column(Text, nullable=False)
-    status = Column(SQLEnum(ScriptStatus), default=ScriptStatus.DRAFT, nullable=False)
+    status = Column(_value_enum(ScriptStatus), default=ScriptStatus.DRAFT, nullable=False)
     tags = Column(JSON, default=list)
     file_path = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -64,10 +71,10 @@ class TaskDB(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     script_id = Column(String(36), ForeignKey("scripts.id"), nullable=False, index=True)
     device_id = Column(String(100), nullable=True, index=True)
-    device_platform = Column(SQLEnum(DevicePlatform), default=DevicePlatform.ANDROID, nullable=False)
+    device_platform = Column(_value_enum(DevicePlatform), default=DevicePlatform.ANDROID, nullable=False)
     device_capabilities = Column(JSON, default=dict)
     parameters = Column(JSON, default=dict)
-    status = Column(SQLEnum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
+    status = Column(_value_enum(TaskStatus), default=TaskStatus.PENDING, nullable=False, index=True)
     result = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
     log_file = Column(String(500), nullable=True)

@@ -15,15 +15,13 @@ import {
   Badge,
   Avatar,
 } from 'antd'
-import {
-  ReloadOutlined,
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  KeyOutlined,
-  UserOutlined,
-  SearchOutlined,
-} from '@ant-design/icons'
+import ReloadOutlined from '@ant-design/icons/ReloadOutlined'
+import PlusOutlined from '@ant-design/icons/PlusOutlined'
+import EditOutlined from '@ant-design/icons/EditOutlined'
+import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
+import KeyOutlined from '@ant-design/icons/KeyOutlined'
+import UserOutlined from '@ant-design/icons/UserOutlined'
+import SearchOutlined from '@ant-design/icons/SearchOutlined'
 import type { ColumnsType } from 'antd/es/table'
 import { useAuthStore, hasPermission, useAuthenticatedFetch, type UserRole, type UserStatus } from '@/stores'
 

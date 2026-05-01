@@ -15,12 +15,10 @@ import {
   List,
   Alert,
 } from 'antd'
-import {
-  CodeOutlined,
-  ThunderboltOutlined,
-  DownloadOutlined,
-  BulbOutlined,
-} from '@ant-design/icons'
+import CodeOutlined from '@ant-design/icons/CodeOutlined'
+import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined'
+import DownloadOutlined from '@ant-design/icons/DownloadOutlined'
+import BulbOutlined from '@ant-design/icons/BulbOutlined'
 import { useAuthenticatedFetch } from '@/stores'
 
 const { TextArea } = Input

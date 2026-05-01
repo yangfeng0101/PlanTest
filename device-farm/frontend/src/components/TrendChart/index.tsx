@@ -1,12 +1,10 @@
 // TrendChart - Reusable chart component for trend visualization
 import { useMemo } from 'react'
 import { Card, Spin, Empty, Select, Space } from 'antd'
-import {
-  LineChartOutlined,
-  BarChartOutlined,
-  AreaChartOutlined,
-  DotChartOutlined,
-} from '@ant-design/icons'
+import LineChartOutlined from '@ant-design/icons/LineChartOutlined'
+import BarChartOutlined from '@ant-design/icons/BarChartOutlined'
+import AreaChartOutlined from '@ant-design/icons/AreaChartOutlined'
+import DotChartOutlined from '@ant-design/icons/DotChartOutlined'
 
 const { Option } = Select
 

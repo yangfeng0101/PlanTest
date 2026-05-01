@@ -13,12 +13,10 @@ import {
   Divider,
   Select,
 } from 'antd'
-import {
-  UploadOutlined,
-  AimOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-} from '@ant-design/icons'
+import UploadOutlined from '@ant-design/icons/UploadOutlined'
+import AimOutlined from '@ant-design/icons/AimOutlined'
+import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined'
+import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined'
 import type { UploadFile } from 'antd/es/upload/interface'
 import { useAuthenticatedFetch } from '@/stores'
 
