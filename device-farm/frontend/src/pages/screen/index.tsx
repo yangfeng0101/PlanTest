@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Divider, Form, Input, Modal, Popover, Select, Space, Table, Typography, message } from 'antd'
+import { Button, Form, Input, Modal, Popover, Select, Space, Table, Typography, message } from 'antd'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
 import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined'
 import FullscreenOutlined from '@ant-design/icons/FullscreenOutlined'
@@ -696,6 +696,7 @@ export default function ScreenPage() {
     .filter((element) => element.bounds.width > 0 && element.bounds.height > 0)
     .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
   const locatorSnippets = useMemo(() => buildLocatorSnippets(selectedUiElement), [selectedUiElement])
+  const scriptLineCount = useMemo(() => scriptContent.split(/\r\n|\r|\n/).length, [scriptContent])
 
   const hasStartupError = Boolean(sessionDiagnostics?.last_error)
   const isInitializing = !hasVideoFrame && !hasStartupError
@@ -1030,7 +1031,6 @@ export default function ScreenPage() {
                   size="small"
                   pagination={false}
                   rowKey="key"
-                  scroll={{ y: 330 }}
                   columns={[
                     {
                       title: '属性',
@@ -1068,21 +1068,6 @@ export default function ScreenPage() {
                           <Text copyable={{ text: selector.value }} className="selector-value">{selector.value}</Text>
                         </div>
                       ))}
-                      <Divider orientation="left">推荐脚本片段</Divider>
-                      <div className="script-snippet-list">
-                        {locatorSnippets.map((snippet) => (
-                          <div className="script-snippet-item" key={snippet.key}>
-                            <div className="script-snippet-meta">
-                              <Text strong>{snippet.title}</Text>
-                              <Text type="secondary">{snippet.description}</Text>
-                              <pre>{snippet.code}</pre>
-                            </div>
-                            <Button size="small" type="primary" onClick={() => appendScriptSnippet(snippet)}>
-                              插入脚本
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
                     </>
                   ) : (
                     <Text type="secondary">选择控件后显示可用于自动化脚本的 id、accessibility_id、text 和 xpath。</Text>
@@ -1110,29 +1095,42 @@ export default function ScreenPage() {
               </div>
 
               <div className="script-workspace-body">
-                <div className="script-editor-wrap">
-                  <CodeEditor value={scriptContent} onChange={setScriptContent} height="100%" />
+                <div className="script-ide-shell">
+                  <div className="script-editor-wrap">
+                    <CodeEditor value={scriptContent} onChange={setScriptContent} height="100%" theme="vs-dark" />
+                  </div>
+
+                  <div className="script-ide-status">
+                    <span>Python</span>
+                    <span>app.xxx SDK</span>
+                    <span>{scriptLineCount} 行</span>
+                  </div>
                 </div>
 
-                <Divider orientation="left">当前控件代码</Divider>
-                {selectedUiElement ? (
-                  <div className="script-snippet-list script-inline-snippets">
-                    {locatorSnippets.map((snippet) => (
-                      <div className="script-snippet-item" key={snippet.key}>
-                        <div className="script-snippet-meta">
-                          <Text strong>{snippet.title}</Text>
-                          <Text type="secondary">{snippet.description}</Text>
-                          <pre>{snippet.code}</pre>
-                        </div>
-                        <Button size="small" onClick={() => appendScriptSnippet(snippet)}>
-                          插入
-                        </Button>
-                      </div>
-                    ))}
+                <div className="script-assist-panel">
+                  <div className="script-assist-header">
+                    <Text strong>当前控件代码</Text>
+                    <Text type="secondary">选中控件后可插入定位片段</Text>
                   </div>
-                ) : (
-                  <Text type="secondary">还没有选中控件。获取控件树并点击投屏上的控件后，这里会显示可插入的脚本片段。</Text>
-                )}
+                  {selectedUiElement ? (
+                    <div className="script-snippet-list script-inline-snippets">
+                      {locatorSnippets.map((snippet) => (
+                        <div className="script-snippet-item" key={snippet.key}>
+                          <div className="script-snippet-meta">
+                            <Text strong>{snippet.title}</Text>
+                            <Text type="secondary">{snippet.description}</Text>
+                            <pre>{snippet.code}</pre>
+                          </div>
+                          <Button size="small" onClick={() => appendScriptSnippet(snippet)}>
+                            插入
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <Text type="secondary">还没有选中控件。获取控件树并点击投屏上的控件后，这里会显示可插入的脚本片段。</Text>
+                  )}
+                </div>
               </div>
             </div>
           )}
