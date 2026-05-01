@@ -1,5 +1,7 @@
 # GEMINI.md - Device Farm 项目上下文与约束
 
+> Codex/通用编码 Agent 请优先读取根目录 `AGENTS.md`；本文件保留给 Gemini 使用。
+
 ## 1. 项目概览
 - **Device Farm** 是一个企业级移动设备管理与自动化测试平台。
 - **架构**: 采用 Python (FastAPI) 微服务集群，Go (Pion WebRTC) 处理屏幕流，Celery 调度任务。

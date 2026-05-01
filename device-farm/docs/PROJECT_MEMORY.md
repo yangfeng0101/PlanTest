@@ -1,0 +1,80 @@
+# Device Farm Project Memory
+
+> 新会话接手时先读本文件，再按任务读取 `SCRIPTING_GUIDE.md`、相关服务代码和页面代码。
+
+## 当前状态
+
+- 当前远程状态：`main` 和 `dev-reboot` 均已推送到 `c473c404 Improve Python script execution workflow`。
+- 最近一次重要提交已合并到远程 `origin/main` 和 `origin/dev-reboot`。
+- 最近验证通过：
+  - `git diff --check`
+  - Python `compileall`
+  - `docker compose config`
+  - 前端 `npm run build`
+  - `test-svc` / `device-svc` 运行期 import 检查
+  - 当前 Postgres 表结构可兼容 `python`、`pending` 等 value 字符串
+
+## 最近完成的改动
+
+- 自动化脚本只保留 Python，JavaScript 脚本支持和执行器已移除。
+- 新增 Python 脚本 SDK，推荐统一使用 `app.xxx`：
+  - App 控制：`app.activate_app()`、`app.terminate_app()`、`app.restart_app()`
+  - 元素能力：`app.find()`、`app.click()`、`app.exists()`、`app.click_text()`
+  - 辅助能力：`app.log()`、`app.wait()`、`app.screenshot()`、`app.source()`
+- 创建任务流程改为只选择设备；App 包名和启动/退出逻辑由脚本内容自行控制。
+- 任务执行支持取消：
+  - 前端运行按钮会展示 pending/running 状态。
+  - 可以取消 pending/running 任务。
+  - 后端取消后会尽力释放设备。
+- 投屏页新增脚本编写入口：
+  - 工作区包含“控件检查 / 编写脚本 / Logcat”。
+  - 可以一边投屏一边获取控件树、查看属性、插入定位脚本片段。
+  - 保存脚本时再填写名称、标签、描述，脚本保存到脚本管理。
+- 控件树获取增强：
+  - 前端增加超时处理。
+  - 后端对 UIAutomator idle/timeout/killed 错误返回更明确的中文提示。
+- Appium 执行链路增强：
+  - Docker Compose 增加 Appium 服务和 test-worker。
+  - test-svc/test-worker 安装 ADB。
+  - 支持通过包名解析启动 Activity。
+- 新增脚本文档：`device-farm/docs/SCRIPTING_GUIDE.md`。
+- 新增冒烟脚本：`device-farm/scripts/smoke_task_flow.py`。
+
+## 当前约定
+
+- 用户编写脚本时只关心“有哪些方法可用”，不要暴露不必要的平台内部概念。
+- 脚本示例以 `app.xxx` 为主，旧全局函数仅兼容历史脚本。
+- 定位推荐：
+  - 首选稳定 `resource-id`，如 `app.click(AppiumBy.ID, "...", timeout=10)`。
+  - 其次用 `accessibility-id`、精确文本、XPath。
+  - 坐标点击只作为兜底。
+- `app.click_text()` 只适合目标文本或 `content-desc` 本身可被 Appium 定位并点击的场景；如果文本在不可点击子控件上，应优先点击可点击父级的 `resource-id`。
+
+## 已知限制
+
+- 直播、动画或持续刷新页面可能导致 UIAutomator 无法获取 idle 状态，表现为控件树获取失败或一直转圈；这是 Android UIAutomator 的稳定性限制，不代表投屏失败。
+- 获取动态页面控件时，可考虑等待页面稳定、使用 Appium 直接定位、OCR、图像匹配或坐标兜底。
+- 投屏页的 Logcat tab 目前仍是占位能力。
+- 前端生产构建有 chunk 体积 warning，当前不阻塞功能，后续可通过动态 import 或 manualChunks 优化。
+- WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。
+
+## 下次接手建议
+
+- 处理脚本执行问题时优先看：
+  - `device-farm/docs/SCRIPTING_GUIDE.md`
+  - `device-farm/services/test-svc/app/tasks/executor.py`
+  - `device-farm/services/test-svc/app/api/tasks.py`
+  - `device-farm/services/test-svc/app/drivers/appium.py`
+- 处理脚本管理/运行 UI 时优先看：
+  - `device-farm/frontend/src/pages/scripts/index.tsx`
+  - `device-farm/frontend/src/services/api.ts`
+  - `device-farm/frontend/src/types/index.ts`
+- 处理投屏页和控件检查时优先看：
+  - `device-farm/frontend/src/pages/screen/index.tsx`
+  - `device-farm/frontend/src/pages/screen/ScreenPage.css`
+  - `device-farm/services/device-svc/app/services/ui_hierarchy_service.py`
+- 处理 LiveKit/WiFi 问题时优先确认：
+  - `device-farm/.env`
+  - `device-farm/infra/docker/.env`
+  - `device-farm/infra/docker/docker-compose.yml`
+  - `livekit` 和 `screen-svc` 容器日志
