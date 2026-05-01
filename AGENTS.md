@@ -70,4 +70,9 @@ cd device-farm/infra/docker && docker compose config
 
 - `device-farm/docs/PROJECT_MEMORY.md` 只记录当前有效事实，不写成长流水账。
 - 每次重要提交后优先更新三块：最新提交/分支状态、最近完成内容、已知问题。
+- 准备 commit 前必须做一次记忆同步检查：
+  - 本次改动是否改变功能、接口、脚本方法、运行流程或部署方式。
+  - 本次改动是否新增/解决已知问题或排查结论。
+  - 如果任一答案为“是”，先更新 `PROJECT_MEMORY.md`，再提交。
+  - 如果不需要更新，在最终回复里简短说明“本次无需更新项目记忆”的原因。
 - 历史流水账继续保留在 `device-farm/docs/project/progress.txt`，新会话不优先读取它。
