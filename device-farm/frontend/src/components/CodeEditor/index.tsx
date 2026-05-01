@@ -8,6 +8,7 @@ interface CodeEditorProps {
   onChange?: (value: string) => void
   readOnly?: boolean
   height?: number | string
+  theme?: string
 }
 
 let pythonCompletionProviderRegistered = false
@@ -42,6 +43,7 @@ export default function CodeEditor({
   onChange,
   readOnly = false,
   height = 400,
+  theme = 'vs',
 }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
 
@@ -409,6 +411,7 @@ export default function CodeEditor({
     <Editor
       height={height}
       language={language}
+      theme={theme}
       value={value}
       onChange={(v) => onChange?.(v || '')}
       onMount={handleEditorDidMount}
@@ -421,7 +424,6 @@ export default function CodeEditor({
         automaticLayout: true,
         tabSize: 2,
         wordWrap: 'on',
-        theme: 'vs',
       }}
     />
   )

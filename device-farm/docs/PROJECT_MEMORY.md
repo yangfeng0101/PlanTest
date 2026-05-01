@@ -6,8 +6,8 @@
 
 ## 当前状态
 
-- 当前远程状态：`main` 和 `dev-reboot` 均已推送到 `c473c404 Improve Python script execution workflow`。
-- 最近一次重要提交已合并到远程 `origin/main` 和 `origin/dev-reboot`。
+- 当前远程状态：`main` 和 `dev-reboot` 已同步到包含 `8f5d4251 Polish screen script editor` 的合并结果。
+- 最近一次功能改动已合并到远程 `origin/main` 和 `origin/dev-reboot`。
 - 最近验证通过：
   - `git diff --check`
   - Python `compileall`
@@ -32,6 +32,10 @@
   - 工作区包含“控件检查 / 编写脚本 / Logcat”。
   - 可以一边投屏一边获取控件树、查看属性、插入定位脚本片段。
   - 保存脚本时再填写名称、标签、描述，脚本保存到脚本管理。
+- 投屏页体验优化：
+  - 控件检查页不再重复展示脚本片段，脚本片段只在“编写脚本”页底部辅助面板展示。
+  - 控件属性区域取消固定表格高度，自动化选择器区域压缩高度，尽量展示更多属性。
+  - “编写脚本”页使用深色 Monaco 代码工作台，支持 `vs-dark` 主题且保留脚本行数状态栏。
 - 控件树获取增强：
   - 前端增加超时处理。
   - 后端对 UIAutomator idle/timeout/killed 错误返回更明确的中文提示。
