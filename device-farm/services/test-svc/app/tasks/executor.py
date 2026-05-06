@@ -397,6 +397,7 @@ def execute_script(script, driver, parameters: dict, task_id: str) -> ExecutionR
         "failed": 0,
         "skipped": 0,
         "errors": [],
+        "debug_trace_lines": bool(parameters.get("debug_trace_lines")),
     }
 
     try:
@@ -562,8 +563,50 @@ def execute_python_script(content: str, context: dict):
         }
 
         # Execute the script in restricted mode
-        with open(temp_path, "r") as f:
-            exec(compile(f.read(), temp_path, "exec"), namespace)
+        previous_trace = sys.gettrace()
+        trace_lines = context.get("debug_trace_lines")
+        trace_state = {
+            "last_seen_line": None,
+            "last_emitted_line": None,
+            "last_emit_at": 0.0,
+        }
+        trace_emit_interval_seconds = 0.2
+
+        def emit_script_line(line_number: int, force: bool = False):
+            now = time.monotonic()
+            if not force:
+                if line_number == trace_state["last_emitted_line"]:
+                    return
+                if now - trace_state["last_emit_at"] < trace_emit_interval_seconds:
+                    return
+
+            trace_state["last_emitted_line"] = line_number
+            trace_state["last_emit_at"] = now
+            run_async(send_log(
+                context["task_id"],
+                "DEBUG",
+                f"Executing line {line_number}",
+                event_type="script_line",
+                line_number=line_number,
+            ))
+
+        def trace_script_lines(frame, event, arg):
+            if event == "line" and frame.f_code.co_filename == temp_path:
+                line_number = frame.f_lineno
+                trace_state["last_seen_line"] = line_number
+                emit_script_line(line_number)
+            return trace_script_lines
+
+        try:
+            if trace_lines:
+                sys.settrace(trace_script_lines)
+            with open(temp_path, "r") as f:
+                exec(compile(f.read(), temp_path, "exec"), namespace)
+        finally:
+            if trace_lines:
+                if trace_state["last_seen_line"] != trace_state["last_emitted_line"]:
+                    emit_script_line(trace_state["last_seen_line"], force=True)
+                sys.settrace(previous_trace)
 
     finally:
         os.unlink(temp_path)
@@ -646,13 +689,19 @@ def log_message(context: dict, message: str, level: str = "INFO"):
     run_async(send_log(context["task_id"], level, message))
 
 
-async def send_log(task_id: str, level: str, message: str):
+async def send_log(
+    task_id: str,
+    level: str,
+    message: str,
+    event_type: Optional[str] = None,
+    line_number: Optional[int] = None,
+):
     """Persist log and broadcast it via WebSocket."""
     from app.api.tasks import save_task_log
     from app.database import get_db_session
 
     async with get_db_session() as db:
-        await save_task_log(db, task_id, level, message)
+        await save_task_log(db, task_id, level, message, event_type=event_type, line_number=line_number)
 
 
 async def release_task_device(device_id: str):

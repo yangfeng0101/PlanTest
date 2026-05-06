@@ -149,8 +149,8 @@ export const taskApi = {
     api.get<Task>(`/tasks/${id}`),
 
   // 获取任务日志
-  getLogs: (id: string) =>
-    api.get<TaskLogEntry[]>(`/tasks/${id}/logs`),
+  getLogs: (id: string, params?: { limit?: number }) =>
+    api.get<TaskLogEntry[]>(`/tasks/${id}/logs`, { params }),
 
   // 取消任务
   cancel: (id: string) =>

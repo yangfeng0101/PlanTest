@@ -429,6 +429,14 @@
   background: #1e1e1e;
 }
 
+.debug-current-line {
+  background: rgba(56, 189, 248, 0.18);
+}
+
+.debug-current-line-glyph {
+  border-left: 3px solid #38bdf8;
+}
+
 .script-ide-status {
   min-height: 28px;
   display: flex;
@@ -443,6 +451,72 @@
 
 .script-ide-status span {
   white-space: nowrap;
+}
+
+.script-debug-panel {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.script-debug-header {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.script-debug-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 8px 10px;
+  color: #64748b;
+  font-size: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.script-debug-alert {
+  margin: 8px 10px 0;
+}
+
+.script-debug-log-list {
+  max-height: 180px;
+  overflow: auto;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.script-debug-log-list .ant-list-empty-text {
+  padding: 16px;
+}
+
+.script-debug-log-list .ant-list-item {
+  padding: 6px 10px;
+}
+
+.script-debug-log-message {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.script-debug-screenshots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+}
+
+.script-debug-screenshots .ant-image-img {
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
 }
 
 .script-assist-panel {

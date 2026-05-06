@@ -1,7 +1,7 @@
 # Database Connection Management
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
@@ -35,7 +35,18 @@ async def init_db():
     async with engine.begin() as conn:
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_sync_task_log_debug_columns)
         logger.info("Database tables created")
+
+
+def _sync_task_log_debug_columns(sync_conn):
+    """Add nullable debug metadata columns for existing task_logs tables."""
+    inspector = inspect(sync_conn)
+    columns = {column["name"] for column in inspector.get_columns("task_logs")}
+    if "event_type" not in columns:
+        sync_conn.execute(text("ALTER TABLE task_logs ADD COLUMN event_type VARCHAR(50)"))
+    if "line_number" not in columns:
+        sync_conn.execute(text("ALTER TABLE task_logs ADD COLUMN line_number INTEGER"))
 
 
 async def close_db():

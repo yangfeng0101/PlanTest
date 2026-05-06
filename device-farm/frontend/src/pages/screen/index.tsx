@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Form, Input, Modal, Popover, Select, Space, Table, Typography, message } from 'antd'
+import { Alert, Button, Form, Image, Input, List, Modal, Popover, Select, Space, Table, Tag, Typography, message } from 'antd'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
 import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined'
 import FullscreenOutlined from '@ant-design/icons/FullscreenOutlined'
@@ -11,16 +11,33 @@ import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined'
 import KeyOutlined from '@ant-design/icons/KeyOutlined'
 import SendOutlined from '@ant-design/icons/SendOutlined'
 import SaveOutlined from '@ant-design/icons/SaveOutlined'
+import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
 import { Room } from 'livekit-client'
-import type { Device } from '@/types'
+import type { Device, Script, Task, TaskLogEntry } from '@/types'
 import WebrtcPlayer from '@/components/WebrtcPlayer'
 import { TouchOverlay } from '@/components/TouchHandler'
 import CodeEditor from '@/components/CodeEditor'
-import { scriptApi } from '@/services/api'
+import { scriptApi, taskApi } from '@/services/api'
 import { formatDeviceOs, mapDevice } from '@/utils/device'
 import './ScreenPage.css'
 
 const { Text } = Typography
+
+const taskStatusColors: Record<Task['status'], string> = {
+  pending: 'default',
+  running: 'processing',
+  success: 'success',
+  failed: 'error',
+  cancelled: 'warning',
+}
+
+const taskStatusText: Record<Task['status'], string> = {
+  pending: '排队中',
+  running: '运行中',
+  success: '成功',
+  failed: '失败',
+  cancelled: '已取消',
+}
 
 const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || ''
 const TOUCH_MOVE_INTERVAL_MS = 16
@@ -204,6 +221,22 @@ function buildLocatorSnippets(element: UIElementNode | null): LocatorSnippet[] {
   return snippets
 }
 
+const isActiveTask = (task?: Task | null) => Boolean(task && ['pending', 'running'].includes(task.status))
+
+const formatDateTime = (value?: string) => value ? new Date(value).toLocaleString() : '-'
+
+const formatDuration = (task?: Task | null) => {
+  if (!task) return '-'
+  if (typeof task.result?.duration === 'number') {
+    return `${task.result.duration.toFixed(2)}s`
+  }
+  if (task.started_at && task.finished_at) {
+    const duration = (new Date(task.finished_at).getTime() - new Date(task.started_at).getTime()) / 1000
+    return `${duration.toFixed(2)}s`
+  }
+  return '-'
+}
+
 export default function ScreenPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -239,6 +272,13 @@ export default function ScreenPage() {
   const [scriptDescription, setScriptDescription] = useState('')
   const [scriptTags, setScriptTags] = useState<string[]>(['screen-debug'])
   const [scriptContent, setScriptContent] = useState('')
+  const [debugScriptId, setDebugScriptId] = useState<string | null>(null)
+  const [debugTask, setDebugTask] = useState<Task | null>(null)
+  const [debugTaskLogs, setDebugTaskLogs] = useState<TaskLogEntry[]>([])
+  const [debugSubmitting, setDebugSubmitting] = useState(false)
+  const [debugCanceling, setDebugCanceling] = useState(false)
+  const [debugCurrentLine, setDebugCurrentLine] = useState<number | null>(null)
+  const [debugScriptSnapshot, setDebugScriptSnapshot] = useState('')
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -697,6 +737,13 @@ export default function ScreenPage() {
     .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
   const locatorSnippets = useMemo(() => buildLocatorSnippets(selectedUiElement), [selectedUiElement])
   const scriptLineCount = useMemo(() => scriptContent.split(/\r\n|\r|\n/).length, [scriptContent])
+  const visibleDebugLogs = useMemo(
+    () => debugTaskLogs.filter((entry) => entry.event_type !== 'script_line'),
+    [debugTaskLogs],
+  )
+  const debugScreenshots = debugTask?.result?.screenshots || []
+  const debugTaskActive = isActiveTask(debugTask)
+  const activeDebugLine = debugScriptSnapshot === scriptContent ? debugCurrentLine : null
 
   const hasStartupError = Boolean(sessionDiagnostics?.last_error)
   const isInitializing = !hasVideoFrame && !hasStartupError
@@ -706,6 +753,40 @@ export default function ScreenPage() {
     : hasStartupError
       ? 'error'
       : 'connecting'
+
+  const applyDebugLogs = (logs: TaskLogEntry[]) => {
+    setDebugTaskLogs(logs)
+    const latestLineEvent = [...logs]
+      .reverse()
+      .find((entry) => entry.event_type === 'script_line' && typeof entry.line_number === 'number')
+    setDebugCurrentLine(latestLineEvent?.line_number || null)
+  }
+
+  useEffect(() => {
+    if (!debugTask?.id || !isActiveTask(debugTask)) return
+
+    let cancelled = false
+    const pollTask = async () => {
+      try {
+        const [taskResponse, logsResponse] = await Promise.all([
+          taskApi.getDetail(debugTask.id),
+          taskApi.getLogs(debugTask.id, { limit: 1000 }),
+        ])
+        if (cancelled) return
+        setDebugTask(taskResponse.data)
+        applyDebugLogs(logsResponse.data)
+      } catch (error) {
+        console.error('Failed to poll debug task:', error)
+      }
+    }
+
+    const timer = window.setInterval(pollTask, 2000)
+    void pollTask()
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [debugTask?.id, debugTask?.status])
 
   // Send key event via DataChannel
   const sendKey = (keycode: string) => {
@@ -741,6 +822,10 @@ export default function ScreenPage() {
     if (!scriptContent.trim()) {
       setScriptContent(createDefaultScreenScript(packageName))
     }
+  }
+
+  const updateScriptContent = (value: string) => {
+    setScriptContent(value)
   }
 
   const activateScriptWriter = () => {
@@ -813,6 +898,109 @@ export default function ScreenPage() {
       message.error('保存脚本失败')
     } finally {
       setScriptSaving(false)
+    }
+  }
+
+  const saveDebugDraft = async (): Promise<Script> => {
+    const debugTags = Array.from(new Set([...scriptTags, 'screen-debug', 'debug-run']))
+    const data = {
+      name: `${currentDevice?.name || selectedDevice || '投屏'} 调试脚本`,
+      description: '投屏页自动保存的调试脚本草稿',
+      script_type: 'python' as const,
+      content: scriptContent,
+      status: 'draft' as const,
+      tags: debugTags,
+    }
+
+    if (debugScriptId) {
+      try {
+        const response = await scriptApi.update(debugScriptId, data)
+        return response.data
+      } catch (error) {
+        console.warn('Failed to update debug draft, creating a new one:', error)
+        setDebugScriptId(null)
+      }
+    }
+
+    const response = await scriptApi.create(data)
+    setDebugScriptId(response.data.id)
+    return response.data
+  }
+
+  const runDebugScript = async () => {
+    if (debugTaskActive) {
+      message.warning('调试任务正在运行，请等待完成或先取消任务')
+      return
+    }
+    if (!scriptContent.trim()) {
+      message.warning('请填写脚本内容')
+      return
+    }
+    if (!selectedDevice) {
+      message.warning('请先选择设备')
+      return
+    }
+    if (!currentDevice || currentDevice.status !== 'online') {
+      message.warning('当前设备不在线或已被占用，无法运行调试')
+      return
+    }
+
+    setDebugSubmitting(true)
+    try {
+      const validation = await scriptApi.validate(scriptContent)
+      if (!validation.data.valid) {
+        message.error(validation.data.errors[0] || '脚本校验失败')
+        return
+      }
+      if (validation.data.warnings.length > 0) {
+        message.warning(validation.data.warnings[0])
+      }
+
+      const debugScript = await saveDebugDraft()
+      const response = await taskApi.create({
+        script_id: debugScript.id,
+        device_id: selectedDevice,
+        device_platform: 'android',
+        device_capabilities: {
+          automationName: 'UiAutomator2',
+          noReset: true,
+        },
+        parameters: {
+          debug_trace_lines: true,
+        },
+      })
+
+      setDebugTask(response.data)
+      setDebugTaskLogs([])
+      setDebugCurrentLine(null)
+      setDebugScriptSnapshot(scriptContent)
+      message.success('调试任务已创建')
+    } catch (error) {
+      console.error('Failed to run debug script:', error)
+      message.error('调试任务创建失败，请确认设备在线且未被占用')
+    } finally {
+      setDebugSubmitting(false)
+    }
+  }
+
+  const cancelDebugTask = async () => {
+    if (!debugTask) return
+
+    setDebugCanceling(true)
+    try {
+      await taskApi.cancel(debugTask.id)
+      const [taskResponse, logsResponse] = await Promise.all([
+        taskApi.getDetail(debugTask.id).catch(() => ({ data: { ...debugTask, status: 'cancelled' as const } })),
+        taskApi.getLogs(debugTask.id, { limit: 1000 }),
+      ])
+      setDebugTask(taskResponse.data)
+      applyDebugLogs(logsResponse.data)
+      message.success('调试任务已取消')
+    } catch (error) {
+      console.error('Failed to cancel debug task:', error)
+      message.error('调试任务取消失败')
+    } finally {
+      setDebugCanceling(false)
     }
   }
 
@@ -1085,6 +1273,14 @@ export default function ScreenPage() {
                   <Text type="secondary">保存后进入脚本管理列表</Text>
                 </Space>
                 <Space>
+                  <Button
+                    icon={<PlayCircleOutlined />}
+                    loading={debugSubmitting}
+                    disabled={debugTaskActive}
+                    onClick={runDebugScript}
+                  >
+                    运行调试
+                  </Button>
                   <Button icon={<SaveOutlined />} onClick={() => openSaveScriptModal(false)}>
                     保存
                   </Button>
@@ -1097,15 +1293,84 @@ export default function ScreenPage() {
               <div className="script-workspace-body">
                 <div className="script-ide-shell">
                   <div className="script-editor-wrap">
-                    <CodeEditor value={scriptContent} onChange={setScriptContent} height="100%" theme="vs-dark" />
+                    <CodeEditor
+                      value={scriptContent}
+                      onChange={updateScriptContent}
+                      height="100%"
+                      theme="vs-dark"
+                      highlightedLine={activeDebugLine}
+                    />
                   </div>
 
                   <div className="script-ide-status">
                     <span>Python</span>
                     <span>app.xxx SDK</span>
                     <span>{scriptLineCount} 行</span>
+                    {activeDebugLine ? <span>运行到第 {activeDebugLine} 行</span> : null}
                   </div>
                 </div>
+
+                {debugTask && (
+                  <div className="script-debug-panel">
+                    <div className="script-debug-header">
+                      <Space size="small" wrap>
+                        <Text strong>运行日志</Text>
+                        <Tag color={taskStatusColors[debugTask.status]}>{taskStatusText[debugTask.status]}</Tag>
+                        {activeDebugLine ? <Tag color="processing">第 {activeDebugLine} 行</Tag> : null}
+                        <Text type="secondary" copyable={{ text: debugTask.id }}>
+                          {debugTask.id}
+                        </Text>
+                      </Space>
+                      {debugTaskActive && (
+                        <Button danger size="small" icon={<DeleteOutlined />} loading={debugCanceling} onClick={cancelDebugTask}>
+                          取消任务
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="script-debug-summary">
+                      <span>设备：{debugTask.device_id || '-'}</span>
+                      <span>开始：{formatDateTime(debugTask.started_at || debugTask.created_at)}</span>
+                      <span>耗时：{formatDuration(debugTask)}</span>
+                    </div>
+
+                    {debugTask.error && (
+                      <Alert
+                        className="script-debug-alert"
+                        type="error"
+                        message={debugTask.error}
+                        showIcon
+                      />
+                    )}
+
+                    <List
+                      size="small"
+                      className="script-debug-log-list"
+                      dataSource={visibleDebugLogs}
+                      locale={{ emptyText: '暂无日志，任务启动后会自动刷新' }}
+                      renderItem={(item) => (
+                        <List.Item>
+                          <Space size="small" align="start">
+                            <Tag color={item.level === 'ERROR' ? 'error' : item.level === 'WARN' ? 'warning' : 'default'}>
+                              {item.level}
+                            </Tag>
+                            <Text className="script-debug-log-message">{item.message}</Text>
+                          </Space>
+                        </List.Item>
+                      )}
+                    />
+
+                    {debugScreenshots.length > 0 && (
+                      <Image.PreviewGroup>
+                        <div className="script-debug-screenshots">
+                          {debugScreenshots.map((src, index) => (
+                            <Image key={src} width={72} src={src} alt={`debug-screenshot-${index + 1}`} />
+                          ))}
+                        </div>
+                      </Image.PreviewGroup>
+                    )}
+                  </div>
+                )}
 
                 <div className="script-assist-panel">
                   <div className="script-assist-header">

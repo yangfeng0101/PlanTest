@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import Editor, { OnMount } from '@monaco-editor/react'
 import type { editor, languages, Position } from 'monaco-editor'
 
@@ -9,6 +9,7 @@ interface CodeEditorProps {
   readOnly?: boolean
   height?: number | string
   theme?: string
+  highlightedLine?: number | null
 }
 
 let pythonCompletionProviderRegistered = false
@@ -44,11 +45,42 @@ export default function CodeEditor({
   readOnly = false,
   height = 400,
   theme = 'vs',
+  highlightedLine = null,
 }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const decorationIdsRef = useRef<string[]>([])
+
+  const applyHighlightedLine = (codeEditor: editor.IStandaloneCodeEditor | null, line: number | null) => {
+    if (!codeEditor) return
+
+    const model = codeEditor.getModel()
+    const lineCount = model?.getLineCount() || 0
+    if (!line || line < 1 || line > lineCount) {
+      decorationIdsRef.current = codeEditor.deltaDecorations(decorationIdsRef.current, [])
+      return
+    }
+
+    decorationIdsRef.current = codeEditor.deltaDecorations(decorationIdsRef.current, [
+      {
+        range: {
+          startLineNumber: line,
+          startColumn: 1,
+          endLineNumber: line,
+          endColumn: 1,
+        },
+        options: {
+          isWholeLine: true,
+          className: 'debug-current-line',
+          linesDecorationsClassName: 'debug-current-line-glyph',
+        },
+      },
+    ])
+    codeEditor.revealLineInCenterIfOutsideViewport(line)
+  }
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor
+    applyHighlightedLine(editor, highlightedLine)
 
     const completionKind = monaco.languages.CompletionItemKind
     const snippetRule = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
@@ -407,6 +439,10 @@ export default function CodeEditor({
     })
   }
 
+  useEffect(() => {
+    applyHighlightedLine(editorRef.current, highlightedLine)
+  }, [highlightedLine, value])
+
   return (
     <Editor
       height={height}
@@ -421,6 +457,9 @@ export default function CodeEditor({
         fontSize: 14,
         lineNumbers: 'on',
         scrollBeyondLastLine: false,
+        scrollbar: {
+          alwaysConsumeMouseWheel: false,
+        },
         automaticLayout: true,
         tabSize: 2,
         wordWrap: 'on',

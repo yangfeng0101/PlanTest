@@ -185,6 +185,10 @@ export default function ScriptsPage() {
       .join(','),
     [activeTasks]
   )
+  const visibleTaskLogs = useMemo(
+    () => taskLogs.filter((entry) => entry.event_type !== 'script_line'),
+    [taskLogs]
+  )
 
   useEffect(() => {
     fetchScripts()
@@ -783,7 +787,7 @@ export default function ScriptsPage() {
               size="small"
               header="执行日志"
               bordered
-              dataSource={taskLogs}
+              dataSource={visibleTaskLogs}
               locale={{ emptyText: '暂无日志' }}
               renderItem={(item) => (
                 <List.Item>

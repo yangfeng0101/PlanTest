@@ -102,6 +102,8 @@ class TaskLogDB(Base):
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     level = Column(String(10), default="INFO", nullable=False)
     message = Column(Text, nullable=False)
+    event_type = Column(String(50), nullable=True)
+    line_number = Column(Integer, nullable=True)
 
     # Relationships
     task = relationship("TaskDB", back_populates="logs")

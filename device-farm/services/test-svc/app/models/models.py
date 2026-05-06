@@ -96,6 +96,8 @@ class TaskLogEntry(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     level: str = "INFO"
     message: str
+    event_type: Optional[str] = None
+    line_number: Optional[int] = None
 
 
 # Execution Result Models

@@ -388,7 +388,13 @@ async def get_task_logs(
     log_dbs = result.scalars().all()
 
     return [
-        TaskLogEntry(timestamp=log.timestamp, level=log.level, message=log.message)
+        TaskLogEntry(
+            timestamp=log.timestamp,
+            level=log.level,
+            message=log.message,
+            event_type=log.event_type,
+            line_number=log.line_number,
+        )
         for log in reversed(log_dbs)
     ]
 
@@ -426,22 +432,37 @@ async def task_logs_websocket(websocket: WebSocket, task_id: str):
         manager.disconnect(websocket, task_id)
 
 
-async def send_task_log(task_id: str, level: str, message: str):
+async def send_task_log(
+    task_id: str,
+    level: str,
+    message: str,
+    event_type: Optional[str] = None,
+    line_number: Optional[int] = None,
+):
     """Send log entry to all connected WebSocket clients"""
-    log_entry = TaskLogEntry(level=level, message=message)
+    log_entry = TaskLogEntry(level=level, message=message, event_type=event_type, line_number=line_number)
     await manager.broadcast_log(task_id, log_entry)
 
 
-async def save_task_log(db: AsyncSession, task_id: str, level: str, message: str):
+async def save_task_log(
+    db: AsyncSession,
+    task_id: str,
+    level: str,
+    message: str,
+    event_type: Optional[str] = None,
+    line_number: Optional[int] = None,
+):
     """Save log to database and broadcast to WebSocket clients"""
     log_db = TaskLogDB(
         task_id=task_id,
         level=level,
         message=message,
+        event_type=event_type,
+        line_number=line_number,
     )
     db.add(log_db)
     await db.flush()
-    await send_task_log(task_id, level, message)
+    await send_task_log(task_id, level, message, event_type=event_type, line_number=line_number)
 
 
 # Helper functions for task status updates (used by executor)

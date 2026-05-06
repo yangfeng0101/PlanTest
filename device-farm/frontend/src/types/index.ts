@@ -157,6 +157,8 @@ export interface TaskLogEntry {
   timestamp: string
   level: string
   message: string
+  event_type?: string
+  line_number?: number
 }
 
 // 报告类型
