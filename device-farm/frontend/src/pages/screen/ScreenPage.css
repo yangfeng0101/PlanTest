@@ -519,6 +519,25 @@
   border: 1px solid #e2e8f0;
 }
 
+.script-picker-list {
+  max-height: min(560px, 68vh);
+  overflow: auto;
+}
+
+.script-picker-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.script-picker-list .ant-list-item {
+  align-items: flex-start;
+}
+
 .script-assist-panel {
   margin-top: 12px;
   padding: 10px;

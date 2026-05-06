@@ -10,8 +10,8 @@ import RollbackOutlined from '@ant-design/icons/RollbackOutlined'
 import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined'
 import KeyOutlined from '@ant-design/icons/KeyOutlined'
 import SendOutlined from '@ant-design/icons/SendOutlined'
-import SaveOutlined from '@ant-design/icons/SaveOutlined'
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
+import PlusOutlined from '@ant-design/icons/PlusOutlined'
 import { Room } from 'livekit-client'
 import type { Device, Script, Task, TaskLogEntry } from '@/types'
 import WebrtcPlayer from '@/components/WebrtcPlayer'
@@ -143,18 +143,39 @@ function pythonString(value: string) {
 }
 
 function createDefaultScreenScript(packageName = 'com.example.app') {
-  return [
-    `package = ${pythonString(packageName || 'com.example.app')}`,
-    '',
-    'app.log("script start")',
-    'app.activate_app(package)',
-    'app.wait(3)',
-    'app.screenshot()',
-    '',
-    '# 在投屏页选择控件后，点击“插入脚本”生成定位代码',
-    '',
-    'test_pass()',
-  ].join('\n')
+  return `# 平台脚本示例：统一使用 app.xxx 调用平台能力
+# 创建任务时只需要选择设备，启动哪个 App 由脚本自己控制
+package = ${pythonString(packageName || 'com.example.app')}
+
+app.log("script start")
+
+# 启动或拉起 App
+app.activate_app(package)
+app.wait(5)
+
+# 截图会自动上传到任务详情
+app.screenshot()
+
+# 常见弹窗处理
+if app.has_text("同意"):
+    app.click_text("同意", timeout=5)
+    app.wait(2)
+    app.screenshot()
+
+if app.has_text("允许"):
+    app.click_text("允许", timeout=5)
+    app.wait(1)
+
+# 页面断言
+source = app.source()
+assert_true(len(source) > 0, "页面源码为空，App 可能未正常启动")
+
+# 退出 App，也可以使用 app.restart_app(package) 验证重启
+app.terminate_app(package)
+
+app.log("script passed")
+test_pass()
+`
 }
 
 function buildLocatorSnippets(element: UIElementNode | null): LocatorSnippet[] {
@@ -267,11 +288,14 @@ export default function ScreenPage() {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>('inspect')
   const [scriptSaving, setScriptSaving] = useState(false)
   const [scriptSaveModalOpen, setScriptSaveModalOpen] = useState(false)
-  const [scriptSaveNavigateAfter, setScriptSaveNavigateAfter] = useState(false)
+  const [scriptPickerOpen, setScriptPickerOpen] = useState(false)
+  const [scriptPickerLoading, setScriptPickerLoading] = useState(false)
+  const [savedScripts, setSavedScripts] = useState<Script[]>([])
   const [scriptName, setScriptName] = useState('')
   const [scriptDescription, setScriptDescription] = useState('')
   const [scriptTags, setScriptTags] = useState<string[]>(['screen-debug'])
   const [scriptContent, setScriptContent] = useState('')
+  const [loadedScript, setLoadedScript] = useState<Script | null>(null)
   const [debugScriptId, setDebugScriptId] = useState<string | null>(null)
   const [debugTask, setDebugTask] = useState<Task | null>(null)
   const [debugTaskLogs, setDebugTaskLogs] = useState<TaskLogEntry[]>([])
@@ -828,6 +852,52 @@ export default function ScreenPage() {
     setScriptContent(value)
   }
 
+  const openScriptPicker = async () => {
+    if (debugTaskActive) {
+      message.warning('调试任务正在运行，请先停止调试')
+      return
+    }
+
+    setScriptPickerOpen(true)
+    setScriptPickerLoading(true)
+    try {
+      const response = await scriptApi.getList()
+      setSavedScripts(response.data.items || [])
+    } catch (error) {
+      console.error('Failed to fetch saved scripts:', error)
+      message.error('获取已保存脚本失败')
+    } finally {
+      setScriptPickerLoading(false)
+    }
+  }
+
+  const selectSavedScript = (script: Script) => {
+    setScriptContent(script.content)
+    setScriptName(script.name)
+    setScriptDescription(script.description || '')
+    setScriptTags(script.tags || [])
+    setLoadedScript(script)
+    setDebugCurrentLine(null)
+    setDebugScriptSnapshot('')
+    setScriptPickerOpen(false)
+    setActiveWorkspaceTab('script')
+    message.success('已载入脚本')
+  }
+
+  const createExampleScript = () => {
+    setScriptContent(createDefaultScreenScript(getCurrentPackageName()))
+    setScriptName('')
+    setScriptDescription('')
+    setScriptTags(['screen-debug'])
+    setLoadedScript(null)
+    setDebugCurrentLine(null)
+    setDebugScriptSnapshot('')
+    setDebugScriptId(null)
+    setScriptPickerOpen(false)
+    setActiveWorkspaceTab('script')
+    message.success('已新建脚本')
+  }
+
   const activateScriptWriter = () => {
     ensureScriptDraft()
     setActiveWorkspaceTab('script')
@@ -844,7 +914,7 @@ export default function ScreenPage() {
     message.success('已插入脚本')
   }
 
-  const openSaveScriptModal = (goToScriptList = false) => {
+  const openSaveScriptModal = () => {
     if (!scriptContent.trim()) {
       message.warning('请填写脚本内容')
       return
@@ -855,7 +925,6 @@ export default function ScreenPage() {
     if (!scriptDescription.trim()) {
       setScriptDescription('从投屏页编写并保存的自动化脚本')
     }
-    setScriptSaveNavigateAfter(goToScriptList)
     setScriptSaveModalOpen(true)
   }
 
@@ -880,19 +949,22 @@ export default function ScreenPage() {
         message.warning(validation.data.warnings[0])
       }
 
-      await scriptApi.create({
+      const scriptData = {
         name: scriptName.trim(),
         description: scriptDescription.trim(),
         script_type: 'python',
         content: scriptContent,
-        status: 'draft',
+        status: loadedScript?.status || 'draft',
         tags: scriptTags,
-      })
-      message.success('脚本已保存到脚本管理')
+      } as const
+
+      const response = loadedScript
+        ? await scriptApi.update(loadedScript.id, scriptData)
+        : await scriptApi.create(scriptData)
+
+      setLoadedScript(response.data)
+      message.success(loadedScript ? '脚本已更新' : '脚本已保存到脚本管理')
       setScriptSaveModalOpen(false)
-      if (scriptSaveNavigateAfter) {
-        navigate('/scripts')
-      }
     } catch (error) {
       console.error('Failed to save script from screen page:', error)
       message.error('保存脚本失败')
@@ -929,7 +1001,7 @@ export default function ScreenPage() {
 
   const runDebugScript = async () => {
     if (debugTaskActive) {
-      message.warning('调试任务正在运行，请等待完成或先取消任务')
+      message.warning('调试任务正在运行，请先停止调试')
       return
     }
     if (!scriptContent.trim()) {
@@ -1270,22 +1342,22 @@ export default function ScreenPage() {
               <div className="workspace-toolbar">
                 <Space direction="vertical" size={0}>
                   <Text strong>编写自动化脚本</Text>
-                  <Text type="secondary">保存后进入脚本管理列表</Text>
+                  <Text type="secondary">保存后留在当前投屏页</Text>
                 </Space>
                 <Space>
+                  <Button disabled={debugTaskActive} onClick={openScriptPicker}>
+                    选择脚本
+                  </Button>
                   <Button
-                    icon={<PlayCircleOutlined />}
-                    loading={debugSubmitting}
-                    disabled={debugTaskActive}
-                    onClick={runDebugScript}
+                    danger={debugTaskActive}
+                    icon={debugTaskActive ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                    loading={debugTaskActive ? debugCanceling : debugSubmitting}
+                    onClick={debugTaskActive ? cancelDebugTask : runDebugScript}
                   >
-                    运行调试
+                    {debugTaskActive ? '停止调试' : '运行调试'}
                   </Button>
-                  <Button icon={<SaveOutlined />} onClick={() => openSaveScriptModal(false)}>
+                  <Button type="primary" onClick={openSaveScriptModal}>
                     保存
-                  </Button>
-                  <Button type="primary" onClick={() => openSaveScriptModal(true)}>
-                    保存并查看
                   </Button>
                 </Space>
               </div>
@@ -1414,10 +1486,61 @@ export default function ScreenPage() {
       </div>
 
       <Modal
+        title="选择已保存脚本"
+        open={scriptPickerOpen}
+        footer={null}
+        width={760}
+        onCancel={() => setScriptPickerOpen(false)}
+      >
+        <div className="script-picker-toolbar">
+          <Space direction="vertical" size={2}>
+            <Text strong>脚本来源</Text>
+            <Text type="secondary">载入已有脚本，或新建脚本开始编写。</Text>
+          </Space>
+          <Button type="primary" icon={<PlusOutlined />} onClick={createExampleScript}>
+            新建脚本
+          </Button>
+        </div>
+        <List
+          className="script-picker-list"
+          loading={scriptPickerLoading}
+          dataSource={savedScripts}
+          locale={{ emptyText: '暂无已保存脚本' }}
+          renderItem={(script) => (
+            <List.Item
+              actions={[
+                <Button key="load" size="small" type="primary" onClick={() => selectSavedScript(script)}>
+                  载入
+                </Button>,
+              ]}
+            >
+              <List.Item.Meta
+                title={
+                  <Space size="small" wrap>
+                    <Text strong>{script.name}</Text>
+                    <Tag>{script.script_type}</Tag>
+                    {script.status ? <Tag color={script.status === 'active' ? 'success' : 'default'}>{script.status}</Tag> : null}
+                  </Space>
+                }
+                description={
+                  <Space direction="vertical" size={2}>
+                    <Text type="secondary">{script.description || '无描述'}</Text>
+                    <Text type="secondary">
+                      更新：{formatDateTime(script.updated_at)} · {script.content.split(/\r\n|\r|\n/).length} 行
+                    </Text>
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      </Modal>
+
+      <Modal
         title="保存脚本"
         open={scriptSaveModalOpen}
         confirmLoading={scriptSaving}
-        okText={scriptSaveNavigateAfter ? '保存并查看' : '保存'}
+        okText="保存"
         cancelText="取消"
         onOk={saveScript}
         onCancel={() => setScriptSaveModalOpen(false)}
