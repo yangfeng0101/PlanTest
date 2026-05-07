@@ -1,6 +1,6 @@
-# Device Farm Frontend
+# 云测 Frontend
 
-设备农场管理平台前端应用
+移动设备云测试平台前端应用
 
 ## 技术栈
 
