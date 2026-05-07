@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Alert, Card, Row, Col, Button, Table, Space, Modal, Form, Input, Select, Tag, message, Popconfirm, List, Typography, Image, Tooltip, Descriptions } from 'antd'
 import PlusOutlined from '@ant-design/icons/PlusOutlined'
 import EditOutlined from '@ant-design/icons/EditOutlined'
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
 import CodeOutlined from '@ant-design/icons/CodeOutlined'
+import HistoryOutlined from '@ant-design/icons/HistoryOutlined'
 import CodeEditor from '@/components/CodeEditor'
 import { useScriptStore } from '@/stores/scriptStore'
 import { deviceApi, scriptApi, taskApi } from '@/services/api'
@@ -174,7 +175,12 @@ export default function ScriptsPage() {
   const [taskLogs, setTaskLogs] = useState<TaskLogEntry[]>([])
   const [activeTasks, setActiveTasks] = useState<Record<string, Task[]>>({})
   const [cancelingTasks, setCancelingTasks] = useState<Record<string, boolean>>({})
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
+  const [historyScript, setHistoryScript] = useState<Script | null>(null)
+  const [historyTasks, setHistoryTasks] = useState<Task[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [apiHelpOpen, setApiHelpOpen] = useState(false)
+  const historyRequestRef = useRef(0)
   const scriptType = Form.useWatch('script_type', form) || 'python'
   const activeTaskIds = useMemo(
     () => Object.values(activeTasks)
@@ -408,12 +414,46 @@ export default function ScriptsPage() {
   const handleViewTask = async (script: Script, task: Task) => {
     setRunningScript(script)
     setCurrentTask(task)
+    setIsHistoryModalOpen(false)
     setIsRunModalOpen(true)
+    if (isActiveTask(task)) {
+      setActiveTasks((previous) => {
+        const existingTasks = previous[task.script_id] || []
+        return {
+          ...previous,
+          [task.script_id]: existingTasks.some((item) => item.id === task.id)
+            ? existingTasks.map((item) => item.id === task.id ? task : item)
+            : [...existingTasks, task],
+        }
+      })
+    }
     try {
       const logsResponse = await taskApi.getLogs(task.id)
       setTaskLogs(logsResponse.data)
     } catch (error) {
       console.error('Failed to fetch task logs:', error)
+    }
+  }
+
+  const handleViewHistory = async (script: Script) => {
+    const requestId = historyRequestRef.current + 1
+    historyRequestRef.current = requestId
+    setHistoryScript(script)
+    setHistoryTasks([])
+    setIsHistoryModalOpen(true)
+    setHistoryLoading(true)
+    try {
+      const response = await taskApi.getList({ script_id: script.id, page: 1, page_size: 50 })
+      if (historyRequestRef.current !== requestId) return
+      setHistoryTasks(response.data.items)
+    } catch (error) {
+      if (historyRequestRef.current !== requestId) return
+      console.error('Failed to fetch task history:', error)
+      message.error('运行记录获取失败')
+    } finally {
+      if (historyRequestRef.current === requestId) {
+        setHistoryLoading(false)
+      }
     }
   }
 
@@ -506,6 +546,9 @@ export default function ScriptsPage() {
             <Button type="text" size="small" icon={<PlayCircleOutlined />} onClick={() => handleRun(record)} />
           </Tooltip>
         )}
+        <Tooltip title="运行记录">
+          <Button type="text" size="small" icon={<HistoryOutlined />} onClick={() => handleViewHistory(record)} />
+        </Tooltip>
         <Tooltip title="编辑">
           <Button type="text" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} />
         </Tooltip>
@@ -577,9 +620,63 @@ export default function ScriptsPage() {
     {
       title: '操作',
       key: 'action',
-      width: 160,
+      width: 190,
       align: 'center' as const,
       render: (_: unknown, record: Script) => renderActions(record),
+    },
+  ]
+
+  const historyColumns = [
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 90,
+      render: (status: Task['status']) => (
+        <Tag color={statusColors[status]}>{statusText[status]}</Tag>
+      ),
+    },
+    {
+      title: '设备',
+      dataIndex: 'device_id',
+      key: 'device_id',
+      width: 170,
+      ellipsis: true,
+      render: (value?: string) => value || '-',
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 180,
+      render: (value: string) => formatDateTime(value),
+    },
+    {
+      title: '耗时',
+      key: 'duration',
+      width: 90,
+      render: (_: unknown, task: Task) => formatDuration(task),
+    },
+    {
+      title: '任务 ID',
+      dataIndex: 'id',
+      key: 'id',
+      ellipsis: true,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 90,
+      align: 'center' as const,
+      render: (_: unknown, task: Task) => (
+        <Button
+          type="link"
+          size="small"
+          onClick={() => historyScript && handleViewTask(historyScript, task)}
+        >
+          详情
+        </Button>
+      ),
     },
   ]
 
@@ -722,6 +819,25 @@ export default function ScriptsPage() {
             app.click(AppiumBy.XPATH, '//*[@text="登录"]', timeout=10)
           </Text>
         </Space>
+      </Modal>
+
+      <Modal
+        title={historyScript ? `运行记录：${historyScript.name}` : '运行记录'}
+        open={isHistoryModalOpen}
+        onCancel={() => setIsHistoryModalOpen(false)}
+        footer={<Button onClick={() => setIsHistoryModalOpen(false)}>关闭</Button>}
+        width={920}
+      >
+        <Table
+          size="small"
+          columns={historyColumns}
+          dataSource={historyTasks}
+          rowKey="id"
+          loading={historyLoading}
+          pagination={{ pageSize: 10 }}
+          tableLayout="fixed"
+          locale={{ emptyText: '暂无运行记录' }}
+        />
       </Modal>
 
       <Modal

@@ -7,7 +7,7 @@
 ## 当前状态
 
 - 当前远程状态：`main` 和 `dev-reboot` 已同步到投屏页脚本运行调试、实时行高亮和内嵌运行日志的合并结果。
-- 最近一次功能改动：Python 脚本 SDK 接入 Midscene AI 操作方法，旧 Python `ai-svc` 和前端 AI 工具入口已移除，新增 Docker 内网 `midscene-runner`。
+- 最近一次功能改动：脚本管理页操作列新增“运行记录”，可按脚本查看最近任务并复用任务详情弹窗查看日志/截图。
 - 最近验证通过：
   - `git diff --check`
   - Python `compileall`
@@ -45,6 +45,10 @@
   - 行号事件在执行器侧做节流并在任务结束前补最后执行行，避免循环脚本刷爆任务日志。
   - 调试任务状态、普通日志和截图在脚本编辑器下方的内嵌运行日志面板展示，不再依赖弹窗查看。
   - `task_logs` 表新增 nullable `event_type` 和 `line_number` 字段，服务启动时会对旧库做兼容性补列。
+- 脚本管理页支持按脚本查看运行记录：
+  - 操作列新增“运行记录”入口。
+  - 前端通过现有 `GET /tasks?script_id=...` 拉取最近任务，无需新增后端表或 API。
+  - 运行记录中的任务可继续打开原任务详情弹窗查看状态、日志、截图和耗时。
 - Python 脚本 SDK 接入 Midscene AI 操作能力：
   - SDK 版本升级为 `1.2.0`。
   - 新增 `app.ai()`、`app.ai_act()`、`app.ai_locate()`、`app.ai_tap()`、`app.ai_input()`、`app.ai_clear()`、`app.ai_key()`、`app.ai_scroll()`、`app.ai_long_press()`、`app.ai_double_tap()`、`app.ai_wait()`、`app.ai_assert()`。

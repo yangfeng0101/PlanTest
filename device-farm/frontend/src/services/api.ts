@@ -131,7 +131,7 @@ export const scriptApi = {
 // 任务 API
 export const taskApi = {
   // 获取任务列表
-  getList: (params?: { status?: string; device_id?: string; script_id?: string }) =>
+  getList: (params?: { status?: string; device_id?: string; script_id?: string; page?: number; page_size?: number }) =>
     api.get<BackendListResponse<Task>>('/tasks', { params }),
 
   // 创建任务
