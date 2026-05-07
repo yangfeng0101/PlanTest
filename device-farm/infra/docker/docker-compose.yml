@@ -203,6 +203,7 @@ services:
       - DEVICE_SERVICE_URL=http://device-svc:8001
       - APPIUM_HOST=http://appium:4723
       - APPIUM_REMOTE_ADB_HOST=host.docker.internal
+      - MIDSCENE_RUNNER_URL=http://midscene-runner:8005
       - API_KEY_ENABLED=false
       - JWT_SECRET_KEY=yoursecretkeymustbeatleast32characterslong
     depends_on:
@@ -211,6 +212,7 @@ services:
       - minio
       - device-svc
       - appium
+      - midscene-runner
     networks:
       - device-farm-network
 
@@ -253,17 +255,26 @@ services:
     networks:
       - device-farm-network
 
-  ai-svc:
+  midscene-runner:
     build:
       context: ../../services
-      dockerfile: ai-svc/Dockerfile
-    container_name: device-farm-ai-svc
-    ports:
-      - "8005:8005"
+      dockerfile: midscene-runner/Dockerfile
+    container_name: device-farm-midscene-runner
+    expose:
+      - "8005"
     environment:
-      - TEST_SVC_URL=http://test-svc:8001
-    depends_on:
-      - test-svc
+      - PORT=8005
+      - MIDSCENE_MODEL_NAME=${MIDSCENE_MODEL_NAME:-}
+      - MIDSCENE_MODEL_BASE_URL=${MIDSCENE_MODEL_BASE_URL:-}
+      - MIDSCENE_MODEL_API_KEY=${MIDSCENE_MODEL_API_KEY:-}
+      - MIDSCENE_MODEL_FAMILY=${MIDSCENE_MODEL_FAMILY:-}
+      - MIDSCENE_CACHE=${MIDSCENE_CACHE:-true}
+      - MIDSCENE_ADB_REMOTE_HOST=host.docker.internal
+      - MIDSCENE_ADB_REMOTE_PORT=5037
+      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_PORT=5037
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - device-farm-network
 

@@ -64,7 +64,7 @@ cd device-farm/infra/docker && docker compose config
 
 - WiFi 切换后需要更新本地 ignored 配置里的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能连不上 LiveKit。
 - `device-farm/.env` 和 `device-farm/infra/docker/.env` 是本地环境文件，不应提交。
-- 直播、动画或持续刷新的页面可能导致 UIAutomator 无法获取 idle 状态，控件树获取会失败；这时优先考虑等待页面稳定、OCR、图像匹配、坐标或 Appium 直接定位兜底。
+- 直播、动画或持续刷新的页面可能导致 UIAutomator 无法获取 idle 状态，控件树获取会失败；这时优先考虑等待页面稳定、Midscene AI 定位、图像匹配、坐标或 Appium 直接定位兜底。
 
 ## 8. 记忆文件维护
 

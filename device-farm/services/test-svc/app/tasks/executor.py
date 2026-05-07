@@ -26,7 +26,7 @@ logger = get_task_logger(__name__)
 # Import tasks API for database operations
 from app.api import tasks as tasks_api
 
-SDK_VERSION = "1.1.0"
+SDK_VERSION = "1.2.0"
 
 ALLOWED_IMPORTS = {
     "datetime": __import__("datetime"),
@@ -217,6 +217,159 @@ class DeviceFarmApp:
             time.sleep(0.5)
         raise AssertionError(f"Text not found within {timeout}s: {text}")
 
+    def ai(self, instruction: str, timeout: float = 30):
+        return self._run_ai_operation("ai", {"instruction": str(instruction)}, timeout)
+
+    def ai_act(self, instruction: str, timeout: float = 30):
+        return self._run_ai_operation("ai_act", {"instruction": str(instruction)}, timeout)
+
+    def ai_locate(self, target: str, timeout: float = 10, deep_locate: bool = False):
+        return self._run_ai_operation(
+            "ai_locate",
+            {"target": str(target), "deep_locate": bool(deep_locate)},
+            timeout,
+        )
+
+    def ai_tap(self, target: str, timeout: float = 10, deep_locate: bool = False):
+        return self._run_ai_operation(
+            "ai_tap",
+            {"target": str(target), "deep_locate": bool(deep_locate)},
+            timeout,
+        )
+
+    def ai_input(self, target: str, text: str, clear: bool = True, timeout: float = 10, deep_locate: bool = False):
+        return self._run_ai_operation(
+            "ai_input",
+            {
+                "target": str(target),
+                "text": str(text),
+                "mode": "replace" if clear else "typeOnly",
+                "deep_locate": bool(deep_locate),
+            },
+            timeout,
+        )
+
+    def ai_clear(self, target: str, timeout: float = 10, deep_locate: bool = False):
+        return self._run_ai_operation(
+            "ai_clear",
+            {"target": str(target), "deep_locate": bool(deep_locate)},
+            timeout,
+        )
+
+    def ai_key(self, key: str, target: Optional[str] = None, timeout: float = 10, deep_locate: bool = False):
+        return self._run_ai_operation(
+            "ai_key",
+            {"key": str(key), "target": str(target) if target is not None else None, "deep_locate": bool(deep_locate)},
+            timeout,
+        )
+
+    def ai_scroll(
+        self,
+        target: Optional[str] = None,
+        direction: str = "down",
+        distance: Optional[int] = None,
+        scroll_type: str = "singleAction",
+        timeout: float = 15,
+        deep_locate: bool = False,
+    ):
+        return self._run_ai_operation(
+            "ai_scroll",
+            {
+                "target": str(target) if target is not None else None,
+                "direction": str(direction),
+                "distance": distance,
+                "scroll_type": str(scroll_type),
+                "deep_locate": bool(deep_locate),
+            },
+            timeout,
+        )
+
+    def ai_long_press(self, target: str, duration: Optional[int] = None, timeout: float = 10, deep_locate: bool = False):
+        return self._run_ai_operation(
+            "ai_long_press",
+            {
+                "target": str(target),
+                "duration": duration,
+                "deep_locate": bool(deep_locate),
+            },
+            timeout,
+        )
+
+    def ai_double_tap(self, target: str, timeout: float = 10, deep_locate: bool = False):
+        return self._run_ai_operation(
+            "ai_double_tap",
+            {"target": str(target), "deep_locate": bool(deep_locate)},
+            timeout,
+        )
+
+    def ai_wait(self, assertion: str, timeout: float = 15, check_interval: float = 3):
+        self._run_ai_operation(
+            "ai_wait",
+            {"assertion": str(assertion), "check_interval_ms": int(float(check_interval) * 1000)},
+            timeout,
+        )
+        return True
+
+    def ai_assert(self, assertion: str, error_message: Optional[str] = None, timeout: float = 10):
+        try:
+            return self._run_ai_operation(
+                "ai_assert",
+                {"assertion": str(assertion), "error_message": error_message},
+                timeout,
+            )
+        except Exception as exc:
+            raise AssertionError(str(exc)) from exc
+
+    def _run_ai_operation(self, operation: str, payload: dict, timeout: float):
+        import httpx
+
+        runner_url = settings.MIDSCENE_RUNNER_URL.rstrip("/")
+        if not runner_url:
+            error = "Midscene AI runner is not configured. Set MIDSCENE_RUNNER_URL for test-worker."
+            log_message(self.context, error, "ERROR")
+            raise RuntimeError(error)
+
+        device_id = self.context.get("device_id")
+        if not device_id:
+            error = "Midscene AI operation requires a bound device_id."
+            log_message(self.context, error, "ERROR")
+            raise RuntimeError(error)
+
+        timeout_seconds = float(timeout)
+        request_body = {
+            "task_id": self.context["task_id"],
+            "device_id": device_id,
+            "operation": operation,
+            "payload": payload,
+            "timeout_ms": int(timeout_seconds * 1000),
+        }
+
+        log_message(self.context, f"AI operation started: {operation}", "INFO")
+        try:
+            with httpx.Client(timeout=timeout_seconds + 10) as client:
+                response = client.post(f"{runner_url}/api/v1/ai/execute", json=request_body)
+            response.raise_for_status()
+            result = response.json()
+        except httpx.HTTPStatusError as exc:
+            try:
+                detail = exc.response.json().get("error") or exc.response.text
+            except Exception:
+                detail = exc.response.text
+            log_message(self.context, f"AI operation failed: {detail}", "ERROR")
+            raise RuntimeError(detail) from exc
+        except httpx.RequestError as exc:
+            error = f"Midscene AI runner request failed: {exc}"
+            log_message(self.context, error, "ERROR")
+            raise RuntimeError(error) from exc
+
+        if not result.get("success"):
+            error = result.get("error") or "Midscene AI operation failed"
+            log_message(self.context, f"AI operation failed: {error}", "ERROR")
+            raise RuntimeError(error)
+
+        log_message(self.context, f"AI operation completed: {operation}", "INFO")
+        return result.get("result")
+
 
 def assert_true(value, message: str = "Assertion failed"):
     if not value:
@@ -292,7 +445,8 @@ def execute_test_task(self, task_id: str):
                 script,
                 driver,
                 task.parameters,
-                task_id
+                task_id,
+                task.device_id,
             )
 
             final_status = TaskStatus.SUCCESS if result.success else TaskStatus.FAILED
@@ -381,13 +535,14 @@ def initialize_driver(task: Task):
     return driver
 
 
-def execute_script(script, driver, parameters: dict, task_id: str) -> ExecutionResult:
+def execute_script(script, driver, parameters: dict, task_id: str, device_id: Optional[str] = None) -> ExecutionResult:
     """Execute the test script"""
     start_time = datetime.utcnow()
 
     # Create execution context
     context = {
         "driver": driver,
+        "device_id": device_id,
         "parameters": parameters,
         "task_id": task_id,
         "logs": [],
@@ -497,6 +652,7 @@ SAFE_BUILTINS = {
     'IndexError': IndexError,
     'AttributeError': AttributeError,
     'RuntimeError': RuntimeError,
+    'AssertionError': AssertionError,
     'StopIteration': StopIteration,
 
     # Math functions (safe)

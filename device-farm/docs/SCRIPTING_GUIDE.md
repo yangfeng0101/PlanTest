@@ -2,7 +2,7 @@
 
 本文档说明平台 Python 自动化脚本当前支持的方法，以及推荐的脚本编写方式。
 
-当前脚本 SDK 版本：`1.1.0`。版本信息主要用于平台维护和问题排查，普通脚本编写优先关注下方列出的可操作方法。
+当前脚本 SDK 版本：`1.2.0`。版本信息主要用于平台维护和问题排查，普通脚本编写优先关注下方列出的可操作方法。
 
 ## 推荐原则
 
@@ -56,6 +56,18 @@ test_pass()
 | 元素 | `app.get_text(by, value, timeout=0)` | 查找元素并返回文本 |
 | 元素 | `app.click_text(text, timeout=5)` | 通过 `text` 或 `content-desc` 点击 |
 | 元素 | `app.tap_text(text, timeout=5)` | 等价于 `app.click_text()` |
+| AI 操作 | `app.ai(instruction, timeout=30)` | 使用自然语言完成一组操作 |
+| AI 操作 | `app.ai_act(instruction, timeout=30)` | 等价于 `app.ai()` 的显式动作版本 |
+| AI 定位 | `app.ai_locate(target, timeout=10, deep_locate=False)` | 返回 Midscene 定位结果 |
+| AI 操作 | `app.ai_tap(target, timeout=10, deep_locate=False)` | 自然语言定位并点击 |
+| AI 输入 | `app.ai_input(target, text, clear=True, timeout=10, deep_locate=False)` | 定位输入框并输入文本 |
+| AI 输入 | `app.ai_clear(target, timeout=10, deep_locate=False)` | 定位并清空输入框 |
+| AI 输入 | `app.ai_key(key, target=None, timeout=10, deep_locate=False)` | 发送键盘按键 |
+| AI 手势 | `app.ai_scroll(target=None, direction="down", distance=None, scroll_type="singleAction", timeout=15, deep_locate=False)` | 自然语言定位区域并滚动 |
+| AI 手势 | `app.ai_long_press(target, duration=None, timeout=10, deep_locate=False)` | 长按目标 |
+| AI 手势 | `app.ai_double_tap(target, timeout=10, deep_locate=False)` | 双击目标 |
+| AI 断言 | `app.ai_wait(assertion, timeout=15, check_interval=3)` | 等待自然语言断言成立 |
+| AI 断言 | `app.ai_assert(assertion, error_message=None, timeout=10)` | 校验自然语言断言 |
 
 ### 全局函数和对象
 
@@ -276,6 +288,44 @@ button = app.find(AppiumBy.XPATH, '//*[@text="确定"]', timeout=10)
 assert_true(button.is_enabled(), "确定按钮不可用")
 button.click()
 ```
+
+## AI 操作
+
+AI 操作由后端 `midscene-runner` 调用 Midscene Android 能力完成，适合控件树不稳定、页面动画导致 UIAutomator 难以稳定定位，或临时需要用自然语言兜底的场景。它需要管理员在容器环境中配置 Midscene 模型环境变量；脚本中不要写模型密钥。
+
+| 方法 | 作用 | 返回/失败行为 |
+| --- | --- | --- |
+| `app.ai(instruction, timeout=30)` | 按自然语言描述完成一组操作 | 返回 Midscene 执行结果；失败则任务失败 |
+| `app.ai_act(instruction, timeout=30)` | 与 `app.ai()` 等价，显式表示执行动作 | 返回 Midscene 执行结果；失败则任务失败 |
+| `app.ai_locate(target, timeout=10, deep_locate=False)` | 自然语言定位目标 | 返回 `rect`、`center` 等定位信息 |
+| `app.ai_tap(target, timeout=10, deep_locate=False)` | 定位并点击目标 | 失败则任务失败 |
+| `app.ai_input(target, text, clear=True, timeout=10, deep_locate=False)` | 定位输入框并输入文本 | `clear=True` 会替换原文本；`False` 仅追加输入 |
+| `app.ai_clear(target, timeout=10, deep_locate=False)` | 定位并清空输入框 | 失败则任务失败 |
+| `app.ai_key(key, target=None, timeout=10, deep_locate=False)` | 发送键盘按键，可先定位目标 | 失败则任务失败 |
+| `app.ai_scroll(target=None, direction="down", distance=None, scroll_type="singleAction", timeout=15, deep_locate=False)` | 在目标区域或当前页面滚动 | 失败则任务失败 |
+| `app.ai_long_press(target, duration=None, timeout=10, deep_locate=False)` | 长按目标 | 失败则任务失败 |
+| `app.ai_double_tap(target, timeout=10, deep_locate=False)` | 双击目标 | 失败则任务失败 |
+| `app.ai_wait(assertion, timeout=15, check_interval=3)` | 等待自然语言断言成立 | 成功返回 `True`，超时则任务失败 |
+| `app.ai_assert(assertion, error_message=None, timeout=10)` | 校验自然语言断言 | 失败抛 `AssertionError` |
+
+示例：
+
+```python
+app.activate_app("com.example.app")
+app.wait(2)
+
+search_box = app.ai_locate("搜索框")
+app.log(f"搜索框中心点: {search_box.get('center')}")
+
+app.ai_tap("搜索框")
+app.ai_input("搜索框", "跑鞋")
+app.ai_key("Enter")
+app.ai_wait("页面展示搜索结果", timeout=20)
+app.ai_scroll("商品列表", direction="down")
+app.ai_assert("页面仍然展示商品列表", "搜索结果列表未展示")
+```
+
+`deep_locate=True` 会让 Midscene 使用更深度的定位策略，通常更慢，建议只在普通定位不稳定时使用。
 
 ## 测试结果和断言
 

@@ -62,6 +62,9 @@ class Settings(BaseSettings):
         "http://localhost:8004"
     )
 
+    # Midscene AI runner. Empty means AI script methods are disabled.
+    MIDSCENE_RUNNER_URL: str = os.getenv("MIDSCENE_RUNNER_URL", "")
+
     # Device Service
     DEVICE_SERVICE_URL: str = os.getenv(
         "DEVICE_SERVICE_URL",

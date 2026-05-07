@@ -1,0 +1,17 @@
+{
+  "name": "device-farm-midscene-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Internal Midscene Android runner for Device Farm scripts",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@midscene/android": "1.7.9",
+    "dotenv": "16.4.7"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

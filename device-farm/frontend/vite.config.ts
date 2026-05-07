@@ -48,18 +48,6 @@ export default defineConfig({
         target: 'http://localhost:8004',
         changeOrigin: true,
       },
-      '/api/v1/ocr': {
-        target: 'http://localhost:8005',
-        changeOrigin: true,
-      },
-      '/api/v1/locate': {
-        target: 'http://localhost:8005',
-        changeOrigin: true,
-      },
-      '/api/v1/generate': {
-        target: 'http://localhost:8005',
-        changeOrigin: true,
-      },
       '/api': {
         target: 'http://localhost:8001',
         changeOrigin: true,

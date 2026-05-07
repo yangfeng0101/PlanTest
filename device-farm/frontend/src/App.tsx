@@ -7,10 +7,6 @@ import TeamOutlined from '@ant-design/icons/TeamOutlined'
 import LogoutOutlined from '@ant-design/icons/LogoutOutlined'
 import UserOutlined from '@ant-design/icons/UserOutlined'
 import SettingOutlined from '@ant-design/icons/SettingOutlined'
-import RobotOutlined from '@ant-design/icons/RobotOutlined'
-import ScanOutlined from '@ant-design/icons/ScanOutlined'
-import AimOutlined from '@ant-design/icons/AimOutlined'
-import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined'
 import UsergroupAddOutlined from '@ant-design/icons/UsergroupAddOutlined'
 import AlertOutlined from '@ant-design/icons/AlertOutlined'
 import DashboardOutlined from '@ant-design/icons/DashboardOutlined'
@@ -22,9 +18,6 @@ import ReportsPage from './pages/reports'
 import TrendPage from './pages/reports/Trend'
 import ParallelExecutionPage from './pages/parallel'
 import LoginPage from './pages/auth/Login'
-import OCRPage from './pages/ai/OCR'
-import LocatePage from './pages/ai/Locate'
-import GeneratePage from './pages/ai/Generate'
 import UsersPage from './pages/admin/Users'
 import AlertsPage from './pages/alerts'
 import MonitoringPage from './pages/monitoring'
@@ -59,28 +52,6 @@ const baseMenuItems = [
     key: '/reports',
     icon: <FileTextOutlined />,
     label: '测试报告',
-  },
-  {
-    key: '/ai',
-    icon: <RobotOutlined />,
-    label: 'AI 工具',
-    children: [
-      {
-        key: '/ai/ocr',
-        icon: <ScanOutlined />,
-        label: 'OCR 识别',
-      },
-      {
-        key: '/ai/locate',
-        icon: <AimOutlined />,
-        label: '元素定位',
-      },
-      {
-        key: '/ai/generate',
-        icon: <ThunderboltOutlined />,
-        label: '用例生成',
-      },
-    ],
   },
   {
     key: '/admin/users',
@@ -155,7 +126,6 @@ function MainLayout() {
           <Menu
             mode="inline"
             selectedKeys={[location.pathname]}
-            defaultOpenKeys={['/ai']}
             items={menuItems}
             onClick={({ key }) => {
               navigate(key)
@@ -197,12 +167,10 @@ function MainLayout() {
             <Route path="/parallel" element={<ParallelExecutionPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/reports/trend" element={<TrendPage />} />
-            <Route path="/ai/ocr" element={<OCRPage />} />
-            <Route path="/ai/locate" element={<LocatePage />} />
-            <Route path="/ai/generate" element={<GeneratePage />} />
             <Route path="/admin/users" element={<UsersPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/" element={<Navigate to="/devices" replace />} />
+            <Route path="*" element={<Navigate to="/devices" replace />} />
           </Routes>
         </Content>
       </Layout>

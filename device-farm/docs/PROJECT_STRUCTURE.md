@@ -1,6 +1,6 @@
 # 项目目录说明
 
-最后更新：2026-04-27
+最后更新：2026-05-06
 
 ## 当前目录
 
@@ -12,7 +12,7 @@ device-farm/
 │   ├── screen-svc/           # scrcpy + LiveKit 投屏和远程控制
 │   ├── test-svc/             # 自动化测试、脚本、任务调度
 │   ├── report-svc/           # 报告、统计、导出
-│   ├── ai-svc/               # OCR/UI 智能能力
+│   ├── midscene-runner/      # Midscene Android AI 操作执行器
 │   └── shared/               # Python 服务共享组件
 ├── infra/                    # Docker Compose、Nginx、SQL、OpenAPI
 ├── docs/                     # 项目文档
@@ -39,3 +39,5 @@ device-farm/
 已移除旧的 `services/screen-svc-simple/` 原型服务。当前投屏链路统一走 `services/screen-svc/`，由 Go 服务启动 scrcpy，发布 H.264 到 LiveKit，浏览器通过 LiveKit 播放并用 DataChannel 发送控制事件。
 
 同时清理了空的 `ralph/` 预留目录、旧分支状态文件 `docs/project/.last-branch`、Python 测试缓存和根目录下过期的独立投屏方案草稿，避免后续误判当前架构。
+
+旧 Python `services/ai-svc/` 已移除。当前 AI 能力通过 `services/midscene-runner/` 提供，只服务于 Python 脚本 SDK 的 `app.ai_xxx()` 方法；前端不再保留独立 AI 工具入口。

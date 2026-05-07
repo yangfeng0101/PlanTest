@@ -44,7 +44,7 @@ Mock 服务将在 http://localhost:3000 启动
 ```
 frontend/
 ├── src/
-│   ├── pages/              # 页面组件 (devices, screen, scripts, reports, auth, ai-lab 等)
+│   ├── pages/              # 页面组件 (devices, screen, scripts, reports, auth 等)
 │   ├── components/         # 公共组件 (WebrtcPlayer, DeviceCard, CodeEditor 等)
 │   ├── services/           # API 调用 (封装 axios)
 │   ├── stores/             # Zustand 状态 (authStore, deviceStore 等)
@@ -74,12 +74,7 @@ frontend/
 ### 脚本管理
 - 脚本列表与编辑 (Monaco Editor)
 - 测试任务调度 (支持并行执行、定时任务)
-- 多语言支持 (Python/JavaScript/Shell)
-
-### AI 实验室
-- 自然语言用例生成
-- AI 元素智能定位
-- 智能断言
+- Python 脚本 SDK 补全，包含 Appium 定位、投屏页运行调试和 Midscene `app.ai_xxx()` 方法
 
 ## API 代理
 

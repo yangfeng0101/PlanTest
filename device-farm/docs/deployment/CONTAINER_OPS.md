@@ -44,9 +44,11 @@ docker compose --env-file .env up -d --build
 | `report-svc`| 8002 | 8004 | 测试报告存储、数据统计、告警通知 |
 | `screen-svc`| 8002 | 8002 | scrcpy 拉流、LiveKit 发布、DataChannel 控制 |
 | `livekit`   | 7880/7881 | 7880/7881 | WebRTC 信令、TCP 媒体传输 |
-| `ai-svc`    | 8005 | 8005 | OCR 识别、UI 元素定位、测试用例生成 |
+| `midscene-runner` | 8005 | 无 | Midscene Android AI 操作执行器，仅 Docker 内网访问 |
 
 LiveKit 还会使用 `50000-50100/udp` 作为媒体端口范围。
+
+`midscene-runner` 需要在 `.env` / `infra/docker/.env` 中配置 `MIDSCENE_MODEL_NAME`、`MIDSCENE_MODEL_BASE_URL`、`MIDSCENE_MODEL_API_KEY`、`MIDSCENE_MODEL_FAMILY`。它通过 `host.docker.internal:5037` 连接宿主机 ADB，供 `test-worker` 内部调用，不对浏览器或宿主机开放端口。
 
 ---
 
