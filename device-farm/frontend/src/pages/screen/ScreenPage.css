@@ -437,6 +437,14 @@
   border-left: 3px solid #38bdf8;
 }
 
+.debug-error-line {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.debug-error-line-glyph {
+  border-left: 3px solid #ef4444;
+}
+
 .script-ide-status {
   min-height: 28px;
   display: flex;

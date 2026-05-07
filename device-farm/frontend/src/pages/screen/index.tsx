@@ -768,6 +768,7 @@ export default function ScreenPage() {
   const debugScreenshots = debugTask?.result?.screenshots || []
   const debugTaskActive = isActiveTask(debugTask)
   const activeDebugLine = debugScriptSnapshot === scriptContent ? debugCurrentLine : null
+  const failedDebugLine = debugTask?.status === 'failed' ? activeDebugLine : null
 
   const hasStartupError = Boolean(sessionDiagnostics?.last_error)
   const isInitializing = !hasVideoFrame && !hasStartupError
@@ -1371,6 +1372,7 @@ export default function ScreenPage() {
                       height="100%"
                       theme="vs-dark"
                       highlightedLine={activeDebugLine}
+                      highlightedLineTone={failedDebugLine ? 'error' : 'current'}
                     />
                   </div>
 
@@ -1378,7 +1380,8 @@ export default function ScreenPage() {
                     <span>Python</span>
                     <span>app.xxx SDK</span>
                     <span>{scriptLineCount} 行</span>
-                    {activeDebugLine ? <span>运行到第 {activeDebugLine} 行</span> : null}
+                    {failedDebugLine ? <span>失败停在第 {failedDebugLine} 行</span> : null}
+                    {!failedDebugLine && activeDebugLine ? <span>运行到第 {activeDebugLine} 行</span> : null}
                   </div>
                 </div>
 
@@ -1388,7 +1391,8 @@ export default function ScreenPage() {
                       <Space size="small" wrap>
                         <Text strong>运行日志</Text>
                         <Tag color={taskStatusColors[debugTask.status]}>{taskStatusText[debugTask.status]}</Tag>
-                        {activeDebugLine ? <Tag color="processing">第 {activeDebugLine} 行</Tag> : null}
+                        {failedDebugLine ? <Tag color="error">失败行 {failedDebugLine}</Tag> : null}
+                        {!failedDebugLine && activeDebugLine ? <Tag color="processing">第 {activeDebugLine} 行</Tag> : null}
                         <Text type="secondary" copyable={{ text: debugTask.id }}>
                           {debugTask.id}
                         </Text>

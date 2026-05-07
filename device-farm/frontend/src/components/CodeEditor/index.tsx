@@ -10,6 +10,7 @@ interface CodeEditorProps {
   height?: number | string
   theme?: string
   highlightedLine?: number | null
+  highlightedLineTone?: 'current' | 'error'
 }
 
 let pythonCompletionProviderRegistered = false
@@ -46,11 +47,16 @@ export default function CodeEditor({
   height = 400,
   theme = 'vs',
   highlightedLine = null,
+  highlightedLineTone = 'current',
 }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
   const decorationIdsRef = useRef<string[]>([])
 
-  const applyHighlightedLine = (codeEditor: editor.IStandaloneCodeEditor | null, line: number | null) => {
+  const applyHighlightedLine = (
+    codeEditor: editor.IStandaloneCodeEditor | null,
+    line: number | null,
+    tone: 'current' | 'error',
+  ) => {
     if (!codeEditor) return
 
     const model = codeEditor.getModel()
@@ -70,8 +76,8 @@ export default function CodeEditor({
         },
         options: {
           isWholeLine: true,
-          className: 'debug-current-line',
-          linesDecorationsClassName: 'debug-current-line-glyph',
+          className: tone === 'error' ? 'debug-error-line' : 'debug-current-line',
+          linesDecorationsClassName: tone === 'error' ? 'debug-error-line-glyph' : 'debug-current-line-glyph',
         },
       },
     ])
@@ -80,7 +86,7 @@ export default function CodeEditor({
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor
-    applyHighlightedLine(editor, highlightedLine)
+    applyHighlightedLine(editor, highlightedLine, highlightedLineTone)
 
     const completionKind = monaco.languages.CompletionItemKind
     const snippetRule = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
@@ -536,8 +542,8 @@ export default function CodeEditor({
   }
 
   useEffect(() => {
-    applyHighlightedLine(editorRef.current, highlightedLine)
-  }, [highlightedLine, value])
+    applyHighlightedLine(editorRef.current, highlightedLine, highlightedLineTone)
+  }, [highlightedLine, highlightedLineTone, value])
 
   return (
     <Editor
