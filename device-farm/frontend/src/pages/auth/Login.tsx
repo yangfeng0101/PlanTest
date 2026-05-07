@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Form, Input, Button, Card, message, Typography } from 'antd'
 import UserOutlined from '@ant-design/icons/UserOutlined'
 import LockOutlined from '@ant-design/icons/LockOutlined'
-import MobileOutlined from '@ant-design/icons/MobileOutlined'
+import CloudServerOutlined from '@ant-design/icons/CloudServerOutlined'
 import { useAuthStore } from '@/stores/authStore'
 import './Login.css'
 
@@ -45,12 +45,12 @@ export default function LoginPage() {
         <div className="login-card-wrapper">
           <Card className="login-card" bordered={false}>
             <div className="login-header">
-              <MobileOutlined className="login-icon" />
+              <CloudServerOutlined className="login-icon" />
               <Title level={2} className="login-title">
-                设备农场
+                云测
               </Title>
               <Text type="secondary" className="login-subtitle">
-                Device Farm Management System
+                移动设备云测试平台
               </Text>
             </div>
 

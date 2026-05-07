@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Space } from 'antd'
 import MobileOutlined from '@ant-design/icons/MobileOutlined'
+import CloudServerOutlined from '@ant-design/icons/CloudServerOutlined'
 import CodeOutlined from '@ant-design/icons/CodeOutlined'
 import FileTextOutlined from '@ant-design/icons/FileTextOutlined'
 import TeamOutlined from '@ant-design/icons/TeamOutlined'
@@ -120,8 +121,8 @@ function MainLayout() {
       {!isScreenWorkspace && (
         <Sider width={220} theme="light">
           <div className="logo">
-            <MobileOutlined style={{ fontSize: 24, color: '#1890ff' }} />
-            <span>设备农场</span>
+            <CloudServerOutlined style={{ fontSize: 24, color: '#1677ff' }} />
+            <span>云测</span>
           </div>
           <Menu
             mode="inline"
