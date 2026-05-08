@@ -48,5 +48,6 @@ device-farm/
 ## 6. 详细文档
 *   [API 文档](./docs/api.md)
 *   [项目目录说明](./docs/PROJECT_STRUCTURE.md)
+*   [iOS Agent 本机配置](./docs/deployment/IOS_AGENT_SETUP.md)
 *   [实施执行文档](./docs/project/IMPLEMENTATION.md)
 *   [故障排查指南](./docs/TROUBLESHOOTING.md)

@@ -3,10 +3,12 @@
 Host-side helper for iOS real-device automation. Run this on the Mac that owns
 Xcode, WebDriverAgent signing, connected iPhones, and the iOS Appium server.
 
+Detailed local setup and troubleshooting: `../../docs/deployment/IOS_AGENT_SETUP.md`.
+
 ```bash
 cd device-farm/services/ios-agent
-python3 -m venv .venv
-. .venv/bin/activate
+python3 -m venv "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv"
+. "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv/bin/activate"
 pip install -r requirements.txt
 IOS_APPIUM_HOST=http://127.0.0.1:4724 uvicorn app:app --host 0.0.0.0 --port 8015
 ```

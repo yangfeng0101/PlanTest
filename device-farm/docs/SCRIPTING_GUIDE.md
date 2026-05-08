@@ -11,6 +11,7 @@
 - iOS 脚本内 `app.screenshot()` 走 Appium 截图并上传到任务详情，不代表设备详情页截图能力可用。
 - iOS 设备只有在 Agent 返回 `automation_ready=true` 时才会出现在脚本运行设备列表中；默认需要先完成 WDA 真机验证，并把已验证 UDID 加入 `IOS_AGENT_AUTOMATION_READY_UDIDS`。
 - 真机 WDA 签名可通过 `IOS_XCODE_ORG_ID`、`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID` 和 `IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION` 配置传入 `test-svc` / `test-worker`。
+- iOS 本机环境配置见 `docs/deployment/IOS_AGENT_SETUP.md`；可先用 `scripts/examples/ios_settings_smoke.py` 做设置页 smoke。
 
 ## 推荐原则
 
@@ -562,6 +563,8 @@ finally:
 
 ## 完整示例
 
+### Android/Harmony 示例
+
 ```python
 import json
 import re
@@ -600,6 +603,31 @@ else:
 app.terminate_app(package)
 
 app.log("script passed")
+test_pass()
+```
+
+### iOS 设置页 smoke
+
+完整文件见 `device-farm/scripts/examples/ios_settings_smoke.py`。该示例会启动系统设置、截图、读取页面 source，并点击 `通用` 或 `General`。
+
+```python
+app.log("iOS settings smoke start")
+
+app.activate_app("com.apple.Preferences")
+app.wait(2)
+app.screenshot()
+
+source = app.source()
+assert_true(len(source) > 0, "iOS page source is empty")
+
+if app.has_text("通用"):
+    app.click_text("通用", timeout=8)
+elif app.has_text("General"):
+    app.click_text("General", timeout=8)
+else:
+    app.log("General entry was not found in Settings", "WARN")
+
+app.screenshot()
 test_pass()
 ```
 
