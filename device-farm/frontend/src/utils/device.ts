@@ -7,6 +7,7 @@ const defaultDrivers: DeviceDrivers = {
   screen: '',
   uiHierarchy: '',
   control: '',
+  automation: '',
 }
 
 const defaultCapabilities: DeviceCapabilities = {
@@ -16,6 +17,7 @@ const defaultCapabilities: DeviceCapabilities = {
   metrics: false,
   screenshot: false,
   appManagement: false,
+  automation: false,
 }
 
 export const formatOsName = (os: string) => {
@@ -37,8 +39,9 @@ export const mapDevice = (d: RawRecord): Device => {
     remoteControl: androidCompatible,
     uiHierarchy: androidCompatible,
     metrics: androidCompatible || os.toLowerCase() === 'ios',
-    screenshot: androidCompatible || os.toLowerCase() === 'ios',
+    screenshot: androidCompatible,
     appManagement: androidCompatible,
+    automation: androidCompatible,
   }
 
   return {
@@ -56,6 +59,7 @@ export const mapDevice = (d: RawRecord): Device => {
       screen: (rawDrivers.screen as string) || defaultDrivers.screen,
       uiHierarchy: (rawDrivers.ui_hierarchy as string) || defaultDrivers.uiHierarchy,
       control: (rawDrivers.control as string) || defaultDrivers.control,
+      automation: (rawDrivers.automation as string) || defaultDrivers.automation,
     },
     capabilities: {
       screenMirror: Boolean(rawCapabilities.screen_mirror ?? inferredCapabilities.screenMirror ?? defaultCapabilities.screenMirror),
@@ -64,6 +68,7 @@ export const mapDevice = (d: RawRecord): Device => {
       metrics: Boolean(rawCapabilities.metrics ?? inferredCapabilities.metrics ?? defaultCapabilities.metrics),
       screenshot: Boolean(rawCapabilities.screenshot ?? inferredCapabilities.screenshot ?? defaultCapabilities.screenshot),
       appManagement: Boolean(rawCapabilities.app_management ?? inferredCapabilities.appManagement ?? defaultCapabilities.appManagement),
+      automation: Boolean(rawCapabilities.automation ?? inferredCapabilities.automation ?? defaultCapabilities.automation),
     },
     status: d.status as Device['status'],
     screenResolution: (d.screen_resolution as string) || '',

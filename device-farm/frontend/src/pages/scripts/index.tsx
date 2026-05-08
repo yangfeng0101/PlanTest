@@ -10,6 +10,7 @@ import CodeEditor from '@/components/CodeEditor'
 import { useScriptStore } from '@/stores/scriptStore'
 import { deviceApi, scriptApi, taskApi } from '@/services/api'
 import type { Device, Script, Task, TaskLogEntry } from '@/types'
+import { formatDeviceOs } from '@/utils/device'
 
 const { Option } = Select
 const { TextArea } = Input
@@ -17,6 +18,11 @@ const { Text } = Typography
 
 type RunFormValues = {
   device_id: string
+}
+
+const getTaskPlatform = (device: Device): Task['device_platform'] => {
+  const normalized = device.os?.toLowerCase()
+  return normalized === 'ios' ? 'ios' : 'android'
 }
 
 const statusColors: Record<Task['status'], string> = {
@@ -381,8 +387,14 @@ export default function ScriptsPage() {
       if (!valid) return
 
       const values = await runForm.validateFields()
+      const selectedRunDevice = devices.find((device) => device.id === values.device_id)
+      if (!selectedRunDevice) {
+        message.error('请选择设备')
+        return
+      }
+      const taskPlatform = getTaskPlatform(selectedRunDevice)
       const deviceCapabilities: Record<string, unknown> = {
-        automationName: 'UiAutomator2',
+        automationName: taskPlatform === 'ios' ? 'XCUITest' : 'UiAutomator2',
         noReset: true,
       }
 
@@ -390,7 +402,7 @@ export default function ScriptsPage() {
       const response = await taskApi.create({
         script_id: runningScript.id,
         device_id: values.device_id,
-        device_platform: 'android',
+        device_platform: taskPlatform,
         device_capabilities: deviceCapabilities,
         parameters: {},
       })
@@ -685,9 +697,8 @@ export default function ScriptsPage() {
     (script.description || '').toLowerCase().includes(keyword.toLowerCase())
   )
 
-  const androidCompatibleDevices = new Set(['android', 'harmony', 'harmonyos'])
   const onlineDevices = devices.filter(
-    (device) => device.status === 'online' && androidCompatibleDevices.has(device.os?.toLowerCase() || '')
+    (device) => device.status === 'online' && device.capabilities.automation
   )
   const screenshots = currentTask?.result?.screenshots || []
 
@@ -860,12 +871,12 @@ export default function ScriptsPage() {
             >
               <Select
                 loading={devicesLoading}
-                placeholder="请选择在线 Android/HarmonyOS 设备"
-                notFoundContent={devicesLoading ? '加载中' : '暂无在线 Android/HarmonyOS 设备'}
+                placeholder="请选择在线自动化设备"
+                notFoundContent={devicesLoading ? '加载中' : '暂无在线自动化设备'}
               >
                 {onlineDevices.map((device) => (
                   <Option key={device.id} value={device.id}>
-                    {device.name || device.id} ({device.id})
+                    {device.name || device.id} ({formatDeviceOs(device)} / {device.id})
                   </Option>
                 ))}
               </Select>

@@ -3,8 +3,9 @@ import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault("DEBUG", "false")
+os.environ["DEBUG"] = "false"
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import Device
 
@@ -31,9 +32,11 @@ class DeviceCapabilitiesTest(unittest.TestCase):
         self.assertEqual(device.drivers.metrics, "adb")
         self.assertEqual(device.drivers.screen, "scrcpy")
         self.assertEqual(device.drivers.ui_hierarchy, "uiautomator")
+        self.assertEqual(device.drivers.automation, "appium-uiautomator2")
         self.assertTrue(device.capabilities.metrics)
         self.assertTrue(device.capabilities.screen_mirror)
         self.assertTrue(device.capabilities.ui_hierarchy)
+        self.assertTrue(device.capabilities.automation)
 
     def test_android_runtime_capabilities(self):
         device = Device(
@@ -54,6 +57,36 @@ class DeviceCapabilitiesTest(unittest.TestCase):
         self.assertEqual(device.connection_type, "adb")
         self.assertEqual(device.drivers.metrics, "adb")
         self.assertTrue(device.capabilities.remote_control)
+        self.assertTrue(device.capabilities.automation)
+
+    def test_ios_runtime_capabilities_do_not_enable_screen_v1(self):
+        device = Device(
+            id="ios-1",
+            name="iPhone",
+            model="iPhone16,1",
+            brand="Apple",
+            os="ios",
+            os_version="17.5",
+            screen_resolution="1179x2556",
+            screen_size=6.1,
+            cpu="arm64",
+            memory="Unknown",
+            storage="Unknown",
+        )
+
+        self.assertEqual(device.display_os, "iOS")
+        self.assertEqual(device.connection_type, "wda")
+        self.assertEqual(device.drivers.metrics, "pymobiledevice3")
+        self.assertEqual(device.drivers.screen, "")
+        self.assertEqual(device.drivers.ui_hierarchy, "")
+        self.assertEqual(device.drivers.control, "")
+        self.assertEqual(device.drivers.automation, "")
+        self.assertTrue(device.capabilities.metrics)
+        self.assertFalse(device.capabilities.screen_mirror)
+        self.assertFalse(device.capabilities.remote_control)
+        self.assertFalse(device.capabilities.ui_hierarchy)
+        self.assertFalse(device.capabilities.screenshot)
+        self.assertFalse(device.capabilities.automation)
 
 
 if __name__ == "__main__":

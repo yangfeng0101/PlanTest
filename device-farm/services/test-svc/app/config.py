@@ -47,6 +47,13 @@ class Settings(BaseSettings):
 
     # Appium
     APPIUM_HOST: str = os.getenv("APPIUM_HOST", "http://localhost:4723")
+    IOS_APPIUM_HOST: str = os.getenv("IOS_APPIUM_HOST", "")
+    IOS_XCODE_ORG_ID: str = os.getenv("IOS_XCODE_ORG_ID", "")
+    IOS_XCODE_SIGNING_ID: str = os.getenv("IOS_XCODE_SIGNING_ID", "Apple Development")
+    IOS_WDA_BUNDLE_ID: str = os.getenv("IOS_WDA_BUNDLE_ID", "")
+    IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION: bool = (
+        os.getenv("IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION", "false").lower() == "true"
+    )
     APPIUM_TIMEOUT: int = int(os.getenv("APPIUM_TIMEOUT", "300"))
     APPIUM_REMOTE_ADB_HOST: str = os.getenv("APPIUM_REMOTE_ADB_HOST", "")
 

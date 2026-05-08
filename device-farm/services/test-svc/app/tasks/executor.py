@@ -26,7 +26,7 @@ logger = get_task_logger(__name__)
 # Import tasks API for database operations
 from app.api import tasks as tasks_api
 
-SDK_VERSION = "1.2.0"
+SDK_VERSION = "1.3.0"
 
 ALLOWED_IMPORTS = {
     "datetime": __import__("datetime"),
@@ -125,6 +125,8 @@ class DeviceFarmApp:
         log_message(self.context, "Pressed back", "INFO")
 
     def home(self):
+        if self.context.get("platform") == "ios":
+            raise RuntimeError("app.home is not supported for iOS v1. Use app.driver APIs if your XCUITest session supports a home button action.")
         self.press_key(3)
 
     def tap(self, x: int, y: int):
@@ -202,7 +204,11 @@ class DeviceFarmApp:
     def click_text(self, text: str, timeout: float = 5):
         from appium.webdriver.common.appiumby import AppiumBy
 
-        xpath = f"//*[@text={json.dumps(str(text))} or @content-desc={json.dumps(str(text))}]"
+        quoted = json.dumps(str(text), ensure_ascii=False)
+        if self.context.get("platform") == "ios":
+            xpath = f"//*[@label={quoted} or @name={quoted} or @value={quoted}]"
+        else:
+            xpath = f"//*[@text={quoted} or @content-desc={quoted}]"
         return self.click(AppiumBy.XPATH, xpath, timeout)
 
     def tap_text(self, text: str, timeout: float = 5):
@@ -322,6 +328,11 @@ class DeviceFarmApp:
 
     def _run_ai_operation(self, operation: str, payload: dict, timeout: float):
         import httpx
+
+        if self.context.get("platform") == "ios":
+            error = "Midscene AI operations are not supported for iOS v1."
+            log_message(self.context, error, "ERROR")
+            raise RuntimeError(error)
 
         runner_url = settings.MIDSCENE_RUNNER_URL.rstrip("/")
         if not runner_url:
@@ -447,6 +458,7 @@ def execute_test_task(self, task_id: str):
                 task.parameters,
                 task_id,
                 task.device_id,
+                task.device_platform.value,
             )
 
             final_status = TaskStatus.SUCCESS if result.success else TaskStatus.FAILED
@@ -535,7 +547,14 @@ def initialize_driver(task: Task):
     return driver
 
 
-def execute_script(script, driver, parameters: dict, task_id: str, device_id: Optional[str] = None) -> ExecutionResult:
+def execute_script(
+    script,
+    driver,
+    parameters: dict,
+    task_id: str,
+    device_id: Optional[str] = None,
+    platform: str = "android",
+) -> ExecutionResult:
     """Execute the test script"""
     start_time = datetime.utcnow()
 
@@ -545,6 +564,7 @@ def execute_script(script, driver, parameters: dict, task_id: str, device_id: Op
         "device_id": device_id,
         "parameters": parameters,
         "task_id": task_id,
+        "platform": platform,
         "logs": [],
         "screenshots": [],
         "videos": [],

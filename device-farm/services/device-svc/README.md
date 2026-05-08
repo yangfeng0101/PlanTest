@@ -1,6 +1,6 @@
 # Device Service
 
-Device management service for Android-compatible devices via ADB.
+Device management service for Android-compatible devices via ADB and optional iOS devices via a Mac host-side iOS Agent.
 
 ## Features
 
@@ -18,10 +18,12 @@ Device responses keep legacy `os/os_version` fields, and also include runtime fi
 
 - `display_os` / `display_os_version` for user-facing platform display
 - `connection_type` for the active connection, such as `adb`
-- `drivers` for metrics, screen, UI hierarchy, and control backends
+- `drivers` for metrics, screen, UI hierarchy, control, and automation backends
 - `capabilities` for feature availability
 
 HarmonyOS phones connected through ADB are treated as Android-compatible devices: they display as HarmonyOS, while metrics, scrcpy screen streaming, remote control, screenshots, and UIAutomator hierarchy still use the ADB-compatible drivers.
+
+iOS v1 devices discovered through `IOS_AGENT_URL` expose script automation only when the Agent reports Appium/XCUITest ready. Screen mirroring, remote control, UI hierarchy, and the device-svc screenshot endpoint remain disabled for iOS until the dedicated WDA screen session path is implemented.
 
 ## Prerequisites
 
@@ -69,4 +71,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 - `DATABASE_URL` - PostgreSQL connection URL
 - `REDIS_URL` - Redis connection URL
 - `ADB_PATH` - Path to ADB executable
+- `IOS_AGENT_URL` - Optional Mac iOS Agent URL, for example `http://host.docker.internal:8015`
+- `IOS_APPIUM_HOST` - Optional Mac Appium XCUITest URL for `test-svc` and `test-worker`
+- `IOS_XCODE_ORG_ID`, `IOS_XCODE_SIGNING_ID`, `IOS_WDA_BUNDLE_ID`, `IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION` - Optional iOS WDA signing settings for script execution
 - `DEVICE_SCAN_INTERVAL` - Device scan interval in seconds

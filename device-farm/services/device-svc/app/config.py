@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # Service URLs
     REPORT_SVC_URL: str = os.getenv("REPORT_SVC_URL", "http://localhost:8004")
+    IOS_AGENT_URL: str = os.getenv("IOS_AGENT_URL", "")
 
     # CORS - comma-separated origins from environment
     CORS_ORIGINS: List[str] = [

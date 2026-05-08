@@ -118,6 +118,7 @@ services:
       - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
       - ANDROID_ADB_SERVER_PORT=5037
       - REPORT_SVC_URL=http://report-svc:8002
+      - IOS_AGENT_URL=${IOS_AGENT_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -172,6 +173,11 @@ services:
       - REPORT_SERVICE_URL=http://report-svc:8002
       - DEVICE_SERVICE_URL=http://device-svc:8001
       - APPIUM_HOST=http://appium:4723
+      - IOS_APPIUM_HOST=${IOS_APPIUM_HOST:-}
+      - IOS_XCODE_ORG_ID=${IOS_XCODE_ORG_ID:-}
+      - IOS_XCODE_SIGNING_ID=${IOS_XCODE_SIGNING_ID:-Apple Development}
+      - IOS_WDA_BUNDLE_ID=${IOS_WDA_BUNDLE_ID:-}
+      - IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=${IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION:-false}
       - APPIUM_REMOTE_ADB_HOST=host.docker.internal
       - API_KEY_ENABLED=false
       - JWT_SECRET_KEY=yoursecretkeymustbeatleast32characterslong
@@ -202,6 +208,11 @@ services:
       - REPORT_SERVICE_URL=http://report-svc:8002
       - DEVICE_SERVICE_URL=http://device-svc:8001
       - APPIUM_HOST=http://appium:4723
+      - IOS_APPIUM_HOST=${IOS_APPIUM_HOST:-}
+      - IOS_XCODE_ORG_ID=${IOS_XCODE_ORG_ID:-}
+      - IOS_XCODE_SIGNING_ID=${IOS_XCODE_SIGNING_ID:-Apple Development}
+      - IOS_WDA_BUNDLE_ID=${IOS_WDA_BUNDLE_ID:-}
+      - IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=${IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION:-false}
       - APPIUM_REMOTE_ADB_HOST=host.docker.internal
       - MIDSCENE_RUNNER_URL=http://midscene-runner:8005
       - API_KEY_ENABLED=false
