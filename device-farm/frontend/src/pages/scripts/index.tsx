@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Alert, Card, Row, Col, Button, Table, Space, Modal, Form, Input, Select, Tag, message, Popconfirm, List, Typography, Image, Tooltip, Descriptions } from 'antd'
+import { Alert, Card, Row, Col, Button, Table, Space, Modal, Form, Input, Select, Tag, message, Popconfirm, List, Typography, Image, Tooltip, Descriptions, Collapse } from 'antd'
 import PlusOutlined from '@ant-design/icons/PlusOutlined'
 import EditOutlined from '@ant-design/icons/EditOutlined'
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
@@ -163,6 +163,53 @@ const formatDuration = (task?: Task | null) => {
 }
 
 const isActiveTask = (task?: Task | null) => Boolean(task && ['pending', 'running'].includes(task.status))
+
+const asRecord = (value: unknown): Record<string, unknown> | undefined => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return undefined
+}
+
+const formatDiagnosticValue = (value: unknown) => {
+  if (value === true) return '是'
+  if (value === false) return '否'
+  if (value === null || value === undefined || value === '') return '-'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+const publicCapabilities = (capabilities?: Record<string, unknown>) => {
+  const source = capabilities || {}
+  return Object.fromEntries(
+    Object.entries(source).filter(([key]) => !key.startsWith('_'))
+  )
+}
+
+const getTaskDiagnostics = (task?: Task | null) => {
+  if (!task) return null
+  const rawCapabilities = task.device_capabilities || {}
+  const snapshot = asRecord(rawCapabilities._device_snapshot)
+  const appium = asRecord(rawCapabilities._appium_diagnostics)
+  const appiumCapabilities = asRecord(appium?.capabilities)
+  const capabilities = appiumCapabilities || publicCapabilities(rawCapabilities)
+
+  if (task.device_platform !== 'ios' && !snapshot && !appium) {
+    return null
+  }
+
+  return {
+    snapshot,
+    appium,
+    capabilities,
+  }
+}
+
+const getErrorDetail = (error: unknown) => {
+  const response = (error as { response?: { data?: { detail?: unknown } } })?.response
+  const detail = response?.data?.detail
+  return typeof detail === 'string' && detail ? detail : '任务创建失败，请确认设备在线且未被占用'
+}
 
 export default function ScriptsPage() {
   const { scripts, loading, fetchScripts, createScript, updateScript, deleteScript } = useScriptStore()
@@ -417,7 +464,7 @@ export default function ScriptsPage() {
       message.success('任务已创建')
     } catch (error) {
       console.error('Failed to create task:', error)
-      message.error('任务创建失败，请确认设备在线且未被占用')
+      message.error(getErrorDetail(error))
     } finally {
       setTaskSubmitting(false)
     }
@@ -701,6 +748,7 @@ export default function ScriptsPage() {
     (device) => device.status === 'online' && device.capabilities.automation
   )
   const screenshots = currentTask?.result?.screenshots || []
+  const taskDiagnostics = getTaskDiagnostics(currentTask)
 
   return (
     <div>
@@ -910,6 +958,35 @@ export default function ScriptsPage() {
               description={currentTask.error || undefined}
               showIcon
             />
+            {taskDiagnostics && (
+              <Collapse
+                size="small"
+                items={[
+                  {
+                    key: 'diagnostics',
+                    label: '诊断信息',
+                    children: (
+                      <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                        <Descriptions size="small" bordered column={2}>
+                          <Descriptions.Item label="设备名称">{formatDiagnosticValue(taskDiagnostics.snapshot?.name)}</Descriptions.Item>
+                          <Descriptions.Item label="UDID">{formatDiagnosticValue(taskDiagnostics.snapshot?.id || taskDiagnostics.appium?.udid || currentTask.device_id)}</Descriptions.Item>
+                          <Descriptions.Item label="系统">{formatDiagnosticValue(taskDiagnostics.snapshot?.os)} {formatDiagnosticValue(taskDiagnostics.snapshot?.os_version)}</Descriptions.Item>
+                          <Descriptions.Item label="设备状态">{formatDiagnosticValue(taskDiagnostics.snapshot?.status)}</Descriptions.Item>
+                          <Descriptions.Item label="Automation">{formatDiagnosticValue(taskDiagnostics.snapshot?.automation)}</Descriptions.Item>
+                          <Descriptions.Item label="Automation 状态">{formatDiagnosticValue(taskDiagnostics.snapshot?.automation_status)}</Descriptions.Item>
+                          <Descriptions.Item label="Appium Ready">{formatDiagnosticValue(taskDiagnostics.snapshot?.appium_ready)}</Descriptions.Item>
+                          <Descriptions.Item label="Appium Host">{formatDiagnosticValue(taskDiagnostics.appium?.appium_host)}</Descriptions.Item>
+                        </Descriptions>
+                        <Text type="secondary">Sanitized capabilities</Text>
+                        <pre style={{ margin: 0, padding: 12, maxHeight: 220, overflow: 'auto', background: '#f5f5f5', borderRadius: 4 }}>
+                          {JSON.stringify(taskDiagnostics.capabilities, null, 2)}
+                        </pre>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            )}
             <List
               size="small"
               header="执行日志"

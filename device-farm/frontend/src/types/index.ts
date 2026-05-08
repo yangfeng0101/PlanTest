@@ -29,6 +29,8 @@ export interface Device {
   connectionType: string
   drivers: DeviceDrivers
   capabilities: DeviceCapabilities
+  appiumReady?: boolean
+  automationStatus?: string
   status: 'online' | 'offline' | 'busy' | 'maintaining'
   screenResolution: string
   screenSize: number

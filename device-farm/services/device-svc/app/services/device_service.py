@@ -170,6 +170,8 @@ class DeviceService:
             battery_level=info.get("battery_level") or 100,
             last_active_at=datetime.now(),
             tags=info.get("tags") or [],
+            appium_ready=info.get("appium_ready"),
+            automation_status=info.get("automation_status"),
         )
         self._apply_ios_automation_capability(device, bool(info.get("automation_ready")))
         return device
@@ -244,6 +246,8 @@ class DeviceService:
                 existing.memory = device.memory
                 existing.storage = device.storage
                 existing.battery_level = device.battery_level
+                existing.appium_ready = device.appium_ready
+                existing.automation_status = device.automation_status
                 existing.last_active_at = datetime.now()
                 existing.refresh_runtime_fields()
                 self._apply_ios_automation_capability(existing, bool(device_info.get("automation_ready")))

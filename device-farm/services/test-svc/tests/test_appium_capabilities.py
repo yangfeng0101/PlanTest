@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import json
 from pathlib import Path
 
 os.environ["DEBUG"] = "false"
@@ -44,6 +45,60 @@ class AppiumCapabilitiesTest(unittest.TestCase):
         self.assertEqual(caps["appium:bundleId"], "com.apple.Preferences")
         self.assertNotIn("udid", caps)
         self.assertNotIn("automationName", caps)
+
+    def test_ios_internal_diagnostic_caps_are_not_sent_to_appium(self):
+        driver = AppiumDriver(
+            platform="ios",
+            device_id="real-ios-udid",
+            capabilities={
+                "_device_snapshot": {"id": "real-ios-udid"},
+                "_appium_diagnostics": {"appium_host": "http://ios-appium:4724"},
+                "noReset": True,
+            },
+        )
+
+        caps = driver._build_options().capabilities
+
+        self.assertNotIn("_device_snapshot", caps)
+        self.assertNotIn("appium:_device_snapshot", caps)
+        self.assertNotIn("_appium_diagnostics", caps)
+        self.assertNotIn("appium:_appium_diagnostics", caps)
+        self.assertEqual(caps["appium:udid"], "real-ios-udid")
+
+    def test_ios_sanitized_diagnostics_do_not_expose_signing_values(self):
+        driver = AppiumDriver(
+            platform="ios",
+            device_id="real-ios-udid",
+            capabilities={"noReset": True},
+        )
+
+        diagnostics = driver.sanitized_diagnostics()
+        payload = json.dumps(diagnostics)
+
+        self.assertEqual(diagnostics["appium_host"], "http://ios-appium:4724")
+        self.assertEqual(diagnostics["capabilities"]["xcodeOrgId"], "configured")
+        self.assertEqual(diagnostics["capabilities"]["updatedWDABundleId"], "configured")
+        self.assertNotIn("TEAMID123", payload)
+        self.assertNotIn("com.example.WebDriverAgentRunner", payload)
+
+    def test_ios_error_hint_keeps_original_error(self):
+        message = AppiumDriver.format_appium_error("ios", "No Account for Team TEAMID123")
+
+        self.assertIn("WDA 签名 Team 配置异常", message)
+        self.assertIn("原始错误", message)
+        self.assertIn("No Account for Team", message)
+
+    def test_sanitized_diagnostics_redact_appium_host_credentials(self):
+        driver = AppiumDriver(
+            platform="ios",
+            device_id="real-ios-udid",
+            appium_host="http://user:pass@ios-appium:4724",
+        )
+
+        diagnostics = driver.sanitized_diagnostics()
+
+        self.assertEqual(diagnostics["appium_host"], "http://redacted@ios-appium:4724")
+        self.assertNotIn("user:pass", json.dumps(diagnostics))
 
     def test_android_service_owned_caps_override_task_caps(self):
         driver = AppiumDriver(

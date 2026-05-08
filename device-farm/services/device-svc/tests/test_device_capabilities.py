@@ -87,6 +87,8 @@ class DeviceCapabilitiesTest(unittest.TestCase):
         self.assertFalse(device.capabilities.ui_hierarchy)
         self.assertFalse(device.capabilities.screenshot)
         self.assertFalse(device.capabilities.automation)
+        self.assertIsNone(device.appium_ready)
+        self.assertIsNone(device.automation_status)
 
 
 if __name__ == "__main__":

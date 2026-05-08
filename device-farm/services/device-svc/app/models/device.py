@@ -72,6 +72,8 @@ class Device(BaseModel):
     connection_type: str = Field(default="", description="Current connection type: adb, hdc, wda")
     drivers: DeviceDrivers = Field(default_factory=DeviceDrivers, description="Runtime driver mapping")
     capabilities: DeviceCapabilities = Field(default_factory=DeviceCapabilities, description="Runtime capability flags")
+    appium_ready: Optional[bool] = Field(default=None, description="Whether the host Appium service is reachable for iOS")
+    automation_status: Optional[str] = Field(default=None, description="iOS automation readiness status from ios-agent")
 
     class Config:
         use_enum_values = True

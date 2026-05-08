@@ -4,8 +4,9 @@ import json
 import logging
 import os
 import subprocess
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from functools import wraps
+from urllib.parse import urlsplit, urlunsplit
 
 from appium import webdriver
 from appium.options.common.base import AppiumOptions
@@ -37,6 +38,8 @@ def retry_on_failure(max_retries=3, delay=1):
 
 class AppiumDriver:
     """Appium driver wrapper for mobile automation"""
+
+    INTERNAL_CAPS = {"_device_snapshot", "_appium_diagnostics"}
 
     SERVICE_OWNED_CAPS = {
         "platformName",
@@ -73,6 +76,68 @@ class AppiumDriver:
         self.driver: Optional[webdriver.WebDriver] = None
         self.session_id: Optional[str] = None
         self._initialized = False
+
+    @staticmethod
+    def explain_appium_error(platform: str, error: Union[Exception, str]) -> Optional[str]:
+        if platform.lower() != "ios":
+            return None
+
+        detail = str(error).lower()
+        hint_patterns = [
+            (
+                ("connection refused", "failed to establish a new connection", "max retries exceeded", "cannot connect"),
+                "无法连接 iOS Appium 服务，请确认 Mac 宿主机 Appium 已启动且 IOS_APPIUM_HOST 可从 test-worker 访问。",
+            ),
+            (
+                ("no account for team", "xcodeorgid", "development team", "requires a development team"),
+                "WDA 签名 Team 配置异常，请确认 Xcode 已登录 Apple ID，且 IOS_XCODE_ORG_ID 是有效 Team ID。",
+            ),
+            (
+                ("bundle identifier", "updatedwdabundleid", "already exists"),
+                "WDA bundle id 可能不可用或冲突，请配置唯一的 IOS_WDA_BUNDLE_ID。",
+            ),
+            (
+                ("invalid code signature", "not trusted", "profile has not been explicitly trusted", "developer app certificate"),
+                "iPhone 未信任开发者证书或签名无效，请在设备的 VPN 与设备管理中信任证书后重试。",
+            ),
+            (
+                ("device is locked", "passcode", "trust", "lockdown", "not paired", "pair"),
+                "iPhone 可能未解锁、未信任本机或配对状态异常，请解锁设备并重新信任 Mac。",
+            ),
+            (
+                ("could not find device", "device not found", "unknown device", "invalid device id", "udid"),
+                "未找到目标 iPhone，请确认 UDID 正确、设备在线且 iOS Agent 能看到该设备。",
+            ),
+            (
+                ("webdriveragent", "wda", "timed out", "timeout", "xcodebuild failed", "failed to launch"),
+                "WDA 启动或连接超时，请检查 Xcode 签名、Developer Mode、设备信任状态和 WebDriverAgent 是否能在真机运行。",
+            ),
+        ]
+
+        for patterns, hint in hint_patterns:
+            if any(pattern in detail for pattern in patterns):
+                return hint
+        return "iOS Appium/WDA session 创建失败，请查看原始错误并检查 Mac Appium、WDA 签名和 iPhone 信任状态。"
+
+    @classmethod
+    def format_appium_error(cls, platform: str, error: Union[Exception, str]) -> str:
+        hint = cls.explain_appium_error(platform, error)
+        if not hint:
+            return str(error)
+        return f"{hint} 原始错误: {error}"
+
+    @staticmethod
+    def _sanitize_url(url: str) -> str:
+        try:
+            parts = urlsplit(url)
+        except Exception:
+            return url
+        if not parts.username and not parts.password:
+            return url
+        host = parts.hostname or ""
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        return urlunsplit((parts.scheme, f"redacted@{host}", parts.path, parts.query, parts.fragment))
 
     def _adb_command(self, *args: str) -> list[str]:
         command = ["adb"]
@@ -153,6 +218,13 @@ class AppiumDriver:
         if value is not None:
             caps[key] = value
 
+    def _strip_internal_capabilities(self, caps: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            key: value
+            for key, value in caps.items()
+            if key not in self.INTERNAL_CAPS and not key.startswith("_")
+        }
+
     def _enforce_service_owned_capabilities(self, caps: Dict[str, Any]) -> Dict[str, Any]:
         """Keep task-supplied caps from changing the reserved device/session target."""
         for key in self.SERVICE_OWNED_CAPS:
@@ -180,11 +252,7 @@ class AppiumDriver:
 
         return caps
 
-    def _build_options(self) -> AppiumOptions:
-        """Build Appium options based on platform and capabilities"""
-        options = AppiumOptions()
-
-        # Platform-specific default capabilities
+    def _build_capabilities(self) -> Dict[str, Any]:
         if self.platform == "android":
             default_caps = {
                 "platformName": "Android",
@@ -235,16 +303,52 @@ class AppiumDriver:
                 default_caps["bundleId"] = self.bundle_id
 
         # Merge with user capabilities
-        caps = {**default_caps, **self.capabilities}
+        caps = {**default_caps, **self._strip_internal_capabilities(self.capabilities)}
         caps = self._enforce_service_owned_capabilities(caps)
         if self.platform == "android":
             caps = self._normalize_android_launch_caps(caps)
+        return caps
+
+    def _build_options(self) -> AppiumOptions:
+        """Build Appium options based on platform and capabilities"""
+        options = AppiumOptions()
+        caps = self._build_capabilities()
 
         for key, value in caps.items():
             if value is not None:  # Skip None values
                 options.set_capability(key, value)
 
         return options
+
+    def sanitized_diagnostics(self) -> Dict[str, Any]:
+        caps = self._build_capabilities()
+        sensitive_capability_keys = {"xcodeOrgId", "xcodeSigningId", "updatedWDABundleId"}
+        sensitive_words = ("token", "secret", "password", "cookie", "api_key", "apikey")
+        sanitized_caps: Dict[str, Any] = {}
+
+        for key, value in caps.items():
+            normalized = key.lower()
+            if key in sensitive_capability_keys:
+                sanitized_caps[key] = "configured" if value else "not_configured"
+            elif any(word in normalized for word in sensitive_words):
+                sanitized_caps[key] = "redacted"
+            else:
+                sanitized_caps[key] = value
+
+        return {
+            "platform": self.platform,
+            "udid": self.udid,
+            "appium_host": self._sanitize_url(self.appium_host),
+            "automation_name": caps.get("automationName"),
+            "no_reset": caps.get("noReset"),
+            "capabilities": sanitized_caps,
+            "ios_signing": {
+                "xcodeOrgId": "configured" if settings.IOS_XCODE_ORG_ID else "not_configured",
+                "xcodeSigningId": "configured" if settings.IOS_XCODE_SIGNING_ID else "not_configured",
+                "updatedWDABundleId": "configured" if settings.IOS_WDA_BUNDLE_ID else "not_configured",
+                "allowProvisioningDeviceRegistration": bool(settings.IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION),
+            } if self.platform == "ios" else {},
+        }
 
     def __getattr__(self, name: str):
         """Delegate unknown attributes to the underlying Appium WebDriver."""
@@ -275,8 +379,9 @@ class AppiumDriver:
             logger.info(f"Appium driver initialized successfully, session_id: {self.session_id}")
             return self
         except Exception as e:
-            logger.error(f"Failed to initialize Appium driver: {e}")
-            raise
+            error_msg = self.format_appium_error(self.platform, e)
+            logger.error(f"Failed to initialize Appium driver: {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def quit(self):
         """Quit the driver session"""

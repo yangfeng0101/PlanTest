@@ -70,6 +70,8 @@ export const mapDevice = (d: RawRecord): Device => {
       appManagement: Boolean(rawCapabilities.app_management ?? inferredCapabilities.appManagement ?? defaultCapabilities.appManagement),
       automation: Boolean(rawCapabilities.automation ?? inferredCapabilities.automation ?? defaultCapabilities.automation),
     },
+    appiumReady: d.appium_ready as boolean | undefined,
+    automationStatus: d.automation_status as string | undefined,
     status: d.status as Device['status'],
     screenResolution: (d.screen_resolution as string) || '',
     screenSize: (d.screen_size as number) || 5.5,

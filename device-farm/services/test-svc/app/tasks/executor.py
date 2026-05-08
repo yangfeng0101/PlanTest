@@ -538,12 +538,36 @@ def initialize_driver(task: Task):
     """Initialize Appium driver for the device"""
     from app.drivers.appium import AppiumDriver
 
+    platform = task.device_platform.value
     driver = AppiumDriver(
-        platform=task.device_platform.value,
+        platform=platform,
         device_id=task.device_id,
         capabilities=task.device_capabilities
     )
-    driver.initialize()
+    if platform == "ios":
+        diagnostics = driver.sanitized_diagnostics()
+        caps = diagnostics.get("capabilities", {})
+        run_async(send_log(
+            task.id,
+            "INFO",
+            "iOS Appium session initializing: "
+            f"host={diagnostics.get('appium_host')}, "
+            f"udid={diagnostics.get('udid')}, "
+            f"automationName={diagnostics.get('automation_name')}",
+        ))
+        run_async(send_log(
+            task.id,
+            "DEBUG",
+            f"iOS diagnostics: {json.dumps({'capabilities': caps, 'ios_signing': diagnostics.get('ios_signing')}, ensure_ascii=False, sort_keys=True)}",
+        ))
+    try:
+        driver.initialize()
+    except Exception as exc:
+        if platform == "ios":
+            run_async(send_log(task.id, "ERROR", f"iOS Appium session failed: {exc}"))
+        raise
+    if platform == "ios":
+        run_async(send_log(task.id, "INFO", f"iOS Appium session ready: session_id={driver.session_id}"))
     return driver
 
 

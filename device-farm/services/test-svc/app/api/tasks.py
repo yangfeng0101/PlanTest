@@ -34,6 +34,7 @@ from app.services.result_aggregator import (
     AggregatedResult,
     ParallelReportSummary,
 )
+from app.services.task_diagnostics import merge_task_diagnostics
 from shared.websocket_manager import BaseConnectionManager
 import logging
 
@@ -321,8 +322,14 @@ async def create_task(
             detail="Only Python scripts are supported",
         )
 
-    await _validate_task_device(task.device_id, task.device_platform.value)
+    device = await _validate_task_device(task.device_id, task.device_platform.value)
     await _occupy_device(task.device_id, user_id or "test-svc")
+    device_capabilities = merge_task_diagnostics(
+        task.device_capabilities,
+        device=device,
+        platform=task.device_platform.value,
+        device_id=task.device_id,
+    )
 
     # Create database model
     try:
@@ -330,7 +337,7 @@ async def create_task(
             script_id=task.script_id,
             device_id=task.device_id,
             device_platform=task.device_platform.value,
-            device_capabilities=task.device_capabilities,
+            device_capabilities=device_capabilities,
             parameters=task.parameters,
             status=TaskStatusDB.PENDING,
         )

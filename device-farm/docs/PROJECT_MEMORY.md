@@ -8,7 +8,7 @@
 
 - 当前远程状态：`main` 已合并并推送 iOS 脚本执行 v1；`dev-reboot` 保留对应功能提交。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
-- 最近一次功能改动：iOS 脚本执行 v1 接入，新增 Mac 宿主机 `ios-agent`、设备 automation 能力、iOS Appium host 分流和脚本管理页 iOS 设备选择。
+- 最近一次功能改动：iOS 任务详情与错误可观测性增强，任务会固化设备 automation 快照和 sanitized Appium diagnostics，iOS Appium/WDA 初始化日志会带中文错误提示，脚本管理页任务详情新增默认折叠的“诊断信息”。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -68,6 +68,8 @@
   - Docker 内 `device-svc` 通过 `IOS_AGENT_URL` 合并 iOS 设备；`test-svc` / `test-worker` 通过 `IOS_APPIUM_HOST` 连接 Mac Appium。
   - iOS WDA 签名可通过 `IOS_XCODE_ORG_ID`、`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID`、`IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION` 传入 Appium capabilities。
   - `test-svc` 会在合并任务 `device_capabilities` 后强制覆盖平台、UDID、automationName、ADB host 和 iOS WDA 签名等服务端所有 caps，避免脚本任务绕过设备占用。
+  - `test-svc` 会把 `_device_snapshot` 和 `_appium_diagnostics` 写入任务 `device_capabilities` 供详情页排查；这些内部字段不会传给 Appium。
+  - iOS Appium/WDA session 创建失败时会在任务错误和日志中保留原始错误，并追加中文 hint，例如 Appium host 不可达、Team 签名异常、bundle id 冲突、设备未信任或 WDA 超时。
   - 设备能力新增 `automation`；iOS v1 只开放脚本执行，默认不开放投屏、触控、控件树和设备详情截图。
   - 脚本 SDK 版本升级为 `1.3.0`，`app.click_text()` 在 iOS 上按 `label/name/value` 查询，并保留非 ASCII 文本用于中文 label 定位。
 - 旧 Python `services/ai-svc/`、前端 AI 工具菜单/页面、Vite/Nginx 的旧 `/ocr`、`/locate`、`/generate` 代理已移除；历史 `docs/project/*` 中的旧记录仍作为归档保留。
