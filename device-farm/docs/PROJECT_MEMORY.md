@@ -8,7 +8,7 @@
 
 - 当前远程状态：`main` 和 `dev-reboot` 已同步到投屏页脚本运行调试、实时行高亮和内嵌运行日志的合并结果。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
-- 最近一次功能改动：投屏页脚本调试失败后会将最后执行行切换为红色失败行提示；品牌收尾已同步“云测” favicon。
+- 最近一次功能改动：iOS 脚本执行 v1 接入，新增 Mac 宿主机 `ios-agent`、设备 automation 能力、iOS Appium host 分流和脚本管理页 iOS 设备选择。
 - 最近验证通过：
   - `git diff --check`
   - Python `compileall`
@@ -18,6 +18,7 @@
   - Midscene 真机端到端验证：Docker 内网 runner 可通过宿主机 ADB 连接华为 P50 Pro，`ai_locate` / `ai_tap` / `ai_input` / `ai_clear` / `ai_key` / `ai_scroll` / `ai_long_press` / `ai_double_tap` / `ai_act` / `ai` / `ai_wait` / `ai_assert` 均已真实调用；Python SDK 任务通过 test-svc + Celery worker 执行成功并返回 `script_line` 行号事件
   - `test-svc` / `device-svc` 运行期 import 检查
   - 当前 Postgres 表结构可兼容 `python`、`pending` 等 value 字符串
+  - iOS 脚本执行 v1 静态验证：Python `compileall`、设备能力单测、`docker compose config`、前端 `npm run build`
 
 ## 最近完成的改动
 
@@ -57,6 +58,14 @@
   - `test-worker` 通过 `MIDSCENE_RUNNER_URL=http://midscene-runner:8005` 调用 Docker 内网 Node runner。
   - `midscene-runner` 使用 `@midscene/android` 直连宿主机 ADB/scrcpy，缓存设备 Agent，不映射宿主机端口。
   - Midscene 模型通过环境变量配置：`MIDSCENE_MODEL_NAME`、`MIDSCENE_MODEL_BASE_URL`、`MIDSCENE_MODEL_API_KEY`、`MIDSCENE_MODEL_FAMILY`、`MIDSCENE_CACHE`。
+- iOS 脚本执行 v1：
+  - 新增 `services/ios-agent/`，作为 Mac 宿主机服务发现 iPhone 并检查 Appium XCUITest 状态。
+  - `ios-agent` 默认不会把 Appium `/status` 可达直接等同为单机 WDA 可用；真机 WDA 验证通过后，用 `IOS_AGENT_AUTOMATION_READY_UDIDS=<udid>[,<udid>]` 按设备放开脚本执行。
+  - Docker 内 `device-svc` 通过 `IOS_AGENT_URL` 合并 iOS 设备；`test-svc` / `test-worker` 通过 `IOS_APPIUM_HOST` 连接 Mac Appium。
+  - iOS WDA 签名可通过 `IOS_XCODE_ORG_ID`、`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID`、`IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION` 传入 Appium capabilities。
+  - `test-svc` 会在合并任务 `device_capabilities` 后强制覆盖平台、UDID、automationName、ADB host 和 iOS WDA 签名等服务端所有 caps，避免脚本任务绕过设备占用。
+  - 设备能力新增 `automation`；iOS v1 只开放脚本执行，默认不开放投屏、触控、控件树和设备详情截图。
+  - 脚本 SDK 版本升级为 `1.3.0`，`app.click_text()` 在 iOS 上按 `label/name/value` 查询，并保留非 ASCII 文本用于中文 label 定位。
 - 旧 Python `services/ai-svc/`、前端 AI 工具菜单/页面、Vite/Nginx 的旧 `/ocr`、`/locate`、`/generate` 代理已移除；历史 `docs/project/*` 中的旧记录仍作为归档保留。
 - 控件树获取增强：
   - 前端增加超时处理。
@@ -72,7 +81,7 @@
 
 - 用户编写脚本时只关心“有哪些方法可用”，不要暴露不必要的平台内部概念。
 - 脚本示例以 `app.xxx` 为主，旧全局函数仅兼容历史脚本。
-- AI 兜底推荐走 `app.ai_xxx()`。第一版只支持 Android/Harmony 这类可通过 ADB 控制的设备，不提供前端 AI 面板，也不暴露数据提取类 `ai_query/ai_string/ai_number/ai_boolean/ai_ask`。
+- AI 兜底推荐走 `app.ai_xxx()`。第一版只支持 Android/Harmony 这类可通过 ADB 控制的设备，不提供前端 AI 面板，也不暴露数据提取类 `ai_query/ai_string/ai_number/ai_boolean/ai_ask`；iOS v1 暂不支持 Midscene AI。
 - 定位推荐：
   - 首选稳定 `resource-id`，如 `app.click(AppiumBy.ID, "...", timeout=10)`。
   - 其次用 `accessibility-id`、精确文本、XPath。
@@ -88,6 +97,7 @@
 - `MIDSCENE_MODEL_FAMILY` 需要填写 Midscene 支持的模型系列，例如 `qwen3-vl`，不要填具体模型名 `qwen3-vl-plus`；具体模型名应放在 `MIDSCENE_MODEL_NAME`。
 - `@midscene/android` 当前最新版本为 `1.7.9`；`npm audit --omit=dev --registry=https://registry.npmjs.org` 会报告其传递依赖中的漏洞，自动修复建议降级到旧版 `0.13.1`，当前不采用。`midscene-runner` 保持 Docker 内网服务、不映射宿主机端口，后续跟踪上游版本修复。
 - Midscene 第一版未接入 HTML 报告、断点/单步调试、pinch、数据提取方法，也未复用 screen-svc 的截图/触控链路。
+- iOS v1 只支持脚本执行闭环；投屏、远程触控、控件树和设备详情截图待后续基于 WDA/独立 session 链路接入。
 - 前端生产构建有 chunk 体积 warning，当前不阻塞功能，后续可通过动态 import 或 manualChunks 优化。
 - WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。
 

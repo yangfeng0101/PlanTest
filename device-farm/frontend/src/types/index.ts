@@ -4,6 +4,7 @@ export interface DeviceDrivers {
   screen: string
   uiHierarchy: string
   control: string
+  automation: string
 }
 
 export interface DeviceCapabilities {
@@ -13,6 +14,7 @@ export interface DeviceCapabilities {
   metrics: boolean
   screenshot: boolean
   appManagement: boolean
+  automation: boolean
 }
 
 export interface Device {

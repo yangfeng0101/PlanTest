@@ -19,6 +19,7 @@ class DeviceDrivers(BaseModel):
     screen: str = Field(default="", description="Screen streaming driver")
     ui_hierarchy: str = Field(default="", description="UI hierarchy driver")
     control: str = Field(default="", description="Remote control driver")
+    automation: str = Field(default="", description="Automation execution driver")
 
 
 class DeviceCapabilities(BaseModel):
@@ -29,6 +30,7 @@ class DeviceCapabilities(BaseModel):
     metrics: bool = False
     screenshot: bool = False
     app_management: bool = False
+    automation: bool = False
 
 
 class Device(BaseModel):
@@ -90,6 +92,7 @@ class Device(BaseModel):
                 screen="scrcpy",
                 ui_hierarchy="uiautomator",
                 control="scrcpy",
+                automation="appium-uiautomator2",
             )
         elif normalized_os == "android":
             self.display_os = "Android"
@@ -100,6 +103,7 @@ class Device(BaseModel):
                 screen="scrcpy",
                 ui_hierarchy="uiautomator",
                 control="scrcpy",
+                automation="appium-uiautomator2",
             )
         elif normalized_os == "ios":
             self.display_os = "iOS"
@@ -107,9 +111,6 @@ class Device(BaseModel):
             self.connection_type = "wda"
             self.drivers = DeviceDrivers(
                 metrics="pymobiledevice3",
-                screen="wda",
-                ui_hierarchy="wda",
-                control="wda",
             )
         else:
             self.display_os = self.os or "Unknown"
@@ -122,8 +123,9 @@ class Device(BaseModel):
             remote_control=bool(self.drivers.control),
             ui_hierarchy=bool(self.drivers.ui_hierarchy),
             metrics=bool(self.drivers.metrics),
-            screenshot=self.connection_type in {"adb", "wda"},
+            screenshot=self.connection_type == "adb",
             app_management=self.connection_type == "adb",
+            automation=bool(self.drivers.automation),
         )
 
 

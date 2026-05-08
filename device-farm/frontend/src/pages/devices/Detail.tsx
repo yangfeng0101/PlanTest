@@ -808,6 +808,7 @@ export default function DeviceDetail() {
       { label: '监控', enabled: device.capabilities.metrics, driver: device.drivers.metrics },
       { label: '截图', enabled: device.capabilities.screenshot, driver: device.connectionType },
       { label: '应用管理', enabled: device.capabilities.appManagement, driver: device.connectionType },
+      { label: '脚本执行', enabled: device.capabilities.automation, driver: device.drivers.automation },
     ]
 
     const screenSessionStatus = screenSessionDiagnostics?.error

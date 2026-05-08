@@ -38,6 +38,18 @@ def retry_on_failure(max_retries=3, delay=1):
 class AppiumDriver:
     """Appium driver wrapper for mobile automation"""
 
+    SERVICE_OWNED_CAPS = {
+        "platformName",
+        "automationName",
+        "deviceName",
+        "udid",
+        "remoteAdbHost",
+        "xcodeOrgId",
+        "xcodeSigningId",
+        "updatedWDABundleId",
+        "allowProvisioningDeviceRegistration",
+    }
+
     def __init__(
         self,
         platform: str = "android",
@@ -52,7 +64,10 @@ class AppiumDriver:
         self.device_id = device_id or udid
         self.udid = udid or device_id
         self.capabilities = capabilities or {}
-        self.appium_host = appium_host or settings.APPIUM_HOST
+        default_appium_host = settings.IOS_APPIUM_HOST if self.platform == "ios" else settings.APPIUM_HOST
+        self.appium_host = appium_host or default_appium_host
+        if self.platform == "ios" and not self.appium_host:
+            raise RuntimeError("IOS_APPIUM_HOST is required for iOS Appium sessions")
         self.app_path = app_path
         self.bundle_id = bundle_id
         self.driver: Optional[webdriver.WebDriver] = None
@@ -129,6 +144,42 @@ class AppiumDriver:
 
         return caps
 
+    def _remove_capability_aliases(self, caps: Dict[str, Any], key: str) -> None:
+        caps.pop(key, None)
+        caps.pop(f"appium:{key}", None)
+
+    def _set_service_capability(self, caps: Dict[str, Any], key: str, value: Any) -> None:
+        self._remove_capability_aliases(caps, key)
+        if value is not None:
+            caps[key] = value
+
+    def _enforce_service_owned_capabilities(self, caps: Dict[str, Any]) -> Dict[str, Any]:
+        """Keep task-supplied caps from changing the reserved device/session target."""
+        for key in self.SERVICE_OWNED_CAPS:
+            self._remove_capability_aliases(caps, key)
+
+        if self.platform == "android":
+            self._set_service_capability(caps, "platformName", "Android")
+            self._set_service_capability(caps, "automationName", "UiAutomator2")
+            self._set_service_capability(caps, "deviceName", self.device_id or "Android Device")
+            self._set_service_capability(caps, "udid", self.udid)
+            if settings.APPIUM_REMOTE_ADB_HOST:
+                self._set_service_capability(caps, "remoteAdbHost", settings.APPIUM_REMOTE_ADB_HOST)
+        else:
+            self._set_service_capability(caps, "platformName", "iOS")
+            self._set_service_capability(caps, "automationName", "XCUITest")
+            self._set_service_capability(caps, "deviceName", self.device_id or "iOS Device")
+            self._set_service_capability(caps, "udid", self.udid)
+            if settings.IOS_XCODE_ORG_ID:
+                self._set_service_capability(caps, "xcodeOrgId", settings.IOS_XCODE_ORG_ID)
+                self._set_service_capability(caps, "xcodeSigningId", settings.IOS_XCODE_SIGNING_ID)
+            if settings.IOS_WDA_BUNDLE_ID:
+                self._set_service_capability(caps, "updatedWDABundleId", settings.IOS_WDA_BUNDLE_ID)
+            if settings.IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION:
+                self._set_service_capability(caps, "allowProvisioningDeviceRegistration", True)
+
+        return caps
+
     def _build_options(self) -> AppiumOptions:
         """Build Appium options based on platform and capabilities"""
         options = AppiumOptions()
@@ -166,11 +217,16 @@ class AppiumDriver:
                 "udid": self.udid,
                 "noReset": True,
                 "newCommandTimeout": settings.APPIUM_TIMEOUT,
-                # Enable real device connection
-                "usePrebuiltWDA": True,  # Use pre-built WebDriverAgent
                 "skipLogCapture": True,
                 "waitForQuiescence": False,
             }
+            if settings.IOS_XCODE_ORG_ID:
+                default_caps["xcodeOrgId"] = settings.IOS_XCODE_ORG_ID
+                default_caps["xcodeSigningId"] = settings.IOS_XCODE_SIGNING_ID
+            if settings.IOS_WDA_BUNDLE_ID:
+                default_caps["updatedWDABundleId"] = settings.IOS_WDA_BUNDLE_ID
+            if settings.IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION:
+                default_caps["allowProvisioningDeviceRegistration"] = True
             # Add app path if provided
             if self.app_path:
                 default_caps["app"] = self.app_path
@@ -180,6 +236,7 @@ class AppiumDriver:
 
         # Merge with user capabilities
         caps = {**default_caps, **self.capabilities}
+        caps = self._enforce_service_owned_capabilities(caps)
         if self.platform == "android":
             caps = self._normalize_android_launch_caps(caps)
 

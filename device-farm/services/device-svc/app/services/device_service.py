@@ -4,9 +4,10 @@ from datetime import datetime
 import logging
 import asyncio
 import json
+import httpx
 
 from app.config import settings
-from app.models import Device, DeviceStatus, DeviceCreate, DeviceUpdate, DeviceFilter
+from app.models import Device, DeviceStatus, DeviceCreate, DeviceUpdate, DeviceFilter, DeviceDrivers, DeviceCapabilities
 from app.models.device_db import DeviceStatusDB
 from app.models.device_model_map import get_market_name, should_refresh_device_name
 from app.services.adb_service import adb_service
@@ -117,9 +118,66 @@ class DeviceService:
 
             await asyncio.sleep(settings.DEVICE_SCAN_INTERVAL)
 
+    async def _fetch_ios_agent_devices(self) -> List[Dict[str, Any]]:
+        """Fetch iOS devices from the optional Mac host-side iOS Agent."""
+        if not settings.IOS_AGENT_URL:
+            return []
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{settings.IOS_AGENT_URL.rstrip('/')}/devices")
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as e:
+            logger.warning(f"Unable to fetch iOS devices from agent: {e}")
+            return []
+
+        devices = payload.get("devices", []) if isinstance(payload, dict) else []
+        if not isinstance(devices, list):
+            logger.warning("iOS Agent returned invalid devices payload")
+            return []
+        return [device for device in devices if isinstance(device, dict)]
+
+    def _apply_ios_automation_capability(self, device: Device, automation_ready: bool) -> None:
+        """iOS v1 exposes script automation only; screen/control remain disabled."""
+        device.drivers = DeviceDrivers(
+            metrics="pymobiledevice3",
+            automation="appium-xcuitest" if automation_ready else "",
+        )
+        device.capabilities = DeviceCapabilities(
+            metrics=True,
+            automation=automation_ready,
+        )
+
+    def _ios_agent_device_to_model(self, info: Dict[str, Any]) -> Optional[Device]:
+        device_id = info.get("id")
+        if not device_id:
+            return None
+
+        device = Device(
+            id=str(device_id),
+            name=info.get("name") or str(device_id),
+            model=info.get("model") or "Unknown",
+            brand=info.get("brand") or "Apple",
+            os="ios",
+            os_version=info.get("os_version") or "Unknown",
+            status=DeviceStatus(info.get("status") or DeviceStatus.ONLINE),
+            screen_resolution=info.get("screen_resolution") or "Unknown",
+            screen_size=info.get("screen_size") or 6.1,
+            cpu=info.get("cpu") or "arm64",
+            memory=info.get("memory") or "Unknown",
+            storage=info.get("storage") or "Unknown",
+            battery_level=info.get("battery_level") or 100,
+            last_active_at=datetime.now(),
+            tags=info.get("tags") or [],
+        )
+        self._apply_ios_automation_capability(device, bool(info.get("automation_ready")))
+        return device
+
     async def scan_devices(self) -> List[Device]:
         """Scan and update device list"""
         device_list = await adb_service.list_devices()
+        ios_device_list = await self._fetch_ios_agent_devices()
         current_ids = set()
 
         for device_info in device_list:
@@ -163,6 +221,37 @@ class DeviceService:
                     logger.info(f"New device discovered and saved: {device_id}")
                 except Exception as e:
                     logger.error(f"Error getting info for device {device_id}: {e}")
+
+        for device_info in ios_device_list:
+            device = self._ios_agent_device_to_model(device_info)
+            if not device:
+                continue
+
+            device_id = device.id
+            current_ids.add(device_id)
+
+            if device_id in self._devices:
+                existing = self._devices[device_id]
+                existing.name = device.name
+                existing.model = device.model
+                existing.brand = device.brand
+                existing.os = device.os
+                existing.os_version = device.os_version
+                existing.status = device.status
+                existing.screen_resolution = device.screen_resolution
+                existing.screen_size = device.screen_size
+                existing.cpu = device.cpu
+                existing.memory = device.memory
+                existing.storage = device.storage
+                existing.battery_level = device.battery_level
+                existing.last_active_at = datetime.now()
+                existing.refresh_runtime_fields()
+                self._apply_ios_automation_capability(existing, bool(device_info.get("automation_ready")))
+                await device_db_service.upsert_device(existing)
+            else:
+                self._devices[device_id] = device
+                await device_db_service.upsert_device(device)
+                logger.info(f"New iOS device discovered and saved: {device_id}")
 
         # Mark offline for devices not in current list
         offline_ids = [did for did in self._devices if did not in current_ids]

@@ -2,7 +2,15 @@
 
 本文档说明平台 Python 自动化脚本当前支持的方法，以及推荐的脚本编写方式。
 
-当前脚本 SDK 版本：`1.2.0`。版本信息主要用于平台维护和问题排查，普通脚本编写优先关注下方列出的可操作方法。
+当前脚本 SDK 版本：`1.3.0`。版本信息主要用于平台维护和问题排查，普通脚本编写优先关注下方列出的可操作方法。
+
+## 平台支持
+
+- Android/HarmonyOS：支持脚本执行、投屏页调试、控件树辅助和 Midscene AI 兜底。
+- iOS v1：支持通过 Mac 宿主机 iOS Agent + Appium XCUITest 执行 Python 脚本；不支持投屏页调试、控件树辅助和 Midscene AI。
+- iOS 脚本内 `app.screenshot()` 走 Appium 截图并上传到任务详情，不代表设备详情页截图能力可用。
+- iOS 设备只有在 Agent 返回 `automation_ready=true` 时才会出现在脚本运行设备列表中；默认需要先完成 WDA 真机验证，并把已验证 UDID 加入 `IOS_AGENT_AUTOMATION_READY_UDIDS`。
+- 真机 WDA 签名可通过 `IOS_XCODE_ORG_ID`、`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID` 和 `IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION` 配置传入 `test-svc` / `test-worker`。
 
 ## 推荐原则
 
@@ -54,7 +62,7 @@ test_pass()
 | 元素 | `app.exists(by, value, timeout=0)` | 判断元素是否存在 |
 | 元素 | `app.click(by, value, timeout=0)` | 查找并点击元素 |
 | 元素 | `app.get_text(by, value, timeout=0)` | 查找元素并返回文本 |
-| 元素 | `app.click_text(text, timeout=5)` | 通过 `text` 或 `content-desc` 点击 |
+| 元素 | `app.click_text(text, timeout=5)` | Android 按 `text/content-desc` 点击；iOS 按 `label/name/value` 点击 |
 | 元素 | `app.tap_text(text, timeout=5)` | 等价于 `app.click_text()` |
 | AI 操作 | `app.ai(instruction, timeout=30)` | 使用自然语言完成一组操作 |
 | AI 操作 | `app.ai_act(instruction, timeout=30)` | 等价于 `app.ai()` 的显式动作版本 |
@@ -180,7 +188,7 @@ app.wait_text("首页", timeout=15)
 | `app.exists(by, value, timeout=0)` | `by`: 定位方式；`value`: 定位表达式；`timeout`: 秒数 | 判断元素是否存在 | `True/False` |
 | `app.click(by, value, timeout=0)` | `by`: 定位方式；`value`: 定位表达式；`timeout`: 秒数 | 查找并点击元素 | 被点击的元素对象 |
 | `app.get_text(by, value, timeout=0)` | `by`: 定位方式；`value`: 定位表达式；`timeout`: 秒数 | 获取元素文本 | 字符串 |
-| `app.click_text(text, timeout=5)` | `text`: 文本；`timeout`: 秒数 | 按 `text` 或 `content-desc` 点击 | 被点击的元素对象 |
+| `app.click_text(text, timeout=5)` | `text`: 文本；`timeout`: 秒数 | Android 按 `text/content-desc`；iOS 按 `label/name/value` 点击 | 被点击的元素对象 |
 | `app.tap_text(text, timeout=5)` | `text`: 文本；`timeout`: 秒数 | 等价于 `click_text` | 被点击的元素对象 |
 
 常用 `AppiumBy`：
@@ -292,6 +300,8 @@ button.click()
 ## AI 操作
 
 AI 操作由后端 `midscene-runner` 调用 Midscene Android 能力完成，适合控件树不稳定、页面动画导致 UIAutomator 难以稳定定位，或临时需要用自然语言兜底的场景。它需要管理员在容器环境中配置 Midscene 模型环境变量；脚本中不要写模型密钥。
+
+> iOS v1 暂不支持 `app.ai_xxx()`。iOS 请优先使用 `AppiumBy.ACCESSIBILITY_ID`、`AppiumBy.IOS_PREDICATE`、`AppiumBy.IOS_CLASS_CHAIN` 或 XPath。
 
 | 方法 | 作用 | 返回/失败行为 |
 | --- | --- | --- |

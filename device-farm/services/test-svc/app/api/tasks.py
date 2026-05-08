@@ -77,6 +77,52 @@ async def _occupy_device(device_id: str, user_id: str):
         )
 
 
+def _normalize_device_platform(device: dict) -> str:
+    os_name = str(device.get("os") or "").lower()
+    if os_name in {"android", "harmony", "harmonyos"}:
+        return "android"
+    if os_name == "ios":
+        return "ios"
+    return os_name
+
+
+def _device_supports_automation(device: dict) -> bool:
+    capabilities = device.get("capabilities") or {}
+    if not isinstance(capabilities, dict):
+        return False
+    return bool(capabilities.get("automation"))
+
+
+async def _validate_task_device(device_id: str, requested_platform: str) -> dict:
+    device = await _get_device(device_id)
+    if device.get("status") != "online":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device is occupied or unavailable",
+        )
+
+    actual_platform = _normalize_device_platform(device)
+    if actual_platform != requested_platform:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Device platform mismatch: device is {actual_platform or 'unknown'}, task requested {requested_platform}",
+        )
+
+    if requested_platform == "ios" and not settings.IOS_APPIUM_HOST:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="IOS_APPIUM_HOST is not configured",
+        )
+
+    if not _device_supports_automation(device):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Automation is not supported by this device connection",
+        )
+
+    return device
+
+
 async def _release_device(device_id: str):
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(f"{settings.DEVICE_SERVICE_URL}/api/v1/devices/{device_id}/release")
@@ -275,6 +321,7 @@ async def create_task(
             detail="Only Python scripts are supported",
         )
 
+    await _validate_task_device(task.device_id, task.device_platform.value)
     await _occupy_device(task.device_id, user_id or "test-svc")
 
     # Create database model
