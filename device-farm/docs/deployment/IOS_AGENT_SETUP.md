@@ -154,6 +154,14 @@ device-farm/scripts/examples/ios_settings_smoke.py
 
 它会启动系统设置、截图、读取页面 source，并点击 `通用` 或 `General`。
 
+也可以直接通过 API 创建脚本并运行任务：
+
+```bash
+API_BASE=http://localhost:8003/api/v1 \
+DEVICE_ID=<ios-udid> \
+python3 device-farm/scripts/ios_smoke_task_flow.py
+```
+
 ## 常见问题
 
 ### `No Account for Team`

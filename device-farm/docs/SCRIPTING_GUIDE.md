@@ -655,3 +655,15 @@ API_BASE=http://localhost:8003/api/v1 DEVICE_ID=<device-id> python3 device-farm/
 ```bash
 API_KEY=<api-key> API_BASE=http://localhost:8003/api/v1 DEVICE_ID=<device-id> python3 device-farm/scripts/smoke_task_flow.py
 ```
+
+iOS 设备完成 WDA 验证并在设备列表中显示 `automation_ready=true` 后，可以用下面的脚本创建并运行一次设置页 smoke：
+
+```bash
+API_BASE=http://localhost:8003/api/v1 DEVICE_ID=<ios-udid> python3 device-farm/scripts/ios_smoke_task_flow.py
+```
+
+如果本地开启了 API Key：
+
+```bash
+API_KEY=<api-key> API_BASE=http://localhost:8003/api/v1 DEVICE_ID=<ios-udid> python3 device-farm/scripts/ios_smoke_task_flow.py
+```

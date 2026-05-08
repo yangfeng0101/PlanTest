@@ -9,7 +9,7 @@
 - 当前远程状态：`main` 已合并并推送 iOS 脚本执行 v1；`dev-reboot` 保留对应功能提交。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
 - 最近一次功能改动：iOS 脚本执行 v1 接入，新增 Mac 宿主机 `ios-agent`、设备 automation 能力、iOS Appium host 分流和脚本管理页 iOS 设备选择。
-- 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本和 `scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例。
+- 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
   - Python `compileall`
@@ -63,6 +63,7 @@
   - 新增 `services/ios-agent/`，作为 Mac 宿主机服务发现 iPhone 并检查 Appium XCUITest 状态。
   - 本机配置入口：`docs/deployment/IOS_AGENT_SETUP.md`；辅助脚本：`scripts/setup-ios-agent.sh`，默认把 venv 放在 `${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv`，避免整目录验证误扫第三方包。
   - iOS smoke 示例：`scripts/examples/ios_settings_smoke.py`，可复制到脚本管理页运行。
+  - iOS 任务链路 smoke：`API_BASE=http://localhost:8003/api/v1 DEVICE_ID=<ios-udid> python3 device-farm/scripts/ios_smoke_task_flow.py`。
   - `ios-agent` 默认不会把 Appium `/status` 可达直接等同为单机 WDA 可用；真机 WDA 验证通过后，用 `IOS_AGENT_AUTOMATION_READY_UDIDS=<udid>[,<udid>]` 按设备放开脚本执行。
   - Docker 内 `device-svc` 通过 `IOS_AGENT_URL` 合并 iOS 设备；`test-svc` / `test-worker` 通过 `IOS_APPIUM_HOST` 连接 Mac Appium。
   - iOS WDA 签名可通过 `IOS_XCODE_ORG_ID`、`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID`、`IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION` 传入 Appium capabilities。
