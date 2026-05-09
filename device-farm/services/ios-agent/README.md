@@ -10,7 +10,13 @@ cd device-farm/services/ios-agent
 python3 -m venv "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv"
 . "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv/bin/activate"
 pip install -r requirements.txt
-IOS_APPIUM_HOST=http://127.0.0.1:4724 uvicorn app:app --host 0.0.0.0 --port 8015
+IOS_APPIUM_HOST=http://127.0.0.1:4724 \
+IOS_XCODE_ORG_ID=TEAMID123 \
+IOS_XCODE_SIGNING_ID="Apple Development" \
+IOS_WDA_BUNDLE_ID=com.example.WebDriverAgentRunner \
+IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true \
+IOS_AGENT_AUTOMATION_READY_UDIDS=00000000-0000000000000000 \
+uvicorn app:app --host 0.0.0.0 --port 8015
 ```
 
 Docker services can then use `IOS_AGENT_URL=http://host.docker.internal:8015`
@@ -34,3 +40,13 @@ WDA smoke test succeeds, expose only those verified devices with:
 ```bash
 IOS_AGENT_AUTOMATION_READY_UDIDS=00000000-0000000000000000,another-udid
 ```
+
+Verified devices also expose static debug endpoints for the Device Farm screen
+page:
+
+- `GET /devices/{udid}/screenshot`
+- `GET /devices/{udid}/source`
+- `DELETE /devices/{udid}/debug-session`
+
+These endpoints create a cached Appium XCUITest debug session per UDID. They do
+not provide realtime screen streaming or remote touch control.

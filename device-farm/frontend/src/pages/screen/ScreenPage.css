@@ -110,6 +110,30 @@
   font-size: 12px;
 }
 
+.static-debug-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #111827;
+}
+
+.static-debug-screenshot {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #111827;
+}
+
+.static-debug-placeholder {
+  background: #111827;
+}
+
+.static-debug-placeholder span {
+  color: #8c99a8;
+  font-size: 12px;
+}
+
 .video-waiting-overlay {
   position: absolute;
   inset: 0;

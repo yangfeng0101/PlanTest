@@ -244,6 +244,8 @@ export default function ScriptsPage() {
       .join(','),
     [activeTasks]
   )
+  const currentTaskId = currentTask?.id
+  const currentTaskStatus = currentTask?.status
   const visibleTaskLogs = useMemo(
     () => taskLogs.filter((entry) => entry.event_type !== 'script_line'),
     [taskLogs]
@@ -306,7 +308,7 @@ export default function ScriptsPage() {
           return next
         })
 
-        const selectedTask = updatedTasks.find((task) => task.id === currentTask?.id)
+        const selectedTask = updatedTasks.find((task) => task.id === currentTaskId)
         if (selectedTask) {
           setCurrentTask(selectedTask)
           const logsResponse = await taskApi.getLogs(selectedTask.id)
@@ -318,17 +320,17 @@ export default function ScriptsPage() {
     }, 2000)
 
     return () => window.clearInterval(timer)
-  }, [activeTaskIds, currentTask?.id])
+  }, [activeTaskIds, currentTaskId])
 
   useEffect(() => {
-    if (!currentTask || ['pending', 'running'].includes(currentTask.status)) {
+    if (!currentTaskId || !currentTaskStatus || ['pending', 'running'].includes(currentTaskStatus)) {
       return
     }
 
-    taskApi.getLogs(currentTask.id)
+    taskApi.getLogs(currentTaskId)
       .then((response) => setTaskLogs(response.data))
       .catch((error) => console.error('Failed to fetch final task logs:', error))
-  }, [currentTask?.id, currentTask?.status])
+  }, [currentTaskId, currentTaskStatus])
 
   const handleCreate = () => {
     setEditingScript(null)

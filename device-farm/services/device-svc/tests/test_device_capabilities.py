@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import Device
+from app.services.device_service import DeviceService
 
 
 class DeviceCapabilitiesTest(unittest.TestCase):
@@ -89,6 +90,35 @@ class DeviceCapabilitiesTest(unittest.TestCase):
         self.assertFalse(device.capabilities.automation)
         self.assertIsNone(device.appium_ready)
         self.assertIsNone(device.automation_status)
+
+    def test_ios_agent_verified_device_enables_static_debug_without_screen_control(self):
+        service = DeviceService()
+        device = Device(
+            id="ios-2",
+            name="iPhone",
+            model="iPhone16,1",
+            brand="Apple",
+            os="ios",
+            os_version="17.5",
+            screen_resolution="1179x2556",
+            screen_size=6.1,
+            cpu="arm64",
+            memory="Unknown",
+            storage="Unknown",
+        )
+
+        service._apply_ios_automation_capability(device, automation_ready=True)
+
+        self.assertEqual(device.drivers.metrics, "pymobiledevice3")
+        self.assertEqual(device.drivers.ui_hierarchy, "appium-xcuitest")
+        self.assertEqual(device.drivers.automation, "appium-xcuitest")
+        self.assertEqual(device.drivers.screen, "")
+        self.assertEqual(device.drivers.control, "")
+        self.assertTrue(device.capabilities.screenshot)
+        self.assertTrue(device.capabilities.ui_hierarchy)
+        self.assertTrue(device.capabilities.automation)
+        self.assertFalse(device.capabilities.screen_mirror)
+        self.assertFalse(device.capabilities.remote_control)
 
 
 if __name__ == "__main__":

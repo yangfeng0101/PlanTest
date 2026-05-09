@@ -13,7 +13,7 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { deviceApi, metricsApi } from '@/services/api'
 import type { Device, DeviceMetrics, DeviceThresholdConfig } from '@/types'
-import { mapDevice } from '@/utils/device'
+import { mapDevice, screenDebugLabel, supportsScreenDebug } from '@/utils/device'
 
 const { Title, Text } = Typography
 
@@ -755,6 +755,8 @@ export default function DeviceDetail() {
 
     const { color, text } = statusConfig[device.status] || { color: 'default', text: '未知' }
     const isScreenSessionActive = Boolean(screenSessionDiagnostics?.active)
+    const debugLabel = screenDebugLabel(device)
+    const debugDisabled = !deviceId || device.status === 'offline' || !supportsScreenDebug(device) || isScreenSessionActive
 
     return (
       <div>
@@ -786,11 +788,11 @@ export default function DeviceDetail() {
           <Button
             type="primary"
             icon={<PlayCircleOutlined />}
-            disabled={!deviceId || device.status === 'offline' || !device.capabilities.screenMirror || isScreenSessionActive}
+            disabled={debugDisabled}
             title={isScreenSessionActive ? '设备已被投屏会话占用' : undefined}
             onClick={() => window.open(`/screen?deviceId=${encodeURIComponent(device.id)}`, '_blank', 'noopener,noreferrer')}
           >
-            {isScreenSessionActive ? '占用中' : '开始投屏'}
+            {isScreenSessionActive ? '占用中' : `开始${debugLabel}`}
           </Button>
         </Space>
       </div>

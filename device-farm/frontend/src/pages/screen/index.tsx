@@ -12,6 +12,7 @@ import KeyOutlined from '@ant-design/icons/KeyOutlined'
 import SendOutlined from '@ant-design/icons/SendOutlined'
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
 import PlusOutlined from '@ant-design/icons/PlusOutlined'
+import ReloadOutlined from '@ant-design/icons/ReloadOutlined'
 import { Room } from 'livekit-client'
 import type { Device, Script, Task, TaskLogEntry } from '@/types'
 import WebrtcPlayer from '@/components/WebrtcPlayer'
@@ -60,6 +61,21 @@ function requestStopSession(deviceId: string) {
     keepalive: true,
   }).catch((error) => {
     console.error('Failed to stop session:', error)
+  })
+}
+
+async function releaseDebugSession(deviceId: string, keepalive = false) {
+  const res = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/debug-session`, {
+    method: 'DELETE',
+    credentials: 'include',
+    keepalive,
+  })
+  return res.ok
+}
+
+function requestReleaseDebugSession(deviceId: string) {
+  void releaseDebugSession(deviceId, true).catch((error) => {
+    console.error('Failed to release debug session:', error)
   })
 }
 
@@ -178,10 +194,68 @@ test_pass()
 `
 }
 
-function buildLocatorSnippets(element: UIElementNode | null): LocatorSnippet[] {
+function findSelector(element: UIElementNode, type: string) {
+  return element.selector_suggestions.find((selector) => selector.type === type)?.value || ''
+}
+
+function buildLocatorSnippets(element: UIElementNode | null, platform = 'android'): LocatorSnippet[] {
   if (!element) return []
 
   const snippets: LocatorSnippet[] = []
+  if (platform === 'ios') {
+    const accessibilityId = findSelector(element, 'accessibility_id') || element.content_desc
+    const predicate = findSelector(element, 'ios_predicate')
+    const classChain = findSelector(element, 'ios_class_chain')
+
+    if (accessibilityId) {
+      snippets.push({
+        key: 'ios-click-accessibility',
+        title: '按 accessibility-id 点击',
+        description: '推荐用于 iOS 上稳定的 name 或 accessibility label。',
+        code: `app.click(AppiumBy.ACCESSIBILITY_ID, ${pythonString(accessibilityId)}, timeout=10)`,
+      })
+    }
+    if (predicate) {
+      snippets.push({
+        key: 'ios-click-predicate',
+        title: '按 iOS Predicate 点击',
+        description: '适合用 name、label 或 value 精确定位。',
+        code: `app.click(AppiumBy.IOS_PREDICATE, ${pythonString(predicate)}, timeout=10)`,
+      })
+    }
+    if (classChain) {
+      snippets.push({
+        key: 'ios-click-class-chain',
+        title: '按 iOS Class Chain 点击',
+        description: '适合没有稳定 accessibility id 时缩小控件类型范围。',
+        code: `app.click(AppiumBy.IOS_CLASS_CHAIN, ${pythonString(classChain)}, timeout=10)`,
+      })
+    }
+    if (element.text) {
+      snippets.push({
+        key: 'ios-assert-text',
+        title: '断言文本存在',
+        description: 'iOS 会按 label、name、value 查询文本。',
+        code: `app.assert_text(${pythonString(element.text)})`,
+      })
+    }
+    if (element.xpath) {
+      snippets.push({
+        key: 'ios-click-xpath',
+        title: '按 XPath 点击',
+        description: '结构变化时需要维护，建议作为兜底。',
+        code: `app.click(AppiumBy.XPATH, ${pythonString(element.xpath)}, timeout=10)`,
+      })
+    }
+    snippets.push({
+      key: 'ios-tap-coordinate',
+      title: '按坐标点击',
+      description: '兜底方案，分辨率或布局变化时稳定性较弱。',
+      code: `app.tap(${Math.round(element.center.x)}, ${Math.round(element.center.y)})`,
+    })
+    return snippets
+  }
+
   if (element.resource_id) {
     snippets.push({
       key: 'click-id',
@@ -303,10 +377,20 @@ export default function ScreenPage() {
   const [debugCanceling, setDebugCanceling] = useState(false)
   const [debugCurrentLine, setDebugCurrentLine] = useState<number | null>(null)
   const [debugScriptSnapshot, setDebugScriptSnapshot] = useState('')
+  const [staticScreenshot, setStaticScreenshot] = useState<string | null>(null)
+  const [staticScreenshotLoading, setStaticScreenshotLoading] = useState(false)
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
   const uiHierarchySupported = currentDevice?.capabilities.uiHierarchy ?? false
+  const screenshotSupported = currentDevice?.capabilities.screenshot ?? false
+  const isIosStaticDebug = Boolean(
+    currentDevice
+    && currentDevice.os.toLowerCase() === 'ios'
+    && !screenMirrorSupported
+    && uiHierarchySupported
+    && screenshotSupported
+  )
   
   // LiveKit state
   const [lkSession, setLkSession] = useState<{ url: string; token: string } | null>(null)
@@ -439,6 +523,11 @@ export default function ScreenPage() {
       }
       return
     }
+    if (isIosStaticDebug) {
+      setLoading(false)
+      autoStartBlockedRef.current = null
+      return
+    }
     if (!currentDevice.capabilities.screenMirror) {
       setLoading(false)
       const blockKey = `${selectedDevice}:unsupported`
@@ -452,7 +541,7 @@ export default function ScreenPage() {
     autoStartBlockedRef.current = null
     autoStartedDeviceRef.current = selectedDevice
     void startSession()
-  }, [currentDevice, devicesLoaded, isPlaying, lkSession, selectedDevice, startSession])
+  }, [currentDevice, devicesLoaded, isIosStaticDebug, isPlaying, lkSession, selectedDevice, startSession])
 
   const stopSession = async () => {
     if (!selectedDevice) return
@@ -465,10 +554,15 @@ export default function ScreenPage() {
     startRequestedAtRef.current = null
     activeSessionDeviceRef.current = null
     clearUiHierarchy()
+    setStaticScreenshot(null)
     flushPendingMove()
     lkRoomRef.current = null
     requestStopSession(selectedDevice)
   }
+
+  const releaseStaticDebugSession = useCallback((deviceId: string) => {
+    requestReleaseDebugSession(deviceId)
+  }, [])
 
   const publishControl = useCallback((payload: Record<string, unknown>, reliable = false) => {
     const room = lkRoomRef.current
@@ -550,9 +644,43 @@ export default function ScreenPage() {
     setUiScreen(null)
   }, [])
 
+  const refreshStaticScreenshot = useCallback(async (silent = false, timeoutMs = 18000) => {
+    if (!selectedDevice || !isIosStaticDebug) return false
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+    setStaticScreenshotLoading(true)
+    try {
+      const res = await fetch(`/api/v1/devices/${selectedDevice}/screenshot`, {
+        credentials: 'include',
+        signal: controller.signal,
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || '刷新截图失败')
+      }
+      if (!data.image) {
+        throw new Error('截图数据为空')
+      }
+      setStaticScreenshot(`data:image/${data.format || 'png'};base64,${data.image}`)
+      if (!silent) {
+        message.success('截图已刷新')
+      }
+      return true
+    } catch (e) {
+      const error = e as Error
+      if (!silent) {
+        message.error(error.message || '刷新截图失败')
+      }
+      return false
+    } finally {
+      window.clearTimeout(timeoutId)
+      setStaticScreenshotLoading(false)
+    }
+  }, [isIosStaticDebug, selectedDevice])
+
   const fetchUiHierarchy = useCallback(async () => {
     if (!selectedDevice) return
-    if (!isPlaying) {
+    if (!isPlaying && !isIosStaticDebug) {
       message.warning('请先连接投屏后再获取控件')
       return
     }
@@ -565,6 +693,12 @@ export default function ScreenPage() {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), 18000)
     try {
+      if (isIosStaticDebug) {
+        const screenshotOk = await refreshStaticScreenshot(true)
+        if (!screenshotOk) {
+          message.warning('截图刷新失败，但会继续尝试获取控件树')
+        }
+      }
       const res = await fetch(`/api/v1/devices/${selectedDevice}/ui-hierarchy`, {
         credentials: 'include',
         signal: controller.signal,
@@ -579,6 +713,9 @@ export default function ScreenPage() {
       setSelectedUiElement(null)
       if (result.screen?.width > 0 && result.screen?.height > 0) {
         setUiScreen({ width: result.screen.width, height: result.screen.height })
+        if (isIosStaticDebug) {
+          setDeviceInfo({ width: result.screen.width, height: result.screen.height })
+        }
       }
       message.success(`获取到 ${result.elements?.length || 0} 个控件，点击控件框查看属性`)
     } catch (e) {
@@ -592,7 +729,7 @@ export default function ScreenPage() {
       window.clearTimeout(timeoutId)
       setLoadingUiHierarchy(false)
     }
-  }, [currentDevice, isPlaying, selectedDevice])
+  }, [currentDevice, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice])
 
   const handleConnectionStateChange = useCallback((state: string) => {
     if (state === 'disconnected') {
@@ -640,6 +777,14 @@ export default function ScreenPage() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    setStaticScreenshot(null)
+    if (!selectedDevice || !isIosStaticDebug) return
+    return () => {
+      releaseStaticDebugSession(selectedDevice)
+    }
+  }, [isIosStaticDebug, releaseStaticDebugSession, selectedDevice])
 
   useEffect(() => {
     if (!virtualKeyboardOpen || !isPlaying || !remoteControlSupported) return
@@ -759,7 +904,10 @@ export default function ScreenPage() {
   const visibleUiElements = uiElements
     .filter((element) => element.bounds.width > 0 && element.bounds.height > 0)
     .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
-  const locatorSnippets = useMemo(() => buildLocatorSnippets(selectedUiElement), [selectedUiElement])
+  const locatorSnippets = useMemo(
+    () => buildLocatorSnippets(selectedUiElement, isIosStaticDebug ? 'ios' : 'android'),
+    [isIosStaticDebug, selectedUiElement],
+  )
   const scriptLineCount = useMemo(() => scriptContent.split(/\r\n|\r|\n/).length, [scriptContent])
   const visibleDebugLogs = useMemo(
     () => debugTaskLogs.filter((entry) => entry.event_type !== 'script_line'),
@@ -767,13 +915,18 @@ export default function ScreenPage() {
   )
   const debugScreenshots = debugTask?.result?.screenshots || []
   const debugTaskActive = isActiveTask(debugTask)
+  const debugTaskId = debugTask?.id
+  const debugTaskPollingActive = Boolean(debugTask && isActiveTask(debugTask))
   const activeDebugLine = debugScriptSnapshot === scriptContent ? debugCurrentLine : null
   const failedDebugLine = debugTask?.status === 'failed' ? activeDebugLine : null
+  const inspectReady = isPlaying || isIosStaticDebug
 
-  const hasStartupError = Boolean(sessionDiagnostics?.last_error)
-  const isInitializing = !hasVideoFrame && !hasStartupError
+  const hasStartupError = !isIosStaticDebug && Boolean(sessionDiagnostics?.last_error)
+  const isInitializing = !isIosStaticDebug && !hasVideoFrame && !hasStartupError
   const startupStatusText = '正在初始化设备，请稍后...'
-  const statusDotClassName = hasVideoFrame
+  const statusDotClassName = isIosStaticDebug
+    ? 'connected'
+    : hasVideoFrame
     ? 'connected'
     : hasStartupError
       ? 'error'
@@ -788,14 +941,14 @@ export default function ScreenPage() {
   }
 
   useEffect(() => {
-    if (!debugTask?.id || !isActiveTask(debugTask)) return
+    if (!debugTaskId || !debugTaskPollingActive) return
 
     let cancelled = false
     const pollTask = async () => {
       try {
         const [taskResponse, logsResponse] = await Promise.all([
-          taskApi.getDetail(debugTask.id),
-          taskApi.getLogs(debugTask.id, { limit: 1000 }),
+          taskApi.getDetail(debugTaskId),
+          taskApi.getLogs(debugTaskId, { limit: 1000 }),
         ])
         if (cancelled) return
         setDebugTask(taskResponse.data)
@@ -811,7 +964,7 @@ export default function ScreenPage() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [debugTask?.id, debugTask?.status])
+  }, [debugTaskId, debugTaskPollingActive])
 
   // Send key event via DataChannel
   const sendKey = (keycode: string) => {
@@ -1030,12 +1183,19 @@ export default function ScreenPage() {
       }
 
       const debugScript = await saveDebugDraft()
+      const debugPlatform = currentDevice.os.toLowerCase() === 'ios' ? 'ios' : 'android'
+      if (debugPlatform === 'ios') {
+        const released = await releaseDebugSession(selectedDevice)
+        if (!released) {
+          throw new Error('释放 iOS 静态调试 session 失败，请稍后重试')
+        }
+      }
       const response = await taskApi.create({
         script_id: debugScript.id,
         device_id: selectedDevice,
-        device_platform: 'android',
+        device_platform: debugPlatform,
         device_capabilities: {
-          automationName: 'UiAutomator2',
+          automationName: debugPlatform === 'ios' ? 'XCUITest' : 'UiAutomator2',
           noReset: true,
         },
         parameters: {
@@ -1050,7 +1210,8 @@ export default function ScreenPage() {
       message.success('调试任务已创建')
     } catch (error) {
       console.error('Failed to run debug script:', error)
-      message.error('调试任务创建失败，请确认设备在线且未被占用')
+      const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      message.error(detail || '调试任务创建失败，请确认设备在线且未被占用')
     } finally {
       setDebugSubmitting(false)
     }
@@ -1105,6 +1266,42 @@ export default function ScreenPage() {
     </div>
   )
 
+  const uiElementOverlay = uiElements.length > 0 && renderMetrics && uiScreen ? (
+    <div
+      className="ui-element-layer"
+      style={{
+        left: renderMetrics.left,
+        top: renderMetrics.top,
+        width: renderMetrics.width,
+        height: renderMetrics.height,
+      }}
+    >
+      {visibleUiElements.map((element) => {
+        const isSelected = selectedUiElement?.uid === element.uid
+        return (
+          <button
+            key={element.uid}
+            type="button"
+            className={`ui-element-box ${isSelected ? 'selected' : ''} ${element.clickable ? 'clickable' : ''}`}
+            title={element.resource_id || element.content_desc || element.text || element.class_name}
+            style={{
+              left: `${(element.bounds.x / uiScreen.width) * 100}%`,
+              top: `${(element.bounds.y / uiScreen.height) * 100}%`,
+              width: `${(element.bounds.width / uiScreen.width) * 100}%`,
+              height: `${(element.bounds.height / uiScreen.height) * 100}%`,
+              zIndex: element.depth + 1,
+            }}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              setSelectedUiElement(element)
+            }}
+          />
+        )
+      })}
+    </div>
+  ) : null
+
   return (
     <div className="screen-page">
       <div className="screen-workbench">
@@ -1116,8 +1313,8 @@ export default function ScreenPage() {
               {currentDevice && <Text type="secondary">{formatDeviceOs(currentDevice)}</Text>}
               <span
                 className={`connection-status-dot ${statusDotClassName}`}
-                aria-label={hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
-                title={hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
+                aria-label={isIosStaticDebug ? '静态调试' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
+                title={isIosStaticDebug ? '静态调试' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
               />
             </div>
             <Button
@@ -1135,7 +1332,7 @@ export default function ScreenPage() {
             <div ref={playerViewportRef} className="player-viewport">
               <div
                 ref={playerContainerRef}
-                className={`player-container ${isPlaying ? 'active' : ''}`}
+                className={`player-container ${isPlaying || isIosStaticDebug ? 'active' : ''}`}
                 style={playerBoxSize ? { width: playerBoxSize.width, height: playerBoxSize.height } : undefined}
               >
                 {isPlaying && lkSession ? (
@@ -1168,42 +1365,28 @@ export default function ScreenPage() {
                         </div>
                       </div>
                     )}
-                    {uiElements.length > 0 && renderMetrics && uiScreen && (
-                      <div
-                        className="ui-element-layer"
-                        style={{
-                          left: renderMetrics.left,
-                          top: renderMetrics.top,
-                          width: renderMetrics.width,
-                          height: renderMetrics.height,
-                        }}
-                      >
-                        {visibleUiElements.map((element) => {
-                          const isSelected = selectedUiElement?.uid === element.uid
-                          return (
-                            <button
-                              key={element.uid}
-                              type="button"
-                              className={`ui-element-box ${isSelected ? 'selected' : ''} ${element.clickable ? 'clickable' : ''}`}
-                              title={element.resource_id || element.content_desc || element.text || element.class_name}
-                              style={{
-                                left: `${(element.bounds.x / uiScreen.width) * 100}%`,
-                                top: `${(element.bounds.y / uiScreen.height) * 100}%`,
-                                width: `${(element.bounds.width / uiScreen.width) * 100}%`,
-                                height: `${(element.bounds.height / uiScreen.height) * 100}%`,
-                                zIndex: element.depth + 1,
-                              }}
-                              onClick={(event) => {
-                                event.preventDefault()
-                                event.stopPropagation()
-                                setSelectedUiElement(element)
-                              }}
-                            />
-                          )
-                        })}
+                    {uiElementOverlay}
+                  </TouchOverlay>
+                ) : isIosStaticDebug ? (
+                  <div className="static-debug-stage">
+                    {staticScreenshot ? (
+                      <img className="static-debug-screenshot" src={staticScreenshot} alt="iOS static screenshot" />
+                    ) : (
+                      <div className="player-placeholder static-debug-placeholder">
+                        <VideoCameraOutlined style={{ fontSize: 48, marginBottom: 12 }} />
+                        <p>iOS 静态调试模式</p>
+                        <span>刷新截图或获取控件后查看当前页面</span>
                       </div>
                     )}
-                  </TouchOverlay>
+                    {staticScreenshotLoading && (
+                      <div className="video-waiting-overlay">
+                        <div className="video-waiting-content">
+                          <span>正在刷新截图...</span>
+                        </div>
+                      </div>
+                    )}
+                    {uiElementOverlay}
+                  </div>
                 ) : (
                   <div className="player-placeholder">
                     <VideoCameraOutlined style={{ fontSize: 56, marginBottom: 16 }} />
@@ -1238,9 +1421,19 @@ export default function ScreenPage() {
           </div>
 
           <div className="device-stage-footer">
-            <Text type="secondary">FPS：{fps}</Text>
-            <Text type="secondary">网络延迟：{networkLatencyMs !== null ? `${networkLatencyMs}ms` : '--'}</Text>
-            <Text type="secondary">首帧：{browserFirstFrameMs !== null ? `${browserFirstFrameMs}ms` : '--'}</Text>
+            {isIosStaticDebug ? (
+              <>
+                <Text type="secondary">模式：iOS 静态调试</Text>
+                <Text type="secondary">控件：{uiElements.length}</Text>
+                <Text type="secondary">投屏/触控：未开启</Text>
+              </>
+            ) : (
+              <>
+                <Text type="secondary">FPS：{fps}</Text>
+                <Text type="secondary">网络延迟：{networkLatencyMs !== null ? `${networkLatencyMs}ms` : '--'}</Text>
+                <Text type="secondary">首帧：{browserFirstFrameMs !== null ? `${browserFirstFrameMs}ms` : '--'}</Text>
+              </>
+            )}
           </div>
         </section>
 
@@ -1274,9 +1467,14 @@ export default function ScreenPage() {
               <div className="workspace-panel inspector-panel">
                 <div className="workspace-toolbar">
                   <Space>
-                    <Button type="primary" loading={loadingUiHierarchy} disabled={!selectedDevice || !isPlaying || !uiHierarchySupported} onClick={fetchUiHierarchy}>
+                    <Button type="primary" loading={loadingUiHierarchy} disabled={!selectedDevice || !inspectReady || !uiHierarchySupported} onClick={fetchUiHierarchy}>
                       获取控件
                     </Button>
+                    {isIosStaticDebug && (
+                      <Button icon={<ReloadOutlined />} loading={staticScreenshotLoading} disabled={!selectedDevice || !screenshotSupported} onClick={() => refreshStaticScreenshot(false)}>
+                        刷新截图
+                      </Button>
+                    )}
                     <Button danger disabled={uiElements.length === 0} onClick={clearUiHierarchy}>
                       清理控件
                     </Button>
@@ -1331,7 +1529,7 @@ export default function ScreenPage() {
                       ))}
                     </>
                   ) : (
-                    <Text type="secondary">选择控件后显示可用于自动化脚本的 id、accessibility_id、text 和 xpath。</Text>
+                    <Text type="secondary">选择控件后显示可用于自动化脚本的 selector。</Text>
                   )}
                 </div>
               </div>

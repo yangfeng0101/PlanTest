@@ -23,7 +23,7 @@ Device responses keep legacy `os/os_version` fields, and also include runtime fi
 
 HarmonyOS phones connected through ADB are treated as Android-compatible devices: they display as HarmonyOS, while metrics, scrcpy screen streaming, remote control, screenshots, and UIAutomator hierarchy still use the ADB-compatible drivers.
 
-iOS v1 devices discovered through `IOS_AGENT_URL` expose script automation only when the Agent reports Appium/XCUITest ready. Screen mirroring, remote control, UI hierarchy, and the device-svc screenshot endpoint remain disabled for iOS until the dedicated WDA screen session path is implemented.
+iOS devices discovered through `IOS_AGENT_URL` expose script automation and static screenshot/UI hierarchy debug when the Agent reports Appium/XCUITest ready. Screen mirroring and remote control remain disabled for iOS until the dedicated realtime WDA screen session path is implemented.
 
 ## Prerequisites
 

@@ -174,6 +174,81 @@ class UIHierarchyService:
             tree=tree,
         )
 
+    def parse_ios_hierarchy(
+        self,
+        xml_text: str,
+        device_id: str,
+        screen: Optional[UIScreen] = None,
+    ) -> UIHierarchyResponse:
+        xml_text = self._extract_ios_xml(xml_text)
+        if not xml_text:
+            raise UIHierarchyError("iOS page source XML is empty")
+
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            raise UIHierarchyError(f"Invalid iOS page source XML: {exc}") from exc
+
+        elements: List[UIElement] = []
+        uid_counter = 0
+
+        def next_uid() -> str:
+            nonlocal uid_counter
+            uid = f"ios-node-{uid_counter}"
+            uid_counter += 1
+            return uid
+
+        def build_node(
+            xml_node: ET.Element,
+            parent_uid: Optional[str],
+            depth: int,
+            absolute_path: str,
+        ) -> Dict[str, Any]:
+            uid = next_uid()
+            element = self._ios_element_from_xml(xml_node, uid, parent_uid, depth, absolute_path)
+            elements.append(element)
+
+            tree_node: Dict[str, Any] = element.model_dump()
+            tree_node["children"] = []
+
+            type_counts: Dict[str, int] = {}
+            for child in list(xml_node):
+                class_name = self._ios_class_name(child)
+                type_counts[class_name] = type_counts.get(class_name, 0) + 1
+                child_path = f"{absolute_path}/{class_name}[{type_counts[class_name]}]"
+                tree_node["children"].append(build_node(child, uid, depth + 1, child_path))
+
+            return tree_node
+
+        root_class = self._ios_class_name(root)
+        tree: Dict[str, Any] = {
+            "uid": "root",
+            "class_name": root_class,
+            "children": [],
+        }
+
+        if list(root):
+            type_counts: Dict[str, int] = {}
+            for child in list(root):
+                class_name = self._ios_class_name(child)
+                type_counts[class_name] = type_counts.get(class_name, 0) + 1
+                absolute_path = f"/{root_class}/{class_name}[{type_counts[class_name]}]"
+                tree["children"].append(build_node(child, None, 0, absolute_path))
+        else:
+            tree["children"].append(build_node(root, None, 0, f"/{root_class}[1]"))
+
+        if screen is None or screen.width <= 0 or screen.height <= 0:
+            screen = self._ios_screen_from_elements(elements)
+
+        return UIHierarchyResponse(
+            device_id=device_id,
+            platform="ios",
+            captured_at=datetime.utcnow(),
+            screen=screen,
+            elements=elements,
+            tree=tree,
+        )
+
     def _element_from_xml(
         self,
         xml_node: ET.Element,
@@ -237,6 +312,18 @@ class UIHierarchyService:
             height=max(0, y2 - y1),
         )
 
+    def parse_ios_bounds(self, attrs: Dict[str, Any]) -> UIBounds:
+        x = self._to_float(attrs.get("x"), 0)
+        y = self._to_float(attrs.get("y"), 0)
+        width = self._to_float(attrs.get("width"), 0)
+        height = self._to_float(attrs.get("height"), 0)
+        return UIBounds(
+            x=round(x),
+            y=round(y),
+            width=max(0, round(width)),
+            height=max(0, round(height)),
+        )
+
     def _selector_suggestions(
         self,
         resource_id: str,
@@ -251,6 +338,38 @@ class UIHierarchyService:
             suggestions.append(SelectorSuggestion(type="accessibility_id", value=content_desc))
         if text:
             suggestions.append(SelectorSuggestion(type="text", value=text))
+        if xpath:
+            suggestions.append(SelectorSuggestion(type="xpath", value=xpath))
+        return suggestions
+
+    def _ios_selector_suggestions(
+        self,
+        accessibility_id: str,
+        label: str,
+        value: str,
+        class_name: str,
+        xpath: str,
+    ) -> List[SelectorSuggestion]:
+        suggestions: List[SelectorSuggestion] = []
+        if accessibility_id:
+            suggestions.append(SelectorSuggestion(type="accessibility_id", value=accessibility_id))
+            suggestions.append(SelectorSuggestion(type="ios_predicate", value=f"name == {self._ios_predicate_literal(accessibility_id)}"))
+        elif label:
+            suggestions.append(SelectorSuggestion(type="ios_predicate", value=f"label == {self._ios_predicate_literal(label)}"))
+        elif value:
+            suggestions.append(SelectorSuggestion(type="ios_predicate", value=f"value == {self._ios_predicate_literal(value)}"))
+        if class_name:
+            if accessibility_id:
+                suggestions.append(
+                    SelectorSuggestion(
+                        type="ios_class_chain",
+                        value=f"**/{class_name}[`name == {self._ios_predicate_literal(accessibility_id)}`]",
+                    )
+                )
+            else:
+                suggestions.append(SelectorSuggestion(type="ios_class_chain", value=f"**/{class_name}"))
+        if label:
+            suggestions.append(SelectorSuggestion(type="text", value=label))
         if xpath:
             suggestions.append(SelectorSuggestion(type="xpath", value=xpath))
         return suggestions
@@ -273,6 +392,82 @@ class UIHierarchyService:
             return f"{absolute_path}"
         return absolute_path
 
+    def _ios_primary_xpath(
+        self,
+        accessibility_id: str,
+        label: str,
+        value: str,
+        class_name: str,
+        absolute_path: str,
+    ) -> str:
+        if accessibility_id:
+            return f"//*[@name={self._xpath_literal(accessibility_id)}]"
+        if label:
+            return f"//*[@label={self._xpath_literal(label)}]"
+        if value:
+            return f"//*[@value={self._xpath_literal(value)}]"
+        if class_name:
+            return absolute_path
+        return absolute_path
+
+    def _ios_element_from_xml(
+        self,
+        xml_node: ET.Element,
+        uid: str,
+        parent_uid: Optional[str],
+        depth: int,
+        absolute_path: str,
+    ) -> UIElement:
+        attrs = xml_node.attrib
+        bounds = self.parse_ios_bounds(attrs)
+        center = UIPoint(
+            x=bounds.x + bounds.width // 2,
+            y=bounds.y + bounds.height // 2,
+        )
+        class_name = self._ios_class_name(xml_node)
+        name = attrs.get("name", "")
+        label = attrs.get("label", "")
+        value = attrs.get("value", "")
+        text = label or value or name
+        content_desc = name or label
+        xpath = self._ios_primary_xpath(content_desc, label, value, class_name, absolute_path)
+        enabled = self._to_bool(attrs.get("enabled"))
+        visible = self._to_bool(attrs.get("visible"))
+        accessible = self._to_bool(attrs.get("accessible"))
+
+        return UIElement(
+            uid=uid,
+            parent_uid=parent_uid,
+            depth=depth,
+            index=self._to_int(attrs.get("index"), 0),
+            class_name=class_name,
+            resource_id="",
+            text=text,
+            content_desc=content_desc,
+            package="",
+            bounds=bounds,
+            center=center,
+            clickable=enabled and (visible or accessible),
+            enabled=enabled,
+            selected=self._to_bool(attrs.get("selected")),
+            focused=self._to_bool(attrs.get("focused")),
+            scrollable=class_name in {"XCUIElementTypeScrollView", "XCUIElementTypeTable", "XCUIElementTypeCollectionView"},
+            xpath=xpath,
+            selector_suggestions=self._ios_selector_suggestions(content_desc, label, value, class_name, xpath),
+            attributes={
+                "absolute_xpath": absolute_path,
+                "type": class_name,
+                "name": name,
+                "label": label,
+                "value": value,
+                "visible": visible,
+                "accessible": accessible,
+            },
+        )
+
+    def _ios_class_name(self, xml_node: ET.Element) -> str:
+        return xml_node.attrib.get("type") or xml_node.tag or "XCUIElementTypeOther"
+
     def _xpath_literal(self, value: str) -> str:
         if "'" not in value:
             return f"'{value}'"
@@ -280,6 +475,13 @@ class UIHierarchyService:
             return f'"{value}"'
         parts = value.split("'")
         return "concat(" + ', "\"\'\"", '.join(f"'{part}'" for part in parts) + ")"
+
+    def _ios_predicate_literal(self, value: str) -> str:
+        if "'" not in value:
+            return f"'{value}'"
+        if '"' not in value:
+            return f'"{value}"'
+        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
     def _extract_xml(self, output: str) -> str:
         if not output:
@@ -292,11 +494,26 @@ class UIHierarchyService:
             return ""
         return output[start : end + len("</hierarchy>")].strip()
 
+    def _extract_ios_xml(self, output: str) -> str:
+        if not output:
+            return ""
+        start = output.find("<?xml")
+        if start == -1:
+            start = output.find("<AppiumAUT")
+        if start == -1:
+            start = output.find("<XCUIElementType")
+        if start == -1:
+            return ""
+        return output[start:].strip()
+
     def _screen_from_resolution(self, resolution: str) -> UIScreen:
         match = re.search(r"(\d+)x(\d+)", resolution or "")
         if not match:
             return UIScreen()
         return UIScreen(width=int(match.group(1)), height=int(match.group(2)))
+
+    def screen_from_resolution(self, resolution: str) -> UIScreen:
+        return self._screen_from_resolution(resolution)
 
     def _screen_from_elements(self, elements: List[UIElement]) -> UIScreen:
         max_x = 0
@@ -306,12 +523,32 @@ class UIHierarchyService:
             max_y = max(max_y, element.bounds.y + element.bounds.height)
         return UIScreen(width=max_x, height=max_y)
 
+    def _ios_screen_from_elements(self, elements: List[UIElement]) -> UIScreen:
+        for class_name in ("XCUIElementTypeApplication", "XCUIElementTypeWindow"):
+            for element in elements:
+                bounds = element.bounds
+                if (
+                    element.class_name == class_name
+                    and bounds.x == 0
+                    and bounds.y == 0
+                    and bounds.width > 0
+                    and bounds.height > 0
+                ):
+                    return UIScreen(width=bounds.width, height=bounds.height)
+        return self._screen_from_elements(elements)
+
     def _to_bool(self, value: Any) -> bool:
         return str(value).lower() == "true"
 
     def _to_int(self, value: Any, default: int) -> int:
         try:
             return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _to_float(self, value: Any, default: float) -> float:
+        try:
+            return float(value)
         except (TypeError, ValueError):
             return default
 

@@ -15,8 +15,8 @@ Docker services
                 |- IOS_APPIUM_HOST=http://host.docker.internal:4724
 ```
 
-iOS v1 只开放脚本自动化能力。投屏、远程触控、设备详情截图和
-`device-svc` 控件树暂不通过 iOS Agent 开放。
+iOS 当前开放脚本自动化和静态控件树调试能力。投屏、远程触控和
+LiveKit 实时流暂不通过 iOS Agent 开放。
 
 ## 本机前置条件
 
@@ -81,7 +81,19 @@ cd device-farm/services/ios-agent
 python3 -m venv "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv"
 . "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv/bin/activate"
 pip install -r requirements.txt
-IOS_APPIUM_HOST=http://127.0.0.1:4724 uvicorn app:app --host 127.0.0.1 --port 8015
+IOS_APPIUM_HOST=http://127.0.0.1:4724 \
+IOS_XCODE_ORG_ID=<apple-team-id> \
+IOS_XCODE_SIGNING_ID="Apple Development" \
+IOS_WDA_BUNDLE_ID=<unique-wda-bundle-id> \
+IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true \
+IOS_AGENT_AUTOMATION_READY_UDIDS=<verified-udid> \
+uvicorn app:app --host 127.0.0.1 --port 8015
+```
+
+如需调整静态调试 session 的保活时间：
+
+```bash
+IOS_AGENT_DEBUG_SESSION_TTL_SECONDS=300
 ```
 
 ## Docker 环境变量
@@ -101,7 +113,7 @@ IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true
 
 - `IOS_XCODE_ORG_ID` 是 Apple Developer Team ID。
 - `IOS_WDA_BUNDLE_ID` 必须全局唯一，例如 `com.company.devicefarm.WebDriverAgentRunner`。
-- 这些签名变量由 `test-svc` / `test-worker` 传给 Appium，不要写进脚本内容。
+- 这些签名变量由 `test-svc` / `test-worker` 和宿主机 iOS Agent 传给 Appium，不要写进脚本内容。
 
 修改后重建相关容器：
 
@@ -143,6 +155,25 @@ curl http://127.0.0.1:8015/devices
 - `automation_status=verified_ready`
 
 然后在脚本管理页选择该 iPhone 运行 iOS 脚本。
+
+## 静态控件树调试
+
+WDA smoke 验证通过并设置 `IOS_AGENT_AUTOMATION_READY_UDIDS` 后，投屏页会对
+iOS 设备开启静态调试模式：
+
+- 不启动 LiveKit，也不开放实时触控。
+- 可以点击“刷新截图”获取当前屏幕静态截图。
+- 可以点击“获取控件”拉取 Appium page source，并在截图上高亮控件范围。
+- 离开页面或切换设备时，会通过 `DELETE /devices/<udid>/debug-session` 释放
+  iOS Agent 内缓存的 Appium debug session。
+
+也可以直接验证 Agent 内部接口：
+
+```bash
+curl http://127.0.0.1:8015/devices/<verified-udid>/screenshot
+curl http://127.0.0.1:8015/devices/<verified-udid>/source
+curl -X DELETE http://127.0.0.1:8015/devices/<verified-udid>/debug-session
+```
 
 ## iOS Smoke 示例
 

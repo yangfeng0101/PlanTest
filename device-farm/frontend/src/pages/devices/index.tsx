@@ -13,7 +13,7 @@ import DeviceCard from '@/components/DeviceCard'
 import { useDeviceStore } from '@/stores/deviceStore'
 import { metricsApi } from '@/services/api'
 import type { Device, DeviceMetrics } from '@/types'
-import { formatDeviceOs } from '@/utils/device'
+import { formatDeviceOs, screenDebugLabel, supportsScreenDebug } from '@/utils/device'
 
 const { Search } = Input
 const { Option } = Select
@@ -236,7 +236,10 @@ export default function DevicesPage() {
     })
 
   const handleScreen = (id: string) => {
-    setScreenSessions(prev => ({ ...prev, [id]: true }))
+    const device = devices.find((item) => item.id === id)
+    if (device?.capabilities.screenMirror) {
+      setScreenSessions(prev => ({ ...prev, [id]: true }))
+    }
     window.open(`/screen?deviceId=${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer')
   }
 
@@ -385,7 +388,8 @@ export default function DevicesPage() {
       key: 'action',
       render: (_: unknown, record: Device) => {
         const screenActive = Boolean(screenSessions[record.id])
-        const screenDisabled = record.status === 'offline' || !record.capabilities.screenMirror || screenActive
+        const debugLabel = screenDebugLabel(record)
+        const screenDisabled = record.status === 'offline' || !supportsScreenDebug(record) || screenActive
 
         return (
           <Space>
@@ -397,7 +401,7 @@ export default function DevicesPage() {
                 icon={<PlayCircleOutlined />}
                 disabled={screenDisabled}
               >
-                {screenActive ? '占用中' : '投屏'}
+                {screenActive ? '占用中' : debugLabel}
               </Button>
             </Tooltip>
           </Space>

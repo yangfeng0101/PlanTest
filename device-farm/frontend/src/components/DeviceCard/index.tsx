@@ -5,6 +5,7 @@ import FundOutlined from '@ant-design/icons/FundOutlined'
 import CloudOutlined from '@ant-design/icons/CloudOutlined'
 import WarningOutlined from '@ant-design/icons/WarningOutlined'
 import type { Device, DeviceMetrics } from '@/types'
+import { screenDebugLabel, supportsScreenDebug } from '@/utils/device'
 import './DeviceCard.css'
 
 interface DeviceCardProps {
@@ -51,7 +52,8 @@ export default function DeviceCard({
     ? { color: 'orange', text: '占用中' }
     : statusConfig[device.status] || { color: 'default', text: '未知' }
   const batteryLevel = metrics?.battery_level ?? device.batteryLevel
-  const canScreenMirror = device.status !== 'offline' && device.capabilities.screenMirror && !screenActive
+  const debugLabel = screenDebugLabel(device)
+  const canOpenScreenDebug = device.status !== 'offline' && supportsScreenDebug(device) && !screenActive
 
   // Check if device has abnormal metrics
   const hasWarning = metrics && (
@@ -91,10 +93,10 @@ export default function DeviceCard({
             e.stopPropagation()
             onScreen(device.id)
           }}
-          disabled={!canScreenMirror}
+          disabled={!canOpenScreenDebug}
           title={screenActive ? '设备已被投屏会话占用' : undefined}
         >
-          {screenActive ? '占用中' : '投屏'}
+          {screenActive ? '占用中' : debugLabel}
         </Button>,
       ]}
     >

@@ -21,6 +21,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def is_ios_device(device: Device) -> bool:
+    return str(device.os).lower() == "ios"
+
+
+def device_status_value(device: Device) -> str:
+    return device.status.value if isinstance(device.status, DeviceStatus) else str(device.status)
+
+
+def ensure_ios_debug_available(device: Device) -> None:
+    if is_ios_device(device) and device_status_value(device) != DeviceStatus.ONLINE.value:
+        raise HTTPException(
+            status_code=409,
+            detail="iOS 静态调试需要独占 Appium/WDA，当前设备正在被占用或不可用",
+        )
+
+
 @router.get("", response_model=DeviceListResponse)
 async def list_devices(
     status: Optional[DeviceStatus] = Query(None, description="Filter by status"),
@@ -107,8 +123,12 @@ async def get_screenshot(device_id: str):
         raise HTTPException(status_code=404, detail="Device not found")
     if not device.capabilities.screenshot:
         raise HTTPException(status_code=400, detail="Screenshot is not supported by this device connection")
+    ensure_ios_debug_available(device)
 
-    screenshot = await device_service.get_screenshot(device_id)
+    try:
+        screenshot = await device_service.get_screenshot(device_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     if not screenshot:
         raise HTTPException(status_code=404, detail="Device not found or screenshot failed")
 
@@ -132,17 +152,42 @@ async def get_ui_hierarchy(device_id: str):
             status_code=400,
             detail="UI hierarchy is not supported by this device connection",
         )
+    ensure_ios_debug_available(device)
 
     try:
+        if is_ios_device(device):
+            source = await device_service.get_ios_ui_source(device_id)
+            return ui_hierarchy_service.parse_ios_hierarchy(
+                xml_text=source,
+                device_id=device_id,
+            )
         return await ui_hierarchy_service.get_ui_hierarchy(
             device_id=device_id,
             screen_resolution=device.screen_resolution,
         )
     except UIHierarchyError as e:
         raise HTTPException(status_code=500, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to get UI hierarchy for {device_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get UI hierarchy")
+
+
+@router.delete("/{device_id}/debug-session")
+async def release_debug_session(device_id: str):
+    """Release an iOS static debug Appium session if one exists."""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not is_ios_device(device):
+        return {"device_id": device_id, "released": False}
+
+    try:
+        released = await device_service.release_ios_debug_session(device_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"device_id": device_id, "released": released}
 
 
 @router.post("/{device_id}/command")

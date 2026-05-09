@@ -92,3 +92,16 @@ export const formatDeviceOs = (device: Device) => {
   const version = device.displayOsVersion || device.osVersion
   return `${name} ${version}`.trim()
 }
+
+export const supportsScreenDebug = (device: Device) => (
+  device.capabilities.screenMirror
+  || (
+    device.os.toLowerCase() === 'ios'
+    && device.capabilities.screenshot
+    && device.capabilities.uiHierarchy
+  )
+)
+
+export const screenDebugLabel = (device: Device) => (
+  device.capabilities.screenMirror ? '投屏' : '调试'
+)

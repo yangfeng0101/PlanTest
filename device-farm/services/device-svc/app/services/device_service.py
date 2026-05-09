@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
 import asyncio
+import base64
 import json
 import httpx
 
@@ -139,13 +140,16 @@ class DeviceService:
         return [device for device in devices if isinstance(device, dict)]
 
     def _apply_ios_automation_capability(self, device: Device, automation_ready: bool) -> None:
-        """iOS v1 exposes script automation only; screen/control remain disabled."""
+        """iOS uses Appium/WDA for automation and static debug; screen/control remain disabled."""
         device.drivers = DeviceDrivers(
             metrics="pymobiledevice3",
+            ui_hierarchy="appium-xcuitest" if automation_ready else "",
             automation="appium-xcuitest" if automation_ready else "",
         )
         device.capabilities = DeviceCapabilities(
+            ui_hierarchy=automation_ready,
             metrics=True,
+            screenshot=automation_ready,
             automation=automation_ready,
         )
 
@@ -411,10 +415,61 @@ class DeviceService:
 
     async def get_screenshot(self, device_id: str) -> Optional[bytes]:
         """Get device screenshot"""
-        if device_id not in self._devices:
+        device = self._devices.get(device_id)
+        if not device:
             return None
 
+        if str(device.os).lower() == "ios":
+            return await self.get_ios_screenshot(device_id)
+
         return await adb_service.get_screenshot(device_id)
+
+    async def _request_ios_agent(self, path: str, method: str = "GET") -> Dict[str, Any]:
+        if not settings.IOS_AGENT_URL:
+            raise RuntimeError("iOS Agent is not configured")
+
+        url = f"{settings.IOS_AGENT_URL.rstrip('/')}{path}"
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.request(method, url)
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"Unable to reach iOS Agent: {exc}") from exc
+
+        if response.status_code >= 400:
+            detail = response.text
+            try:
+                payload = response.json()
+                if isinstance(payload, dict):
+                    detail = str(payload.get("detail") or detail)
+            except Exception:
+                pass
+            raise RuntimeError(detail or f"iOS Agent request failed with HTTP {response.status_code}")
+
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("iOS Agent returned invalid payload")
+        return payload
+
+    async def get_ios_screenshot(self, device_id: str) -> Optional[bytes]:
+        payload = await self._request_ios_agent(f"/devices/{device_id}/screenshot")
+        image = payload.get("image")
+        if not isinstance(image, str) or not image:
+            return None
+        try:
+            return base64.b64decode(image)
+        except Exception as exc:
+            raise RuntimeError("iOS Agent returned invalid screenshot data") from exc
+
+    async def get_ios_ui_source(self, device_id: str) -> str:
+        payload = await self._request_ios_agent(f"/devices/{device_id}/source")
+        source = payload.get("source")
+        if not isinstance(source, str) or not source:
+            raise RuntimeError("iOS Agent returned empty page source")
+        return source
+
+    async def release_ios_debug_session(self, device_id: str) -> bool:
+        payload = await self._request_ios_agent(f"/devices/{device_id}/debug-session", method="DELETE")
+        return bool(payload.get("released"))
 
     async def execute_command(self, device_id: str, command: str) -> str:
         """Execute shell command on device"""

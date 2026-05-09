@@ -3,8 +3,9 @@ import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault("DEBUG", "false")
+os.environ["DEBUG"] = "false"
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models.ui_hierarchy import UIScreen
 from app.services.ui_hierarchy_service import UIHierarchyError, UIHierarchyService
@@ -17,6 +18,15 @@ SAMPLE_XML = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
     <node index="1" text="用户名" resource-id="" class="android.widget.TextView" package="com.demo" content-desc="" clickable="false" enabled="true" selected="false" focused="false" scrollable="false" bounds="[20,80][220,120]" />
   </node>
 </hierarchy>
+"""
+
+IOS_SAMPLE_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<AppiumAUT>
+  <XCUIElementTypeApplication type="XCUIElementTypeApplication" name="Settings" label="Settings" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852">
+    <XCUIElementTypeButton type="XCUIElementTypeButton" name="General" label="通用" enabled="true" visible="true" accessible="true" x="20" y="120" width="120" height="44" />
+    <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" label="Apple ID" value="Apple ID" enabled="true" visible="true" accessible="true" x="20.5" y="180.2" width="180.4" height="28.1" />
+  </XCUIElementTypeApplication>
+</AppiumAUT>
 """
 
 
@@ -79,6 +89,53 @@ class UIHierarchyServiceTest(unittest.TestCase):
     def test_invalid_xml_fails_cleanly(self):
         with self.assertRaises(UIHierarchyError):
             self.service.parse_android_hierarchy("<hierarchy><node></hierarchy>", "device-1")
+
+    def test_parse_ios_source_elements_and_selectors(self):
+        result = self.service.parse_ios_hierarchy(
+            IOS_SAMPLE_XML,
+            "ios-1",
+        )
+
+        self.assertEqual(result.device_id, "ios-1")
+        self.assertEqual(result.platform, "ios")
+        self.assertEqual(result.screen.width, 393)
+        self.assertEqual(len(result.elements), 3)
+
+        button = next(e for e in result.elements if e.class_name == "XCUIElementTypeButton")
+        self.assertEqual(button.text, "通用")
+        self.assertEqual(button.content_desc, "General")
+        self.assertTrue(button.clickable)
+        self.assertEqual(button.bounds.x, 20)
+        self.assertEqual(button.bounds.y, 120)
+        self.assertEqual(button.bounds.width, 120)
+        self.assertEqual(button.bounds.height, 44)
+        self.assertEqual(button.xpath, "//*[@name='General']")
+        self.assertIn("accessible", button.attributes)
+        self.assertEqual(
+            [s.type for s in button.selector_suggestions],
+            ["accessibility_id", "ios_predicate", "ios_class_chain", "text", "xpath"],
+        )
+
+        text = next(e for e in result.elements if e.text == "Apple ID")
+        self.assertEqual(text.center.x, 110)
+        self.assertEqual(text.center.y, 194)
+        self.assertEqual(text.selector_suggestions[0].type, "accessibility_id")
+
+    def test_ios_screen_uses_viewport_bounds_not_offscreen_elements(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<AppiumAUT>
+  <XCUIElementTypeApplication type="XCUIElementTypeApplication" x="0" y="0" width="414" height="896">
+    <XCUIElementTypeWindow type="XCUIElementTypeWindow" x="0" y="0" width="414" height="896">
+      <XCUIElementTypeOther type="XCUIElementTypeOther" x="414" y="896" width="414" height="896" />
+    </XCUIElementTypeWindow>
+  </XCUIElementTypeApplication>
+</AppiumAUT>
+"""
+
+        result = self.service.parse_ios_hierarchy(xml, "ios-1")
+
+        self.assertEqual(result.screen.width, 414)
+        self.assertEqual(result.screen.height, 896)
 
 
 if __name__ == "__main__":
