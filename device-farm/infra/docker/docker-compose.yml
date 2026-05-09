@@ -119,6 +119,7 @@ services:
       - ANDROID_ADB_SERVER_PORT=5037
       - REPORT_SVC_URL=http://report-svc:8002
       - IOS_AGENT_URL=${IOS_AGENT_URL:-}
+      - IOS_AGENT_REQUEST_TIMEOUT=${IOS_AGENT_REQUEST_TIMEOUT:-90}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

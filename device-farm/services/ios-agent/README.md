@@ -11,6 +11,7 @@ python3 -m venv "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv"
 . "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv/bin/activate"
 pip install -r requirements.txt
 IOS_APPIUM_HOST=http://127.0.0.1:4724 \
+IOS_AGENT_PYTHON="$PWD/.venv/bin/python" \
 IOS_XCODE_ORG_ID=TEAMID123 \
 IOS_XCODE_SIGNING_ID="Apple Development" \
 IOS_WDA_BUNDLE_ID=com.example.WebDriverAgentRunner \
@@ -46,7 +47,11 @@ page:
 
 - `GET /devices/{udid}/screenshot`
 - `GET /devices/{udid}/source`
+- `POST /devices/{udid}/tap`
+- `POST /devices/{udid}/text`
 - `DELETE /devices/{udid}/debug-session`
 
 These endpoints create a cached Appium XCUITest debug session per UDID. They do
-not provide realtime screen streaming or remote touch control.
+not provide realtime screen streaming or continuous remote touch control. Tap
+coordinates use Appium/WDA logical points, and text input is sent to the
+currently focused element after the user taps an input field.

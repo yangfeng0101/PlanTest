@@ -15,8 +15,8 @@ Docker services
                 |- IOS_APPIUM_HOST=http://host.docker.internal:4724
 ```
 
-iOS 当前开放脚本自动化和静态控件树调试能力。投屏、远程触控和
-LiveKit 实时流暂不通过 iOS Agent 开放。
+iOS 当前开放脚本自动化、静态控件树调试、静态点按和文本输入能力。
+实时投屏、连续触控流和 LiveKit 实时流暂不通过 iOS Agent 开放。
 
 ## 本机前置条件
 
@@ -82,12 +82,13 @@ python3 -m venv "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv"
 . "${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv/bin/activate"
 pip install -r requirements.txt
 IOS_APPIUM_HOST=http://127.0.0.1:4724 \
+IOS_AGENT_PYTHON="${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv/bin/python" \
 IOS_XCODE_ORG_ID=<apple-team-id> \
 IOS_XCODE_SIGNING_ID="Apple Development" \
 IOS_WDA_BUNDLE_ID=<unique-wda-bundle-id> \
 IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true \
 IOS_AGENT_AUTOMATION_READY_UDIDS=<verified-udid> \
-uvicorn app:app --host 127.0.0.1 --port 8015
+uvicorn app:app --host 0.0.0.0 --port 8015
 ```
 
 如需调整静态调试 session 的保活时间：
@@ -107,12 +108,14 @@ IOS_XCODE_ORG_ID=<apple-team-id>
 IOS_XCODE_SIGNING_ID=Apple Development
 IOS_WDA_BUNDLE_ID=<unique-wda-bundle-id>
 IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true
+IOS_AGENT_REQUEST_TIMEOUT=90
 ```
 
 说明：
 
 - `IOS_XCODE_ORG_ID` 是 Apple Developer Team ID。
 - `IOS_WDA_BUNDLE_ID` 必须全局唯一，例如 `com.company.devicefarm.WebDriverAgentRunner`。
+- `IOS_AGENT_REQUEST_TIMEOUT` 控制 Docker 内服务等待 iOS Agent 的时间；首次启动 WDA 可能较慢，建议不低于 90 秒。
 - 这些签名变量由 `test-svc` / `test-worker` 和宿主机 iOS Agent 传给 Appium，不要写进脚本内容。
 
 修改后重建相关容器：
@@ -156,14 +159,17 @@ curl http://127.0.0.1:8015/devices
 
 然后在脚本管理页选择该 iPhone 运行 iOS 脚本。
 
-## 静态控件树调试
+## 静态控件树与操作调试
 
 WDA smoke 验证通过并设置 `IOS_AGENT_AUTOMATION_READY_UDIDS` 后，投屏页会对
 iOS 设备开启静态调试模式：
 
-- 不启动 LiveKit，也不开放实时触控。
+- 不启动 LiveKit，也不开放实时投屏或连续触控流。
 - 可以点击“刷新截图”获取当前屏幕静态截图。
 - 可以点击“获取控件”拉取 Appium page source，并在截图上高亮控件范围。
+- 可以开启“点按模式”后点击截图坐标，或选择控件后点击控件中心点。
+- 可以使用键盘输入面板向当前焦点输入文本；输入前需要先点按目标输入框。
+- 坐标使用 Appium/WDA 的逻辑点坐标，不是 Retina 物理截图像素。
 - 离开页面或切换设备时，会通过 `DELETE /devices/<udid>/debug-session` 释放
   iOS Agent 内缓存的 Appium debug session。
 
@@ -172,6 +178,12 @@ iOS 设备开启静态调试模式：
 ```bash
 curl http://127.0.0.1:8015/devices/<verified-udid>/screenshot
 curl http://127.0.0.1:8015/devices/<verified-udid>/source
+curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/tap \
+  -H 'Content-Type: application/json' \
+  -d '{"x":120,"y":240}'
+curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/text \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"hello"}'
 curl -X DELETE http://127.0.0.1:8015/devices/<verified-udid>/debug-session
 ```
 

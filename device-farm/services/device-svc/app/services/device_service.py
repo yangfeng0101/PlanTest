@@ -182,7 +182,12 @@ class DeviceService:
 
     async def scan_devices(self) -> List[Device]:
         """Scan and update device list"""
-        device_list = await adb_service.list_devices()
+        try:
+            device_list = await adb_service.list_devices()
+        except Exception as e:
+            logger.error(f"ADB device scan failed, marking ADB devices offline for this scan: {e}")
+            device_list = []
+
         ios_device_list = await self._fetch_ios_agent_devices()
         current_ids = set()
 
@@ -424,14 +429,23 @@ class DeviceService:
 
         return await adb_service.get_screenshot(device_id)
 
-    async def _request_ios_agent(self, path: str, method: str = "GET") -> Dict[str, Any]:
+    async def _request_ios_agent(
+        self,
+        path: str,
+        method: str = "GET",
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         if not settings.IOS_AGENT_URL:
             raise RuntimeError("iOS Agent is not configured")
 
         url = f"{settings.IOS_AGENT_URL.rstrip('/')}{path}"
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.request(method, url)
+            async with httpx.AsyncClient(timeout=settings.IOS_AGENT_REQUEST_TIMEOUT) as client:
+                response = await client.request(method, url, json=payload)
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                f"iOS Agent request timed out after {settings.IOS_AGENT_REQUEST_TIMEOUT:.0f}s"
+            ) from exc
         except httpx.RequestError as exc:
             raise RuntimeError(f"Unable to reach iOS Agent: {exc}") from exc
 
@@ -451,7 +465,7 @@ class DeviceService:
         return payload
 
     async def get_ios_screenshot(self, device_id: str) -> Optional[bytes]:
-        payload = await self._request_ios_agent(f"/devices/{device_id}/screenshot")
+        payload = await self.get_ios_screenshot_payload(device_id)
         image = payload.get("image")
         if not isinstance(image, str) or not image:
             return None
@@ -459,6 +473,9 @@ class DeviceService:
             return base64.b64decode(image)
         except Exception as exc:
             raise RuntimeError("iOS Agent returned invalid screenshot data") from exc
+
+    async def get_ios_screenshot_payload(self, device_id: str) -> Dict[str, Any]:
+        return await self._request_ios_agent(f"/devices/{device_id}/screenshot")
 
     async def get_ios_ui_source(self, device_id: str) -> str:
         payload = await self._request_ios_agent(f"/devices/{device_id}/source")
@@ -470,6 +487,20 @@ class DeviceService:
     async def release_ios_debug_session(self, device_id: str) -> bool:
         payload = await self._request_ios_agent(f"/devices/{device_id}/debug-session", method="DELETE")
         return bool(payload.get("released"))
+
+    async def tap_ios_debug(self, device_id: str, x: float, y: float) -> Dict[str, Any]:
+        return await self._request_ios_agent(
+            f"/devices/{device_id}/tap",
+            method="POST",
+            payload={"x": x, "y": y},
+        )
+
+    async def input_ios_debug_text(self, device_id: str, text: str) -> Dict[str, Any]:
+        return await self._request_ios_agent(
+            f"/devices/{device_id}/text",
+            method="POST",
+            payload={"text": text},
+        )
 
     async def execute_command(self, device_id: str, command: str) -> str:
         """Execute shell command on device"""

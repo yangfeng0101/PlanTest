@@ -3,10 +3,12 @@ import json
 import os
 import sys
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 
 APPIUM_HOST = os.getenv("IOS_APPIUM_HOST", "http://127.0.0.1:4724").rstrip("/")
@@ -23,9 +25,40 @@ debug_sessions: dict[str, dict[str, Any]] = {}
 debug_session_locks: dict[str, asyncio.Lock] = {}
 
 
+class TapRequest(BaseModel):
+    x: float = Field(..., ge=0)
+    y: float = Field(..., ge=0)
+
+
+class TextRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+
+def python_executable() -> str:
+    configured = os.getenv("IOS_AGENT_PYTHON")
+    if configured:
+        return configured
+
+    virtual_env = os.getenv("VIRTUAL_ENV")
+    if virtual_env:
+        candidate = Path(virtual_env) / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        if candidate.exists():
+            return str(candidate)
+
+    candidate = Path(sys.prefix) / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if candidate.exists():
+        return str(candidate)
+
+    local_venv = Path(__file__).resolve().parent / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if local_venv.exists():
+        return str(local_venv)
+
+    return sys.executable
+
+
 async def run_pymobiledevice3_json(*args: str) -> Any:
     process = await asyncio.create_subprocess_exec(
-        sys.executable,
+        python_executable(),
         "-m",
         "pymobiledevice3",
         *args,
@@ -105,10 +138,25 @@ def ios_debug_capabilities(udid: str) -> dict[str, Any]:
 
 def sanitize_appium_error(detail: str) -> str:
     sanitized = detail or ""
+    try:
+        payload = json.loads(sanitized)
+        value = payload.get("value") if isinstance(payload, dict) else {}
+        message = value.get("message") if isinstance(value, dict) else None
+        if message:
+            sanitized = str(message)
+    except Exception:
+        pass
+
     for env_name in ("IOS_XCODE_ORG_ID", "IOS_XCODE_SIGNING_ID", "IOS_WDA_BUNDLE_ID"):
         value = os.getenv(env_name, "").strip()
         if value:
             sanitized = sanitized.replace(value, "<configured>")
+
+    lower = sanitized.lower()
+    if "not been explicitly trusted" in lower or "invalid code signature" in lower:
+        return f"WDA 启动被 iPhone 安全策略拒绝：请在手机“设置 > 通用 > VPN 与设备管理”信任当前开发者证书后重试。原始错误：{sanitized}"
+    if "xcodebuild failed with code 65" in lower:
+        return f"WDA 启动失败：xcodebuild 返回 65，通常是 Xcode 签名、证书信任或 WDA 构建配置问题。原始错误：{sanitized}"
     return sanitized
 
 
@@ -216,17 +264,30 @@ def is_invalid_session_response(response: httpx.Response) -> bool:
     return str(error).lower() in {"invalid session id", "no such driver"}
 
 
-async def appium_session_get(udid: str, endpoint: str) -> tuple[Any, bool]:
+async def appium_session_request(
+    udid: str,
+    method: str,
+    endpoint: str,
+    payload: Optional[dict[str, Any]] = None,
+) -> tuple[Any, bool]:
     session_id, reused = await get_debug_session(udid)
     async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
-        response = await client.get(f"{APPIUM_HOST}/session/{session_id}/{endpoint.lstrip('/')}")
+        response = await client.request(
+            method,
+            f"{APPIUM_HOST}/session/{session_id}/{endpoint.lstrip('/')}",
+            json=payload,
+        )
 
     if is_invalid_session_response(response):
         async with debug_session_lock(udid):
             debug_sessions.pop(udid, None)
         session_id, _ = await get_debug_session(udid)
         async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
-            response = await client.get(f"{APPIUM_HOST}/session/{session_id}/{endpoint.lstrip('/')}")
+            response = await client.request(
+                method,
+                f"{APPIUM_HOST}/session/{session_id}/{endpoint.lstrip('/')}",
+                json=payload,
+            )
         reused = False
 
     if response.status_code >= 400:
@@ -235,6 +296,78 @@ async def appium_session_get(udid: str, endpoint: str) -> tuple[Any, bool]:
     data = response.json()
     value = data.get("value") if isinstance(data, dict) else None
     return value, reused
+
+
+async def appium_session_get(udid: str, endpoint: str) -> tuple[Any, bool]:
+    return await appium_session_request(udid, "GET", endpoint)
+
+
+async def appium_session_post(udid: str, endpoint: str, payload: dict[str, Any]) -> tuple[Any, bool]:
+    return await appium_session_request(udid, "POST", endpoint, payload)
+
+
+def screen_from_window_rect(value: Any) -> Optional[dict[str, int]]:
+    if not isinstance(value, dict):
+        return None
+    width = int_or_default(value.get("width"), 0)
+    height = int_or_default(value.get("height"), 0)
+    if width <= 0 or height <= 0:
+        return None
+    return {"width": width, "height": height}
+
+
+async def appium_screen(udid: str) -> Optional[dict[str, int]]:
+    try:
+        value, _ = await appium_session_get(udid, "window/rect")
+        return screen_from_window_rect(value)
+    except Exception:
+        return None
+
+
+def tap_actions_payload(x: float, y: float) -> dict[str, Any]:
+    point_x = round(x)
+    point_y = round(y)
+    return {
+        "actions": [
+            {
+                "type": "pointer",
+                "id": "finger1",
+                "parameters": {"pointerType": "touch"},
+                "actions": [
+                    {"type": "pointerMove", "duration": 0, "x": point_x, "y": point_y, "origin": "viewport"},
+                    {"type": "pointerDown", "button": 0},
+                    {"type": "pause", "duration": 100},
+                    {"type": "pointerUp", "button": 0},
+                ],
+            }
+        ]
+    }
+
+
+def element_id_from_active_element(value: Any) -> Optional[str]:
+    if not isinstance(value, dict):
+        return None
+    for key in ("element-6066-11e4-a52e-4f735466cecf", "ELEMENT"):
+        element_id = value.get(key)
+        if element_id:
+            return str(element_id)
+    return None
+
+
+def text_value_payload(text: str) -> dict[str, Any]:
+    return {"text": text, "value": list(text)}
+
+
+def is_no_active_element_error(detail: Any) -> bool:
+    text = str(detail or "").lower()
+    return any(
+        token in text
+        for token in (
+            "unable to find an element",
+            "no such element",
+            "active element",
+        )
+    )
 
 
 def screen_resolution(product_type: str) -> str:
@@ -366,6 +499,7 @@ async def get_device_screenshot(udid: str):
         "image": value,
         "format": "png",
         "session_reused": reused,
+        "screen": await appium_screen(udid),
     }
 
 
@@ -390,4 +524,44 @@ async def delete_debug_session(udid: str):
     return {
         "device_id": udid,
         "released": bool(cached),
+    }
+
+
+@app.post("/devices/{udid}/tap")
+async def tap_device(udid: str, request: TapRequest):
+    _, reused = await appium_session_post(udid, "actions", tap_actions_payload(request.x, request.y))
+    try:
+        await appium_session_post(udid, "actions", {"actions": []})
+    except HTTPException:
+        pass
+    return {
+        "device_id": udid,
+        "success": True,
+        "x": round(request.x),
+        "y": round(request.y),
+        "session_reused": reused,
+        "screen": await appium_screen(udid),
+    }
+
+
+@app.post("/devices/{udid}/text")
+async def input_text_device(udid: str, request: TextRequest):
+    try:
+        value, reused = await appium_session_get(udid, "element/active")
+    except HTTPException as exc:
+        if is_no_active_element_error(exc.detail):
+            raise HTTPException(status_code=409, detail="No active iOS input element. Tap an input field first.") from exc
+        raise
+
+    element_id = element_id_from_active_element(value)
+    if not element_id:
+        raise HTTPException(status_code=409, detail="No active iOS input element. Tap an input field first.")
+
+    await appium_session_post(udid, f"element/{element_id}/value", text_value_payload(request.text))
+    return {
+        "device_id": udid,
+        "success": True,
+        "text_length": len(request.text),
+        "session_reused": reused,
+        "screen": await appium_screen(udid),
     }

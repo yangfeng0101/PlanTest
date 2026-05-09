@@ -4,6 +4,7 @@ from typing import Optional, List
 import logging
 import base64
 from datetime import datetime
+from pydantic import BaseModel, Field
 
 from app.models import (
     Device, DeviceUpdate, DeviceFilter, DeviceStatus,
@@ -21,6 +22,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class IOSDebugTapRequest(BaseModel):
+    x: float = Field(..., ge=0)
+    y: float = Field(..., ge=0)
+
+
+class IOSDebugTextRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+
+
 def is_ios_device(device: Device) -> bool:
     return str(device.os).lower() == "ios"
 
@@ -35,6 +45,14 @@ def ensure_ios_debug_available(device: Device) -> None:
             status_code=409,
             detail="iOS 静态调试需要独占 Appium/WDA，当前设备正在被占用或不可用",
         )
+
+
+def ensure_ios_static_operation_available(device: Device) -> None:
+    if not is_ios_device(device):
+        raise HTTPException(status_code=400, detail="iOS static debug operation is only supported for iOS devices")
+    ensure_ios_debug_available(device)
+    if not device.capabilities.automation:
+        raise HTTPException(status_code=400, detail="iOS automation is not available for this device")
 
 
 @router.get("", response_model=DeviceListResponse)
@@ -126,6 +144,17 @@ async def get_screenshot(device_id: str):
     ensure_ios_debug_available(device)
 
     try:
+        if is_ios_device(device):
+            payload = await device_service.get_ios_screenshot_payload(device_id)
+            image = payload.get("image")
+            if not image:
+                raise HTTPException(status_code=404, detail="Device not found or screenshot failed")
+            return {
+                "device_id": device_id,
+                "image": image,
+                "format": payload.get("format") or "png",
+                "screen": payload.get("screen"),
+            }
         screenshot = await device_service.get_screenshot(device_id)
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -188,6 +217,34 @@ async def release_debug_session(device_id: str):
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return {"device_id": device_id, "released": released}
+
+
+@router.post("/{device_id}/debug/tap")
+async def tap_ios_static_debug(device_id: str, request: IOSDebugTapRequest):
+    """Perform a one-shot iOS static debug tap using Appium/WDA."""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    ensure_ios_static_operation_available(device)
+
+    try:
+        return await device_service.tap_ios_debug(device_id, request.x, request.y)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/{device_id}/debug/text")
+async def input_ios_static_debug_text(device_id: str, request: IOSDebugTextRequest):
+    """Input text into the currently focused iOS element using Appium/WDA."""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    ensure_ios_static_operation_available(device)
+
+    try:
+        return await device_service.input_ios_debug_text(device_id, request.text)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/{device_id}/command")

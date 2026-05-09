@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Alert, Button, Form, Image, Input, List, Modal, Popover, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Form, Image, Input, List, Modal, Popover, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
 import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined'
 import FullscreenOutlined from '@ant-design/icons/FullscreenOutlined'
@@ -132,6 +132,11 @@ interface RenderMetrics {
   top: number
   width: number
   height: number
+}
+
+interface StaticDebugActionResponse {
+  success?: boolean
+  screen?: { width: number; height: number } | null
 }
 
 interface ScreenSessionDiagnostics {
@@ -379,6 +384,8 @@ export default function ScreenPage() {
   const [debugScriptSnapshot, setDebugScriptSnapshot] = useState('')
   const [staticScreenshot, setStaticScreenshot] = useState<string | null>(null)
   const [staticScreenshotLoading, setStaticScreenshotLoading] = useState(false)
+  const [staticActionLoading, setStaticActionLoading] = useState(false)
+  const [iosTapMode, setIosTapMode] = useState(false)
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -644,7 +651,7 @@ export default function ScreenPage() {
     setUiScreen(null)
   }, [])
 
-  const refreshStaticScreenshot = useCallback(async (silent = false, timeoutMs = 18000) => {
+  const refreshStaticScreenshot = useCallback(async (silent = false, timeoutMs = 90000) => {
     if (!selectedDevice || !isIosStaticDebug) return false
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
@@ -662,6 +669,10 @@ export default function ScreenPage() {
         throw new Error('截图数据为空')
       }
       setStaticScreenshot(`data:image/${data.format || 'png'};base64,${data.image}`)
+      if (data.screen?.width > 0 && data.screen?.height > 0) {
+        setUiScreen({ width: data.screen.width, height: data.screen.height })
+        setDeviceInfo({ width: data.screen.width, height: data.screen.height })
+      }
       if (!silent) {
         message.success('截图已刷新')
       }
@@ -691,7 +702,7 @@ export default function ScreenPage() {
 
     setLoadingUiHierarchy(true)
     const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 18000)
+    const timeoutId = window.setTimeout(() => controller.abort(), isIosStaticDebug ? 90000 : 18000)
     try {
       if (isIosStaticDebug) {
         const screenshotOk = await refreshStaticScreenshot(true)
@@ -730,6 +741,83 @@ export default function ScreenPage() {
       setLoadingUiHierarchy(false)
     }
   }, [currentDevice, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice])
+
+  const postStaticDebugAction = useCallback(async (
+    path: 'tap' | 'text',
+    payload: Record<string, unknown>,
+  ): Promise<StaticDebugActionResponse> => {
+    if (!selectedDevice || !isIosStaticDebug) {
+      throw new Error('当前设备不支持 iOS 静态操作')
+    }
+
+    const res = await fetch(`/api/v1/devices/${selectedDevice}/debug/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(data.detail || 'iOS 静态操作失败')
+    }
+    return data as StaticDebugActionResponse
+  }, [isIosStaticDebug, selectedDevice])
+
+  const applyStaticActionScreen = useCallback((data: StaticDebugActionResponse) => {
+    if (data.screen?.width && data.screen?.height) {
+      setUiScreen({ width: data.screen.width, height: data.screen.height })
+      setDeviceInfo({ width: data.screen.width, height: data.screen.height })
+    }
+  }, [])
+
+  const runStaticTap = useCallback(async (x: number, y: number, label = '点按已发送') => {
+    setStaticActionLoading(true)
+    try {
+      const data = await postStaticDebugAction('tap', { x, y })
+      applyStaticActionScreen(data)
+      await refreshStaticScreenshot(true)
+      message.success(label)
+      return true
+    } catch (e) {
+      const error = e as Error
+      message.error(error.message || 'iOS 点按失败')
+      return false
+    } finally {
+      setStaticActionLoading(false)
+    }
+  }, [applyStaticActionScreen, postStaticDebugAction, refreshStaticScreenshot])
+
+  const pointFromStaticClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!renderMetrics || !uiScreen) return null
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    const rawX = event.clientX - rect.left - renderMetrics.left
+    const rawY = event.clientY - rect.top - renderMetrics.top
+    if (rawX < 0 || rawY < 0 || rawX > renderMetrics.width || rawY > renderMetrics.height) {
+      return null
+    }
+
+    return {
+      x: Math.round((rawX / renderMetrics.width) * uiScreen.width),
+      y: Math.round((rawY / renderMetrics.height) * uiScreen.height),
+    }
+  }, [renderMetrics, uiScreen])
+
+  const handleStaticStageClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!iosTapMode || staticActionLoading || !staticScreenshot) return
+    const point = pointFromStaticClick(event)
+    if (!point) return
+    void runStaticTap(point.x, point.y)
+  }, [iosTapMode, pointFromStaticClick, runStaticTap, staticActionLoading, staticScreenshot])
+
+  const tapSelectedUiElement = useCallback(() => {
+    if (!selectedUiElement) return
+    void runStaticTap(
+      selectedUiElement.center.x,
+      selectedUiElement.center.y,
+      '控件点击已发送',
+    )
+  }, [runStaticTap, selectedUiElement])
 
   const handleConnectionStateChange = useCallback((state: string) => {
     if (state === 'disconnected') {
@@ -980,9 +1068,29 @@ export default function ScreenPage() {
     sendAndroidKey(keyCode)
   }
 
-  const sendText = () => {
+  const sendText = async () => {
     const text = quickInputText
-    if (!text || !remoteControlSupported) return
+    if (!text) return
+
+    if (isIosStaticDebug) {
+      setStaticActionLoading(true)
+      try {
+        const data = await postStaticDebugAction('text', { text })
+        applyStaticActionScreen(data)
+        await refreshStaticScreenshot(true)
+        setQuickInputText('')
+        setVirtualKeyboardOpen(false)
+        message.success('文本已发送')
+      } catch (e) {
+        const error = e as Error
+        message.error(error.message || 'iOS 文本输入失败，请先点按输入框获取焦点')
+      } finally {
+        setStaticActionLoading(false)
+      }
+      return
+    }
+
+    if (!remoteControlSupported) return
 
     publishControl({ type: 'text', text }, true)
     setQuickInputText('')
@@ -1250,19 +1358,23 @@ export default function ScreenPage() {
       <Input.Password
         value={quickInputText}
         onChange={(event) => setQuickInputText(event.target.value)}
-        onPressEnter={sendText}
-        placeholder="输入文本或密码"
+        onPressEnter={() => { void sendText() }}
+        placeholder={isIosStaticDebug ? '先点输入框，再输入文本' : '输入文本或密码'}
         autoComplete="off"
-        disabled={!isPlaying || !remoteControlSupported}
+        disabled={!((isPlaying && remoteControlSupported) || isIosStaticDebug)}
       />
       <Button
         type="primary"
         icon={<SendOutlined />}
-        disabled={!quickInputText || !isPlaying || !remoteControlSupported}
-        onClick={sendText}
+        disabled={!quickInputText || !((isPlaying && remoteControlSupported) || isIosStaticDebug)}
+        loading={isIosStaticDebug && staticActionLoading}
+        onClick={() => { void sendText() }}
       >
         输入
       </Button>
+      {isIosStaticDebug && (
+        <Text type="secondary" className="static-debug-input-tip">输入前先点按目标输入框获取焦点</Text>
+      )}
     </div>
   )
 
@@ -1368,7 +1480,10 @@ export default function ScreenPage() {
                     {uiElementOverlay}
                   </TouchOverlay>
                 ) : isIosStaticDebug ? (
-                  <div className="static-debug-stage">
+                  <div
+                    className={`static-debug-stage ${iosTapMode ? 'tap-mode' : ''}`}
+                    onClick={handleStaticStageClick}
+                  >
                     {staticScreenshot ? (
                       <img className="static-debug-screenshot" src={staticScreenshot} alt="iOS static screenshot" />
                     ) : (
@@ -1382,6 +1497,13 @@ export default function ScreenPage() {
                       <div className="video-waiting-overlay">
                         <div className="video-waiting-content">
                           <span>正在刷新截图...</span>
+                        </div>
+                      </div>
+                    )}
+                    {staticActionLoading && !staticScreenshotLoading && (
+                      <div className="video-waiting-overlay translucent">
+                        <div className="video-waiting-content">
+                          <span>正在执行静态操作...</span>
                         </div>
                       </div>
                     )}
@@ -1412,7 +1534,7 @@ export default function ScreenPage() {
                   shape="circle"
                   type={virtualKeyboardOpen ? 'primary' : 'default'}
                   icon={<KeyOutlined />}
-                  disabled={!isPlaying || !remoteControlSupported}
+                  disabled={!((isPlaying && remoteControlSupported) || isIosStaticDebug)}
                   aria-label="电脑键盘输入"
                   title="电脑键盘输入"
                 />
@@ -1425,7 +1547,8 @@ export default function ScreenPage() {
               <>
                 <Text type="secondary">模式：iOS 静态调试</Text>
                 <Text type="secondary">控件：{uiElements.length}</Text>
-                <Text type="secondary">投屏/触控：未开启</Text>
+                <Text type="secondary">实时投屏：未开启</Text>
+                <Text type="secondary">静态操作：可用</Text>
               </>
             ) : (
               <>
@@ -1474,6 +1597,26 @@ export default function ScreenPage() {
                       <Button icon={<ReloadOutlined />} loading={staticScreenshotLoading} disabled={!selectedDevice || !screenshotSupported} onClick={() => refreshStaticScreenshot(false)}>
                         刷新截图
                       </Button>
+                    )}
+                    {isIosStaticDebug && (
+                      <>
+                        <Space size={6}>
+                          <Text type="secondary">点按模式</Text>
+                          <Switch
+                            size="small"
+                            checked={iosTapMode}
+                            disabled={!staticScreenshot || staticActionLoading}
+                            onChange={setIosTapMode}
+                          />
+                        </Space>
+                        <Button
+                          disabled={!selectedUiElement || staticActionLoading}
+                          loading={staticActionLoading}
+                          onClick={tapSelectedUiElement}
+                        >
+                          点击控件
+                        </Button>
+                      </>
                     )}
                     <Button danger disabled={uiElements.length === 0} onClick={clearUiHierarchy}>
                       清理控件

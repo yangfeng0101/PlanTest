@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_DIR="$ROOT_DIR/services/ios-agent"
 DEFAULT_VENV_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/device-farm/ios-agent-venv"
 VENV_DIR="${IOS_AGENT_VENV:-$DEFAULT_VENV_DIR}"
-IOS_AGENT_HOST="${IOS_AGENT_HOST:-127.0.0.1}"
+IOS_AGENT_HOST="${IOS_AGENT_HOST:-0.0.0.0}"
 IOS_AGENT_PORT="${IOS_AGENT_PORT:-8015}"
 IOS_APPIUM_HOST_LOCAL="${IOS_APPIUM_HOST:-http://127.0.0.1:${IOS_APPIUM_PORT:-4724}}"
 IOS_APPIUM_PORT="${IOS_APPIUM_PORT:-4724}"
@@ -60,7 +60,7 @@ Next manual commands:
   appium --address 127.0.0.1 --port $IOS_APPIUM_PORT --base-path /
 
   cd "$SERVICE_DIR"
-  IOS_APPIUM_HOST=$IOS_APPIUM_HOST_LOCAL "$VENV_DIR/bin/python" -m uvicorn app:app --host $IOS_AGENT_HOST --port $IOS_AGENT_PORT
+  IOS_AGENT_PYTHON="$VENV_DIR/bin/python" IOS_APPIUM_HOST=$IOS_APPIUM_HOST_LOCAL "$VENV_DIR/bin/python" -m uvicorn app:app --host $IOS_AGENT_HOST --port $IOS_AGENT_PORT
 
 Docker env:
   IOS_AGENT_URL=http://host.docker.internal:$IOS_AGENT_PORT
@@ -151,8 +151,18 @@ cat > "$IOS_AGENT_PLIST" <<PLIST
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>IOS_APPIUM_HOST</key>
     <string>$IOS_APPIUM_HOST_LOCAL</string>
+    <key>IOS_AGENT_PYTHON</key>
+    <string>$VENV_DIR/bin/python</string>
     <key>IOS_AGENT_AUTOMATION_READY_UDIDS</key>
     <string>${IOS_AGENT_AUTOMATION_READY_UDIDS:-}</string>
+    <key>IOS_XCODE_ORG_ID</key>
+    <string>${IOS_XCODE_ORG_ID:-}</string>
+    <key>IOS_XCODE_SIGNING_ID</key>
+    <string>${IOS_XCODE_SIGNING_ID:-}</string>
+    <key>IOS_WDA_BUNDLE_ID</key>
+    <string>${IOS_WDA_BUNDLE_ID:-}</string>
+    <key>IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION</key>
+    <string>${IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION:-}</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
