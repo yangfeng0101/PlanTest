@@ -23,6 +23,7 @@ AUTOMATION_READY_UDIDS = {
 app = FastAPI(title="Device Farm iOS Agent", version="0.1.0")
 debug_sessions: dict[str, dict[str, Any]] = {}
 debug_session_locks: dict[str, asyncio.Lock] = {}
+debug_command_locks: dict[str, asyncio.Lock] = {}
 
 
 class TapRequest(BaseModel):
@@ -32,6 +33,20 @@ class TapRequest(BaseModel):
 
 class TextRequest(BaseModel):
     text: str = Field(..., min_length=1)
+
+
+class SwipeRequest(BaseModel):
+    startX: float = Field(..., ge=0)
+    startY: float = Field(..., ge=0)
+    endX: float = Field(..., ge=0)
+    endY: float = Field(..., ge=0)
+    durationMs: int = Field(500, ge=50, le=5000)
+
+
+class LongPressRequest(BaseModel):
+    x: float = Field(..., ge=0)
+    y: float = Field(..., ge=0)
+    durationMs: int = Field(800, ge=100, le=5000)
 
 
 def python_executable() -> str:
@@ -168,6 +183,14 @@ def debug_session_lock(udid: str) -> asyncio.Lock:
     return lock
 
 
+def debug_command_lock(udid: str) -> asyncio.Lock:
+    lock = debug_command_locks.get(udid)
+    if lock is None:
+        lock = asyncio.Lock()
+        debug_command_locks[udid] = lock
+    return lock
+
+
 async def connected_udids() -> set[str]:
     payload = await run_pymobiledevice3_json("usbmux", "list")
     udids: set[str] = set()
@@ -270,6 +293,16 @@ async def appium_session_request(
     endpoint: str,
     payload: Optional[dict[str, Any]] = None,
 ) -> tuple[Any, bool]:
+    async with debug_command_lock(udid):
+        return await _appium_session_request(udid, method, endpoint, payload)
+
+
+async def _appium_session_request(
+    udid: str,
+    method: str,
+    endpoint: str,
+    payload: Optional[dict[str, Any]] = None,
+) -> tuple[Any, bool]:
     session_id, reused = await get_debug_session(udid)
     async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
         response = await client.request(
@@ -344,6 +377,62 @@ def tap_actions_payload(x: float, y: float) -> dict[str, Any]:
     }
 
 
+def swipe_actions_payload(start_x: float, start_y: float, end_x: float, end_y: float, duration_ms: int) -> dict[str, Any]:
+    return {
+        "actions": [
+            {
+                "type": "pointer",
+                "id": "finger1",
+                "parameters": {"pointerType": "touch"},
+                "actions": [
+                    {
+                        "type": "pointerMove",
+                        "duration": 0,
+                        "x": round(start_x),
+                        "y": round(start_y),
+                        "origin": "viewport",
+                    },
+                    {"type": "pointerDown", "button": 0},
+                    {"type": "pause", "duration": 80},
+                    {
+                        "type": "pointerMove",
+                        "duration": int(duration_ms),
+                        "x": round(end_x),
+                        "y": round(end_y),
+                        "origin": "viewport",
+                    },
+                    {"type": "pointerUp", "button": 0},
+                ],
+            }
+        ]
+    }
+
+
+def long_press_actions_payload(x: float, y: float, duration_ms: int) -> dict[str, Any]:
+    return {
+        "actions": [
+            {
+                "type": "pointer",
+                "id": "finger1",
+                "parameters": {"pointerType": "touch"},
+                "actions": [
+                    {"type": "pointerMove", "duration": 0, "x": round(x), "y": round(y), "origin": "viewport"},
+                    {"type": "pointerDown", "button": 0},
+                    {"type": "pause", "duration": int(duration_ms)},
+                    {"type": "pointerUp", "button": 0},
+                ],
+            }
+        ]
+    }
+
+
+async def release_pointer_actions(udid: str) -> None:
+    try:
+        await appium_session_post(udid, "actions", {"actions": []})
+    except HTTPException:
+        pass
+
+
 def element_id_from_active_element(value: Any) -> Optional[str]:
     if not isinstance(value, dict):
         return None
@@ -368,6 +457,20 @@ def is_no_active_element_error(detail: Any) -> bool:
             "active element",
         )
     )
+
+
+async def active_element_id(udid: str) -> tuple[str, bool]:
+    try:
+        value, reused = await appium_session_get(udid, "element/active")
+    except HTTPException as exc:
+        if is_no_active_element_error(exc.detail):
+            raise HTTPException(status_code=409, detail="No active iOS input element. Tap an input field first.") from exc
+        raise
+
+    element_id = element_id_from_active_element(value)
+    if not element_id:
+        raise HTTPException(status_code=409, detail="No active iOS input element. Tap an input field first.")
+    return element_id, reused
 
 
 def screen_resolution(product_type: str) -> str:
@@ -530,10 +633,7 @@ async def delete_debug_session(udid: str):
 @app.post("/devices/{udid}/tap")
 async def tap_device(udid: str, request: TapRequest):
     _, reused = await appium_session_post(udid, "actions", tap_actions_payload(request.x, request.y))
-    try:
-        await appium_session_post(udid, "actions", {"actions": []})
-    except HTTPException:
-        pass
+    await release_pointer_actions(udid)
     return {
         "device_id": udid,
         "success": True,
@@ -544,24 +644,66 @@ async def tap_device(udid: str, request: TapRequest):
     }
 
 
+@app.post("/devices/{udid}/swipe")
+async def swipe_device(udid: str, request: SwipeRequest):
+    _, reused = await appium_session_post(
+        udid,
+        "actions",
+        swipe_actions_payload(request.startX, request.startY, request.endX, request.endY, request.durationMs),
+    )
+    await release_pointer_actions(udid)
+    return {
+        "device_id": udid,
+        "success": True,
+        "startX": round(request.startX),
+        "startY": round(request.startY),
+        "endX": round(request.endX),
+        "endY": round(request.endY),
+        "durationMs": request.durationMs,
+        "session_reused": reused,
+        "screen": await appium_screen(udid),
+    }
+
+
+@app.post("/devices/{udid}/long-press")
+async def long_press_device(udid: str, request: LongPressRequest):
+    _, reused = await appium_session_post(
+        udid,
+        "actions",
+        long_press_actions_payload(request.x, request.y, request.durationMs),
+    )
+    await release_pointer_actions(udid)
+    return {
+        "device_id": udid,
+        "success": True,
+        "x": round(request.x),
+        "y": round(request.y),
+        "durationMs": request.durationMs,
+        "session_reused": reused,
+        "screen": await appium_screen(udid),
+    }
+
+
 @app.post("/devices/{udid}/text")
 async def input_text_device(udid: str, request: TextRequest):
-    try:
-        value, reused = await appium_session_get(udid, "element/active")
-    except HTTPException as exc:
-        if is_no_active_element_error(exc.detail):
-            raise HTTPException(status_code=409, detail="No active iOS input element. Tap an input field first.") from exc
-        raise
-
-    element_id = element_id_from_active_element(value)
-    if not element_id:
-        raise HTTPException(status_code=409, detail="No active iOS input element. Tap an input field first.")
-
+    element_id, reused = await active_element_id(udid)
     await appium_session_post(udid, f"element/{element_id}/value", text_value_payload(request.text))
     return {
         "device_id": udid,
         "success": True,
         "text_length": len(request.text),
+        "session_reused": reused,
+        "screen": await appium_screen(udid),
+    }
+
+
+@app.post("/devices/{udid}/clear-text")
+async def clear_text_device(udid: str):
+    element_id, reused = await active_element_id(udid)
+    await appium_session_post(udid, f"element/{element_id}/clear", {})
+    return {
+        "device_id": udid,
+        "success": True,
         "session_reused": reused,
         "screen": await appium_screen(udid),
     }

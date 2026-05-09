@@ -12,6 +12,7 @@ from app.models import (
     ReservationCreate, ReservationResponse, ReservationStatus
 )
 from app.services import device_service
+from app.services.device_service import IOSAgentRequestError
 from app.services.ui_hierarchy_service import UIHierarchyError, ui_hierarchy_service
 from app.services.reservation_service import reservation_service
 from app.websocket import ws_manager
@@ -29,6 +30,20 @@ class IOSDebugTapRequest(BaseModel):
 
 class IOSDebugTextRequest(BaseModel):
     text: str = Field(..., min_length=1)
+
+
+class IOSDebugSwipeRequest(BaseModel):
+    startX: float = Field(..., ge=0)
+    startY: float = Field(..., ge=0)
+    endX: float = Field(..., ge=0)
+    endY: float = Field(..., ge=0)
+    durationMs: int = Field(500, ge=50, le=5000)
+
+
+class IOSDebugLongPressRequest(BaseModel):
+    x: float = Field(..., ge=0)
+    y: float = Field(..., ge=0)
+    durationMs: int = Field(800, ge=100, le=5000)
 
 
 def is_ios_device(device: Device) -> bool:
@@ -53,6 +68,10 @@ def ensure_ios_static_operation_available(device: Device) -> None:
     ensure_ios_debug_available(device)
     if not device.capabilities.automation:
         raise HTTPException(status_code=400, detail="iOS automation is not available for this device")
+
+
+def ios_agent_error_status(error: IOSAgentRequestError) -> int:
+    return error.status_code if 400 <= error.status_code < 500 else 502
 
 
 @router.get("", response_model=DeviceListResponse)
@@ -156,6 +175,8 @@ async def get_screenshot(device_id: str):
                 "screen": payload.get("screen"),
             }
         screenshot = await device_service.get_screenshot(device_id)
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     if not screenshot:
@@ -196,6 +217,8 @@ async def get_ui_hierarchy(device_id: str):
         )
     except UIHierarchyError as e:
         raise HTTPException(status_code=500, detail=str(e))
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
@@ -214,6 +237,8 @@ async def release_debug_session(device_id: str):
 
     try:
         released = await device_service.release_ios_debug_session(device_id)
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return {"device_id": device_id, "released": released}
@@ -229,6 +254,8 @@ async def tap_ios_static_debug(device_id: str, request: IOSDebugTapRequest):
 
     try:
         return await device_service.tap_ios_debug(device_id, request.x, request.y)
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -243,6 +270,63 @@ async def input_ios_static_debug_text(device_id: str, request: IOSDebugTextReque
 
     try:
         return await device_service.input_ios_debug_text(device_id, request.text)
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/{device_id}/debug/swipe")
+async def swipe_ios_static_debug(device_id: str, request: IOSDebugSwipeRequest):
+    """Perform a one-shot iOS static debug swipe using Appium/WDA."""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    ensure_ios_static_operation_available(device)
+
+    try:
+        return await device_service.swipe_ios_debug(
+            device_id,
+            request.startX,
+            request.startY,
+            request.endX,
+            request.endY,
+            request.durationMs,
+        )
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/{device_id}/debug/long-press")
+async def long_press_ios_static_debug(device_id: str, request: IOSDebugLongPressRequest):
+    """Perform a one-shot iOS static debug long press using Appium/WDA."""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    ensure_ios_static_operation_available(device)
+
+    try:
+        return await device_service.long_press_ios_debug(device_id, request.x, request.y, request.durationMs)
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/{device_id}/debug/clear-text")
+async def clear_ios_static_debug_text(device_id: str):
+    """Clear the currently focused iOS input element using Appium/WDA."""
+    device = await device_service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    ensure_ios_static_operation_available(device)
+
+    try:
+        return await device_service.clear_ios_debug_text(device_id)
+    except IOSAgentRequestError as e:
+        raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

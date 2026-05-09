@@ -105,6 +105,29 @@ class IOSAgentAppTest(unittest.TestCase):
         self.assertEqual(actions[1]["type"], "pointerDown")
         self.assertEqual(actions[-1]["type"], "pointerUp")
 
+    def test_swipe_actions_payload_uses_duration_and_points(self):
+        payload = self.app_module.swipe_actions_payload(10.2, 20.8, 110.4, 220.6, 650)
+        actions = payload["actions"][0]["actions"]
+
+        self.assertEqual(actions[0]["type"], "pointerMove")
+        self.assertEqual(actions[0]["x"], 10)
+        self.assertEqual(actions[0]["y"], 21)
+        self.assertEqual(actions[3]["type"], "pointerMove")
+        self.assertEqual(actions[3]["duration"], 650)
+        self.assertEqual(actions[3]["x"], 110)
+        self.assertEqual(actions[3]["y"], 221)
+        self.assertEqual(actions[-1]["type"], "pointerUp")
+
+    def test_long_press_actions_payload_holds_at_viewport_point(self):
+        payload = self.app_module.long_press_actions_payload(12.4, 56.6, 900)
+        actions = payload["actions"][0]["actions"]
+
+        self.assertEqual(actions[0]["type"], "pointerMove")
+        self.assertEqual(actions[0]["origin"], "viewport")
+        self.assertEqual(actions[1]["type"], "pointerDown")
+        self.assertEqual(actions[2], {"type": "pause", "duration": 900})
+        self.assertEqual(actions[3]["type"], "pointerUp")
+
     def test_active_element_id_supports_w3c_and_legacy_keys(self):
         self.assertEqual(
             self.app_module.element_id_from_active_element({"element-6066-11e4-a52e-4f735466cecf": "w3c-id"}),
@@ -138,6 +161,7 @@ class IOSAgentDebugSessionTest(unittest.IsolatedAsyncioTestCase):
         self.app_module = load_app_module()
         self.app_module.debug_sessions.clear()
         self.app_module.debug_session_locks.clear()
+        self.app_module.debug_command_locks.clear()
 
     async def test_debug_session_is_reused_until_ttl_expires(self):
         calls = 0
@@ -221,6 +245,79 @@ class IOSAgentDebugSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0], ("GET", "element/active", None))
         self.assertEqual(calls[1], ("POST", "element/element-1/value", {"text": "secret", "value": list("secret")}))
 
+    async def test_swipe_endpoint_posts_actions_and_returns_screen(self):
+        posts = []
+
+        async def fake_post(udid, endpoint, payload):
+            posts.append((udid, endpoint, payload))
+            return {}, False
+
+        async def fake_screen(udid):
+            return {"width": 414, "height": 896}
+
+        self.app_module.appium_session_post = fake_post
+        self.app_module.appium_screen = fake_screen
+
+        response = await self.app_module.swipe_device(
+            "ios-udid",
+            self.app_module.SwipeRequest(startX=10, startY=20, endX=30, endY=40, durationMs=700),
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(response["durationMs"], 700)
+        self.assertEqual(response["screen"], {"width": 414, "height": 896})
+        self.assertEqual(posts[0][1], "actions")
+        self.assertEqual(posts[0][2]["actions"][0]["actions"][3]["duration"], 700)
+        self.assertEqual(posts[1][2], {"actions": []})
+
+    async def test_long_press_endpoint_posts_actions_and_returns_screen(self):
+        posts = []
+
+        async def fake_post(udid, endpoint, payload):
+            posts.append((udid, endpoint, payload))
+            return {}, True
+
+        async def fake_screen(udid):
+            return {"width": 414, "height": 896}
+
+        self.app_module.appium_session_post = fake_post
+        self.app_module.appium_screen = fake_screen
+
+        response = await self.app_module.long_press_device(
+            "ios-udid",
+            self.app_module.LongPressRequest(x=10, y=20, durationMs=1200),
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(response["durationMs"], 1200)
+        self.assertEqual(response["screen"], {"width": 414, "height": 896})
+        self.assertEqual(posts[0][2]["actions"][0]["actions"][2]["duration"], 1200)
+        self.assertEqual(posts[1][2], {"actions": []})
+
+    async def test_clear_text_endpoint_clears_active_element_without_echoing_text(self):
+        calls = []
+
+        async def fake_get(udid, endpoint):
+            calls.append(("GET", endpoint, None))
+            return {"ELEMENT": "element-1"}, False
+
+        async def fake_post(udid, endpoint, payload):
+            calls.append(("POST", endpoint, payload))
+            return {}, True
+
+        async def fake_screen(udid):
+            return None
+
+        self.app_module.appium_session_get = fake_get
+        self.app_module.appium_session_post = fake_post
+        self.app_module.appium_screen = fake_screen
+
+        response = await self.app_module.clear_text_device("ios-udid")
+
+        self.assertEqual(response, {"device_id": "ios-udid", "success": True, "session_reused": False, "screen": None})
+        self.assertEqual(calls[0], ("GET", "element/active", None))
+        self.assertEqual(calls[1], ("POST", "element/element-1/clear", {}))
+
     async def test_text_endpoint_maps_missing_active_element_to_clear_error(self):
         async def fake_get(udid, endpoint):
             raise self.app_module.HTTPException(status_code=502, detail="unable to find an element using '(null)'")
@@ -232,6 +329,53 @@ class IOSAgentDebugSessionTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("Tap an input field", ctx.exception.detail)
+
+    async def test_clear_text_endpoint_maps_missing_active_element_to_focus_error(self):
+        async def fake_get(udid, endpoint):
+            raise self.app_module.HTTPException(status_code=502, detail="no such element")
+
+        self.app_module.appium_session_get = fake_get
+
+        with self.assertRaises(self.app_module.HTTPException) as ctx:
+            await self.app_module.clear_text_device("ios-udid")
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("Tap an input field", ctx.exception.detail)
+
+    async def test_appium_session_post_rebuilds_invalid_session_once(self):
+        session_calls = []
+        requests = []
+
+        async def fake_get_debug_session(udid):
+            session_id = "session-1" if not session_calls else "session-2"
+            session_calls.append((udid, session_id))
+            return session_id, bool(session_calls) and len(session_calls) == 1
+
+        class FakeAsyncClient:
+            def __init__(self, timeout):
+                self.timeout = timeout
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def request(self, method, url, json=None):
+                requests.append((method, url, json))
+                if len(requests) == 1:
+                    return httpx.Response(404, json={"value": {"error": "invalid session id"}})
+                return httpx.Response(200, json={"value": {"ok": True}})
+
+        self.app_module.get_debug_session = fake_get_debug_session
+        self.app_module.httpx.AsyncClient = FakeAsyncClient
+
+        value, reused = await self.app_module.appium_session_post("ios-udid", "actions", {"actions": []})
+
+        self.assertEqual(value, {"ok": True})
+        self.assertFalse(reused)
+        self.assertIn("/session/session-1/actions", requests[0][1])
+        self.assertIn("/session/session-2/actions", requests[1][1])
 
 
 if __name__ == "__main__":

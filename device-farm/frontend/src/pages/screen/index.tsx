@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, type MouseEvent, type PointerEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Alert, Button, Form, Image, Input, List, Modal, Popover, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
@@ -137,6 +137,11 @@ interface RenderMetrics {
 interface StaticDebugActionResponse {
   success?: boolean
   screen?: { width: number; height: number } | null
+}
+
+interface StaticDebugPoint {
+  x: number
+  y: number
 }
 
 interface ScreenSessionDiagnostics {
@@ -386,6 +391,10 @@ export default function ScreenPage() {
   const [staticScreenshotLoading, setStaticScreenshotLoading] = useState(false)
   const [staticActionLoading, setStaticActionLoading] = useState(false)
   const [iosTapMode, setIosTapMode] = useState(false)
+  const [iosSwipeMode, setIosSwipeMode] = useState(false)
+  const [staticAutoRefresh, setStaticAutoRefresh] = useState(false)
+  const [staticPointerPoint, setStaticPointerPoint] = useState<StaticDebugPoint | null>(null)
+  const [lastStaticAction, setLastStaticAction] = useState('未操作')
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -404,6 +413,11 @@ export default function ScreenPage() {
   const lkRoomRef = useRef<Room | null>(null)
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null)
   const moveTimerRef = useRef<number | null>(null)
+  const staticDragStartRef = useRef<StaticDebugPoint | null>(null)
+  const staticSwipeHandledRef = useRef(false)
+  const staticActionLoadingRef = useRef(false)
+  const staticScreenshotLoadingRef = useRef(false)
+  const loadingUiHierarchyRef = useRef(false)
   const autoStartedDeviceRef = useRef<string | null>(null)
   const autoStartBlockedRef = useRef<string | null>(null)
   const startRequestedAtRef = useRef<number | null>(null)
@@ -421,6 +435,18 @@ export default function ScreenPage() {
     }
     navigate('/devices', { replace: true })
   }, [deviceIdFromUrl, navigate])
+
+  useEffect(() => {
+    staticActionLoadingRef.current = staticActionLoading
+  }, [staticActionLoading])
+
+  useEffect(() => {
+    staticScreenshotLoadingRef.current = staticScreenshotLoading
+  }, [staticScreenshotLoading])
+
+  useEffect(() => {
+    loadingUiHierarchyRef.current = loadingUiHierarchy
+  }, [loadingUiHierarchy])
 
   // Fetch devices
   useEffect(() => {
@@ -562,6 +588,8 @@ export default function ScreenPage() {
     activeSessionDeviceRef.current = null
     clearUiHierarchy()
     setStaticScreenshot(null)
+    setStaticPointerPoint(null)
+    setLastStaticAction('未操作')
     flushPendingMove()
     lkRoomRef.current = null
     requestStopSession(selectedDevice)
@@ -743,7 +771,7 @@ export default function ScreenPage() {
   }, [currentDevice, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice])
 
   const postStaticDebugAction = useCallback(async (
-    path: 'tap' | 'text',
+    path: 'tap' | 'text' | 'swipe' | 'long-press' | 'clear-text',
     payload: Record<string, unknown>,
   ): Promise<StaticDebugActionResponse> => {
     if (!selectedDevice || !isIosStaticDebug) {
@@ -777,22 +805,68 @@ export default function ScreenPage() {
       applyStaticActionScreen(data)
       await refreshStaticScreenshot(true)
       message.success(label)
+      setLastStaticAction(`${label} (${Math.round(x)}, ${Math.round(y)})`)
       return true
     } catch (e) {
       const error = e as Error
       message.error(error.message || 'iOS 点按失败')
+      setLastStaticAction('点按失败')
       return false
     } finally {
       setStaticActionLoading(false)
     }
   }, [applyStaticActionScreen, postStaticDebugAction, refreshStaticScreenshot])
 
-  const pointFromStaticClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+  const runStaticSwipe = useCallback(async (start: StaticDebugPoint, end: StaticDebugPoint) => {
+    setStaticActionLoading(true)
+    try {
+      const data = await postStaticDebugAction('swipe', {
+        startX: start.x,
+        startY: start.y,
+        endX: end.x,
+        endY: end.y,
+        durationMs: 500,
+      })
+      applyStaticActionScreen(data)
+      await refreshStaticScreenshot(true)
+      message.success('滑动已发送')
+      setLastStaticAction(`滑动 (${start.x}, ${start.y}) -> (${end.x}, ${end.y})`)
+      return true
+    } catch (e) {
+      const error = e as Error
+      message.error(error.message || 'iOS 滑动失败')
+      setLastStaticAction('滑动失败')
+      return false
+    } finally {
+      setStaticActionLoading(false)
+    }
+  }, [applyStaticActionScreen, postStaticDebugAction, refreshStaticScreenshot])
+
+  const runStaticLongPress = useCallback(async (x: number, y: number, label = '长按已发送') => {
+    setStaticActionLoading(true)
+    try {
+      const data = await postStaticDebugAction('long-press', { x, y, durationMs: 800 })
+      applyStaticActionScreen(data)
+      await refreshStaticScreenshot(true)
+      message.success(label)
+      setLastStaticAction(`${label} (${Math.round(x)}, ${Math.round(y)})`)
+      return true
+    } catch (e) {
+      const error = e as Error
+      message.error(error.message || 'iOS 长按失败')
+      setLastStaticAction('长按失败')
+      return false
+    } finally {
+      setStaticActionLoading(false)
+    }
+  }, [applyStaticActionScreen, postStaticDebugAction, refreshStaticScreenshot])
+
+  const pointFromStaticPosition = useCallback((clientX: number, clientY: number, target: HTMLDivElement) => {
     if (!renderMetrics || !uiScreen) return null
 
-    const rect = event.currentTarget.getBoundingClientRect()
-    const rawX = event.clientX - rect.left - renderMetrics.left
-    const rawY = event.clientY - rect.top - renderMetrics.top
+    const rect = target.getBoundingClientRect()
+    const rawX = clientX - rect.left - renderMetrics.left
+    const rawY = clientY - rect.top - renderMetrics.top
     if (rawX < 0 || rawY < 0 || rawX > renderMetrics.width || rawY > renderMetrics.height) {
       return null
     }
@@ -803,12 +877,57 @@ export default function ScreenPage() {
     }
   }, [renderMetrics, uiScreen])
 
+  const pointFromStaticClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    return pointFromStaticPosition(event.clientX, event.clientY, event.currentTarget)
+  }, [pointFromStaticPosition])
+
   const handleStaticStageClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (staticSwipeHandledRef.current) {
+      staticSwipeHandledRef.current = false
+      return
+    }
     if (!iosTapMode || staticActionLoading || !staticScreenshot) return
     const point = pointFromStaticClick(event)
     if (!point) return
     void runStaticTap(point.x, point.y)
   }, [iosTapMode, pointFromStaticClick, runStaticTap, staticActionLoading, staticScreenshot])
+
+  const handleStaticStagePointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const point = pointFromStaticPosition(event.clientX, event.clientY, event.currentTarget)
+    setStaticPointerPoint(point)
+  }, [pointFromStaticPosition])
+
+  const handleStaticStagePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const point = pointFromStaticPosition(event.clientX, event.clientY, event.currentTarget)
+    setStaticPointerPoint(point)
+    if (!iosSwipeMode || staticActionLoading || !staticScreenshot || !point) return
+
+    staticDragStartRef.current = point
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }, [iosSwipeMode, pointFromStaticPosition, staticActionLoading, staticScreenshot])
+
+  const handleStaticStagePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const start = staticDragStartRef.current
+    staticDragStartRef.current = null
+    const point = pointFromStaticPosition(event.clientX, event.clientY, event.currentTarget)
+    setStaticPointerPoint(point)
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (!iosSwipeMode || staticActionLoading || !staticScreenshot || !start || !point) return
+
+    const distance = Math.hypot(point.x - start.x, point.y - start.y)
+    if (distance < 12) return
+
+    staticSwipeHandledRef.current = true
+    window.setTimeout(() => {
+      staticSwipeHandledRef.current = false
+    }, 0)
+    void runStaticSwipe(start, point)
+  }, [iosSwipeMode, pointFromStaticPosition, runStaticSwipe, staticActionLoading, staticScreenshot])
+
+  const handleStaticStagePointerCancel = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    staticDragStartRef.current = null
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+  }, [])
 
   const tapSelectedUiElement = useCallback(() => {
     if (!selectedUiElement) return
@@ -818,6 +937,32 @@ export default function ScreenPage() {
       '控件点击已发送',
     )
   }, [runStaticTap, selectedUiElement])
+
+  const longPressSelectedUiElement = useCallback(() => {
+    if (!selectedUiElement) return
+    void runStaticLongPress(
+      selectedUiElement.center.x,
+      selectedUiElement.center.y,
+      '控件长按已发送',
+    )
+  }, [runStaticLongPress, selectedUiElement])
+
+  useEffect(() => {
+    if (!selectedDevice || !isIosStaticDebug || !staticAutoRefresh) return
+
+    const interval = window.setInterval(() => {
+      if (
+        staticActionLoadingRef.current
+        || staticScreenshotLoadingRef.current
+        || loadingUiHierarchyRef.current
+      ) {
+        return
+      }
+      void refreshStaticScreenshot(true, 90000)
+    }, 1000)
+
+    return () => window.clearInterval(interval)
+  }, [isIosStaticDebug, refreshStaticScreenshot, selectedDevice, staticAutoRefresh])
 
   const handleConnectionStateChange = useCallback((state: string) => {
     if (state === 'disconnected') {
@@ -868,6 +1013,9 @@ export default function ScreenPage() {
 
   useEffect(() => {
     setStaticScreenshot(null)
+    setStaticPointerPoint(null)
+    setLastStaticAction('未操作')
+    setStaticAutoRefresh(false)
     if (!selectedDevice || !isIosStaticDebug) return
     return () => {
       releaseStaticDebugSession(selectedDevice)
@@ -1081,9 +1229,11 @@ export default function ScreenPage() {
         setQuickInputText('')
         setVirtualKeyboardOpen(false)
         message.success('文本已发送')
+        setLastStaticAction(`输入文本 (${text.length} 字符)`)
       } catch (e) {
         const error = e as Error
         message.error(error.message || 'iOS 文本输入失败，请先点按输入框获取焦点')
+        setLastStaticAction('输入失败')
       } finally {
         setStaticActionLoading(false)
       }
@@ -1095,6 +1245,26 @@ export default function ScreenPage() {
     publishControl({ type: 'text', text }, true)
     setQuickInputText('')
     setVirtualKeyboardOpen(false)
+  }
+
+  const clearStaticText = async () => {
+    if (!isIosStaticDebug) return
+
+    setStaticActionLoading(true)
+    try {
+      const data = await postStaticDebugAction('clear-text', {})
+      applyStaticActionScreen(data)
+      await refreshStaticScreenshot(true)
+      setQuickInputText('')
+      message.success('输入框已清空')
+      setLastStaticAction('清空输入')
+    } catch (e) {
+      const error = e as Error
+      message.error(error.message || 'iOS 清空输入失败，请先点按输入框获取焦点')
+      setLastStaticAction('清空输入失败')
+    } finally {
+      setStaticActionLoading(false)
+    }
   }
 
   const getCurrentPackageName = () => (
@@ -1373,6 +1543,16 @@ export default function ScreenPage() {
         输入
       </Button>
       {isIosStaticDebug && (
+        <Button
+          icon={<DeleteOutlined />}
+          disabled={staticActionLoading}
+          loading={staticActionLoading && !quickInputText}
+          onClick={() => { void clearStaticText() }}
+        >
+          清空
+        </Button>
+      )}
+      {isIosStaticDebug && (
         <Text type="secondary" className="static-debug-input-tip">输入前先点按目标输入框获取焦点</Text>
       )}
     </div>
@@ -1407,6 +1587,9 @@ export default function ScreenPage() {
               event.preventDefault()
               event.stopPropagation()
               setSelectedUiElement(element)
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation()
             }}
           />
         )
@@ -1481,8 +1664,12 @@ export default function ScreenPage() {
                   </TouchOverlay>
                 ) : isIosStaticDebug ? (
                   <div
-                    className={`static-debug-stage ${iosTapMode ? 'tap-mode' : ''}`}
+                    className={`static-debug-stage ${iosTapMode ? 'tap-mode' : ''} ${iosSwipeMode ? 'swipe-mode' : ''}`}
                     onClick={handleStaticStageClick}
+                    onPointerDown={handleStaticStagePointerDown}
+                    onPointerMove={handleStaticStagePointerMove}
+                    onPointerUp={handleStaticStagePointerUp}
+                    onPointerCancel={handleStaticStagePointerCancel}
                   >
                     {staticScreenshot ? (
                       <img className="static-debug-screenshot" src={staticScreenshot} alt="iOS static screenshot" />
@@ -1548,7 +1735,11 @@ export default function ScreenPage() {
                 <Text type="secondary">模式：iOS 静态调试</Text>
                 <Text type="secondary">控件：{uiElements.length}</Text>
                 <Text type="secondary">实时投屏：未开启</Text>
-                <Text type="secondary">静态操作：可用</Text>
+                <Text type="secondary">自动刷新：{staticAutoRefresh ? '开启' : '关闭'}</Text>
+                <Text type="secondary">
+                  坐标：{staticPointerPoint ? `${staticPointerPoint.x}, ${staticPointerPoint.y}` : '--'}
+                </Text>
+                <Text type="secondary">最近：{lastStaticAction}</Text>
               </>
             ) : (
               <>
@@ -1601,12 +1792,36 @@ export default function ScreenPage() {
                     {isIosStaticDebug && (
                       <>
                         <Space size={6}>
+                          <Text type="secondary">自动刷新</Text>
+                          <Switch
+                            size="small"
+                            checked={staticAutoRefresh}
+                            disabled={!staticScreenshot || staticActionLoading || loadingUiHierarchy}
+                            onChange={setStaticAutoRefresh}
+                          />
+                        </Space>
+                        <Space size={6}>
                           <Text type="secondary">点按模式</Text>
                           <Switch
                             size="small"
                             checked={iosTapMode}
                             disabled={!staticScreenshot || staticActionLoading}
-                            onChange={setIosTapMode}
+                            onChange={(checked) => {
+                              setIosTapMode(checked)
+                              if (checked) setIosSwipeMode(false)
+                            }}
+                          />
+                        </Space>
+                        <Space size={6}>
+                          <Text type="secondary">滑动模式</Text>
+                          <Switch
+                            size="small"
+                            checked={iosSwipeMode}
+                            disabled={!staticScreenshot || staticActionLoading}
+                            onChange={(checked) => {
+                              setIosSwipeMode(checked)
+                              if (checked) setIosTapMode(false)
+                            }}
                           />
                         </Space>
                         <Button
@@ -1615,6 +1830,13 @@ export default function ScreenPage() {
                           onClick={tapSelectedUiElement}
                         >
                           点击控件
+                        </Button>
+                        <Button
+                          disabled={!selectedUiElement || staticActionLoading}
+                          loading={staticActionLoading}
+                          onClick={longPressSelectedUiElement}
+                        >
+                          长按控件
                         </Button>
                       </>
                     )}

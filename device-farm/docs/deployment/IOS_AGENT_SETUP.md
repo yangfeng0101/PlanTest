@@ -15,8 +15,9 @@ Docker services
                 |- IOS_APPIUM_HOST=http://host.docker.internal:4724
 ```
 
-iOS 当前开放脚本自动化、静态控件树调试、静态点按和文本输入能力。
-实时投屏、连续触控流和 LiveKit 实时流暂不通过 iOS Agent 开放。
+iOS 当前开放脚本自动化、静态控件树调试、静态点按、滑动、长按、
+文本输入、清空输入和默认关闭的自动刷新截图预览能力。实时投屏、
+连续触控流和 LiveKit 实时流暂不通过 iOS Agent 开放。
 
 ## 本机前置条件
 
@@ -168,7 +169,11 @@ iOS 设备开启静态调试模式：
 - 可以点击“刷新截图”获取当前屏幕静态截图。
 - 可以点击“获取控件”拉取 Appium page source，并在截图上高亮控件范围。
 - 可以开启“点按模式”后点击截图坐标，或选择控件后点击控件中心点。
-- 可以使用键盘输入面板向当前焦点输入文本；输入前需要先点按目标输入框。
+- 可以开启“滑动模式”后在截图上拖动，执行一次性 WDA swipe。
+- 可以选择控件后点击控件中心点，或对控件中心点执行长按。
+- 可以使用键盘输入面板向当前焦点输入文本，也可以清空当前焦点输入框；
+  输入和清空前都需要先点按目标输入框。
+- 可以打开“自动刷新”，每约 1 秒刷新一次静态截图；执行操作或获取控件树时会跳过本轮刷新。
 - 坐标使用 Appium/WDA 的逻辑点坐标，不是 Retina 物理截图像素。
 - 离开页面或切换设备时，会通过 `DELETE /devices/<udid>/debug-session` 释放
   iOS Agent 内缓存的 Appium debug session。
@@ -181,9 +186,16 @@ curl http://127.0.0.1:8015/devices/<verified-udid>/source
 curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/tap \
   -H 'Content-Type: application/json' \
   -d '{"x":120,"y":240}'
+curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/swipe \
+  -H 'Content-Type: application/json' \
+  -d '{"startX":120,"startY":600,"endX":120,"endY":220,"durationMs":500}'
+curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/long-press \
+  -H 'Content-Type: application/json' \
+  -d '{"x":120,"y":240,"durationMs":800}'
 curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/text \
   -H 'Content-Type: application/json' \
   -d '{"text":"hello"}'
+curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/clear-text
 curl -X DELETE http://127.0.0.1:8015/devices/<verified-udid>/debug-session
 ```
 

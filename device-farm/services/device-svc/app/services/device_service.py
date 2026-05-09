@@ -17,6 +17,12 @@ from app.services.device_db_service import device_db_service
 logger = logging.getLogger(__name__)
 
 
+class IOSAgentRequestError(RuntimeError):
+    def __init__(self, status_code: int, detail: str):
+        super().__init__(detail)
+        self.status_code = status_code
+
+
 class DeviceService:
     """Device management service with database persistence"""
 
@@ -457,7 +463,10 @@ class DeviceService:
                     detail = str(payload.get("detail") or detail)
             except Exception:
                 pass
-            raise RuntimeError(detail or f"iOS Agent request failed with HTTP {response.status_code}")
+            raise IOSAgentRequestError(
+                response.status_code,
+                detail or f"iOS Agent request failed with HTTP {response.status_code}",
+            )
 
         payload = response.json()
         if not isinstance(payload, dict):
@@ -500,6 +509,47 @@ class DeviceService:
             f"/devices/{device_id}/text",
             method="POST",
             payload={"text": text},
+        )
+
+    async def swipe_ios_debug(
+        self,
+        device_id: str,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        duration_ms: int = 500,
+    ) -> Dict[str, Any]:
+        return await self._request_ios_agent(
+            f"/devices/{device_id}/swipe",
+            method="POST",
+            payload={
+                "startX": start_x,
+                "startY": start_y,
+                "endX": end_x,
+                "endY": end_y,
+                "durationMs": duration_ms,
+            },
+        )
+
+    async def long_press_ios_debug(
+        self,
+        device_id: str,
+        x: float,
+        y: float,
+        duration_ms: int = 800,
+    ) -> Dict[str, Any]:
+        return await self._request_ios_agent(
+            f"/devices/{device_id}/long-press",
+            method="POST",
+            payload={"x": x, "y": y, "durationMs": duration_ms},
+        )
+
+    async def clear_ios_debug_text(self, device_id: str) -> Dict[str, Any]:
+        return await self._request_ios_agent(
+            f"/devices/{device_id}/clear-text",
+            method="POST",
+            payload={},
         )
 
     async def execute_command(self, device_id: str, command: str) -> str:

@@ -48,10 +48,14 @@ page:
 - `GET /devices/{udid}/screenshot`
 - `GET /devices/{udid}/source`
 - `POST /devices/{udid}/tap`
+- `POST /devices/{udid}/swipe`
+- `POST /devices/{udid}/long-press`
 - `POST /devices/{udid}/text`
+- `POST /devices/{udid}/clear-text`
 - `DELETE /devices/{udid}/debug-session`
 
 These endpoints create a cached Appium XCUITest debug session per UDID. They do
-not provide realtime screen streaming or continuous remote touch control. Tap
-coordinates use Appium/WDA logical points, and text input is sent to the
-currently focused element after the user taps an input field.
+not provide realtime screen streaming or continuous remote touch control. Tap,
+swipe, and long-press coordinates use Appium/WDA logical points. Text input and
+clear-text are sent to the currently focused element after the user taps an
+input field.
