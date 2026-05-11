@@ -287,6 +287,31 @@ def is_invalid_session_response(response: httpx.Response) -> bool:
     return str(error).lower() in {"invalid session id", "no such driver"}
 
 
+def is_broken_wda_session_detail(detail: Any) -> bool:
+    text = str(detail or "").lower()
+    return any(
+        token in text
+        for token in (
+            "could not proxy command to the remote server",
+            "failed to proxy command",
+            "connect econnrefused 127.0.0.1:8100",
+            "econnrefused 127.0.0.1:8100",
+            "socket hang up",
+            "connection was refused",
+            "webdriveragentrunner-runner encountered an error",
+            "webdriveragent runner encountered an error",
+        )
+    )
+
+
+async def clear_debug_session(udid: str) -> bool:
+    async with debug_session_lock(udid):
+        cached = debug_sessions.pop(udid, None)
+    if cached:
+        await delete_appium_session(str(cached["session_id"]))
+    return bool(cached)
+
+
 async def appium_session_request(
     udid: str,
     method: str,
@@ -594,7 +619,16 @@ async def list_devices():
 
 @app.get("/devices/{udid}/screenshot")
 async def get_device_screenshot(udid: str):
-    value, reused = await appium_session_get(udid, "screenshot")
+    session_rebuilt = False
+    try:
+        value, reused = await appium_session_get(udid, "screenshot")
+    except HTTPException as exc:
+        if exc.status_code != 502 or not is_broken_wda_session_detail(exc.detail):
+            raise
+        await clear_debug_session(udid)
+        value, reused = await appium_session_get(udid, "screenshot")
+        session_rebuilt = True
+
     if not isinstance(value, str) or not value:
         raise HTTPException(status_code=502, detail="Appium returned an empty screenshot")
     return {
@@ -602,6 +636,7 @@ async def get_device_screenshot(udid: str):
         "image": value,
         "format": "png",
         "session_reused": reused,
+        "session_rebuilt": session_rebuilt,
         "screen": await appium_screen(udid),
     }
 
@@ -620,13 +655,10 @@ async def get_device_source(udid: str):
 
 @app.delete("/devices/{udid}/debug-session")
 async def delete_debug_session(udid: str):
-    async with debug_session_lock(udid):
-        cached = debug_sessions.pop(udid, None)
-    if cached:
-        await delete_appium_session(str(cached["session_id"]))
+    released = await clear_debug_session(udid)
     return {
         "device_id": udid,
-        "released": bool(cached),
+        "released": released,
     }
 
 

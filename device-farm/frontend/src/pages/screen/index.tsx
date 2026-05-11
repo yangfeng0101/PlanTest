@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, type MouseEvent, type PointerEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Alert, Button, Form, Image, Input, List, Modal, Popover, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Form, Image, Input, List, Modal, Popover, Segmented, Select, Space, Switch, Table, Tag, Typography, message } from 'antd'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
 import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined'
 import FullscreenOutlined from '@ant-design/icons/FullscreenOutlined'
@@ -42,6 +42,11 @@ const taskStatusText: Record<Task['status'], string> = {
 
 const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || ''
 const TOUCH_MOVE_INTERVAL_MS = 16
+const STATIC_AUTO_REFRESH_INTERVAL_OPTIONS = [
+  { label: '1s', value: 1000 },
+  { label: '2s', value: 2000 },
+  { label: '5s', value: 5000 },
+]
 const KEYBOARD_KEY_CODE_MAP: Record<string, number> = {
   Backspace: 67,
   Enter: 66,
@@ -393,6 +398,11 @@ export default function ScreenPage() {
   const [iosTapMode, setIosTapMode] = useState(false)
   const [iosSwipeMode, setIosSwipeMode] = useState(false)
   const [staticAutoRefresh, setStaticAutoRefresh] = useState(false)
+  const [staticAutoRefreshIntervalMs, setStaticAutoRefreshIntervalMs] = useState(1000)
+  const [staticRefreshDurationMs, setStaticRefreshDurationMs] = useState<number | null>(null)
+  const [staticRefreshFailures, setStaticRefreshFailures] = useState(0)
+  const [staticRefreshLastError, setStaticRefreshLastError] = useState('')
+  const [staticDebugSessionActive, setStaticDebugSessionActive] = useState(false)
   const [staticPointerPoint, setStaticPointerPoint] = useState<StaticDebugPoint | null>(null)
   const [lastStaticAction, setLastStaticAction] = useState('未操作')
   const currentDevice = devices.find((d) => d.id === selectedDevice)
@@ -590,6 +600,7 @@ export default function ScreenPage() {
     setStaticScreenshot(null)
     setStaticPointerPoint(null)
     setLastStaticAction('未操作')
+    setStaticDebugSessionActive(false)
     flushPendingMove()
     lkRoomRef.current = null
     requestStopSession(selectedDevice)
@@ -679,34 +690,61 @@ export default function ScreenPage() {
     setUiScreen(null)
   }, [])
 
-  const refreshStaticScreenshot = useCallback(async (silent = false, timeoutMs = 90000) => {
+  const refreshStaticScreenshot = useCallback(async (silent = false, timeoutMs = 90000, retryRebuild = true) => {
     if (!selectedDevice || !isIosStaticDebug) return false
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
-    setStaticScreenshotLoading(true)
-    try {
+    const startedAt = performance.now()
+    const fetchScreenshot = async () => {
       const res = await fetch(`/api/v1/devices/${selectedDevice}/screenshot`, {
         credentials: 'include',
         signal: controller.signal,
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         throw new Error(data.detail || '刷新截图失败')
       }
       if (!data.image) {
         throw new Error('截图数据为空')
       }
-      setStaticScreenshot(`data:image/${data.format || 'png'};base64,${data.image}`)
-      if (data.screen?.width > 0 && data.screen?.height > 0) {
-        setUiScreen({ width: data.screen.width, height: data.screen.height })
-        setDeviceInfo({ width: data.screen.width, height: data.screen.height })
+      return data
+    }
+
+    setStaticScreenshotLoading(true)
+    try {
+      let data: Record<string, unknown>
+      try {
+        data = await fetchScreenshot()
+      } catch (error) {
+        if (!retryRebuild || (error as Error).name === 'AbortError') {
+          throw error
+        }
+        setStaticDebugSessionActive(false)
+        await releaseDebugSession(selectedDevice)
+        data = await fetchScreenshot()
       }
+
+      const image = typeof data.image === 'string' ? data.image : ''
+      const format = typeof data.format === 'string' ? data.format : 'png'
+      const screen = data.screen as { width?: number; height?: number } | undefined
+      setStaticScreenshot(`data:image/${format};base64,${image}`)
+      if (screen?.width && screen?.height) {
+        setUiScreen({ width: screen.width, height: screen.height })
+        setDeviceInfo({ width: screen.width, height: screen.height })
+      }
+      setStaticRefreshDurationMs(Math.round(performance.now() - startedAt))
+      setStaticRefreshFailures(0)
+      setStaticRefreshLastError('')
+      setStaticDebugSessionActive(true)
       if (!silent) {
         message.success('截图已刷新')
       }
       return true
     } catch (e) {
       const error = e as Error
+      setStaticRefreshDurationMs(Math.round(performance.now() - startedAt))
+      setStaticRefreshFailures((count) => count + 1)
+      setStaticRefreshLastError(error.message || '刷新截图失败')
       if (!silent) {
         message.error(error.message || '刷新截图失败')
       }
@@ -756,6 +794,9 @@ export default function ScreenPage() {
           setDeviceInfo({ width: result.screen.width, height: result.screen.height })
         }
       }
+      if (isIosStaticDebug) {
+        setStaticDebugSessionActive(true)
+      }
       message.success(`获取到 ${result.elements?.length || 0} 个控件，点击控件框查看属性`)
     } catch (e) {
       const error = e as Error
@@ -788,6 +829,7 @@ export default function ScreenPage() {
     if (!res.ok) {
       throw new Error(data.detail || 'iOS 静态操作失败')
     }
+    setStaticDebugSessionActive(true)
     return data as StaticDebugActionResponse
   }, [isIosStaticDebug, selectedDevice])
 
@@ -959,10 +1001,10 @@ export default function ScreenPage() {
         return
       }
       void refreshStaticScreenshot(true, 90000)
-    }, 1000)
+    }, staticAutoRefreshIntervalMs)
 
     return () => window.clearInterval(interval)
-  }, [isIosStaticDebug, refreshStaticScreenshot, selectedDevice, staticAutoRefresh])
+  }, [isIosStaticDebug, refreshStaticScreenshot, selectedDevice, staticAutoRefresh, staticAutoRefreshIntervalMs])
 
   const handleConnectionStateChange = useCallback((state: string) => {
     if (state === 'disconnected') {
@@ -1016,8 +1058,13 @@ export default function ScreenPage() {
     setStaticPointerPoint(null)
     setLastStaticAction('未操作')
     setStaticAutoRefresh(false)
+    setStaticRefreshDurationMs(null)
+    setStaticRefreshFailures(0)
+    setStaticRefreshLastError('')
+    setStaticDebugSessionActive(false)
     if (!selectedDevice || !isIosStaticDebug) return
     return () => {
+      setStaticDebugSessionActive(false)
       releaseStaticDebugSession(selectedDevice)
     }
   }, [isIosStaticDebug, releaseStaticDebugSession, selectedDevice])
@@ -1467,6 +1514,7 @@ export default function ScreenPage() {
         if (!released) {
           throw new Error('释放 iOS 静态调试 session 失败，请稍后重试')
         }
+        setStaticDebugSessionActive(false)
       }
       const response = await taskApi.create({
         script_id: debugScript.id,
@@ -1608,8 +1656,8 @@ export default function ScreenPage() {
               {currentDevice && <Text type="secondary">{formatDeviceOs(currentDevice)}</Text>}
               <span
                 className={`connection-status-dot ${statusDotClassName}`}
-                aria-label={isIosStaticDebug ? '静态调试' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
-                title={isIosStaticDebug ? '静态调试' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
+                aria-label={isIosStaticDebug ? '静态预览' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
+                title={isIosStaticDebug ? '静态预览' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
               />
             </div>
             <Button
@@ -1676,7 +1724,7 @@ export default function ScreenPage() {
                     ) : (
                       <div className="player-placeholder static-debug-placeholder">
                         <VideoCameraOutlined style={{ fontSize: 48, marginBottom: 12 }} />
-                        <p>iOS 静态调试模式</p>
+                        <p>iOS 静态预览</p>
                         <span>刷新截图或获取控件后查看当前页面</span>
                       </div>
                     )}
@@ -1732,14 +1780,26 @@ export default function ScreenPage() {
           <div className="device-stage-footer">
             {isIosStaticDebug ? (
               <>
-                <Text type="secondary">模式：iOS 静态调试</Text>
+                <Text type="secondary">模式：iOS 静态预览</Text>
                 <Text type="secondary">控件：{uiElements.length}</Text>
-                <Text type="secondary">实时投屏：未开启</Text>
-                <Text type="secondary">自动刷新：{staticAutoRefresh ? '开启' : '关闭'}</Text>
+                <Text type="secondary">实时投屏：未接入</Text>
+                <Text type="secondary">
+                  自动刷新：{staticAutoRefresh ? `${staticAutoRefreshIntervalMs / 1000}s` : '关闭'}
+                </Text>
+                <Text type="secondary">
+                  刷新：{staticRefreshDurationMs !== null ? `${staticRefreshDurationMs}ms` : '--'}
+                </Text>
+                <Text type={staticRefreshFailures > 0 ? 'danger' : 'secondary'}>失败：{staticRefreshFailures}</Text>
+                <Text type={staticDebugSessionActive ? 'warning' : 'secondary'}>
+                  Session：{staticDebugSessionActive ? '占用中' : '未占用'}
+                </Text>
                 <Text type="secondary">
                   坐标：{staticPointerPoint ? `${staticPointerPoint.x}, ${staticPointerPoint.y}` : '--'}
                 </Text>
                 <Text type="secondary">最近：{lastStaticAction}</Text>
+                {staticRefreshLastError && (
+                  <Text type="danger" title={staticRefreshLastError}>错误：{staticRefreshLastError}</Text>
+                )}
               </>
             ) : (
               <>
@@ -1798,6 +1858,13 @@ export default function ScreenPage() {
                             checked={staticAutoRefresh}
                             disabled={!staticScreenshot || staticActionLoading || loadingUiHierarchy}
                             onChange={setStaticAutoRefresh}
+                          />
+                          <Segmented
+                            size="small"
+                            value={staticAutoRefreshIntervalMs}
+                            options={STATIC_AUTO_REFRESH_INTERVAL_OPTIONS}
+                            disabled={!staticAutoRefresh}
+                            onChange={(value) => setStaticAutoRefreshIntervalMs(Number(value))}
                           />
                         </Space>
                         <Space size={6}>

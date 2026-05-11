@@ -55,7 +55,19 @@ page:
 - `DELETE /devices/{udid}/debug-session`
 
 These endpoints create a cached Appium XCUITest debug session per UDID. They do
-not provide realtime screen streaming or continuous remote touch control. Tap,
-swipe, and long-press coordinates use Appium/WDA logical points. Text input and
-clear-text are sent to the currently focused element after the user taps an
+not provide realtime screen streaming or continuous remote touch control. The
+Device Farm UI uses them for static preview, optional 1s/2s/5s screenshot
+refresh, UI hierarchy inspection, and one-shot static actions. Screenshot
+refresh can rebuild a broken WDA debug session once before surfacing an error.
+Tap, swipe, and long-press coordinates use Appium/WDA logical points. Text input
+and clear-text are sent to the currently focused element after the user taps an
 input field.
+
+For local Phase 3 streaming research, benchmark the current screenshot polling
+path before trying WDA/MJPEG or Mac-side capture:
+
+```bash
+IOS_AGENT_URL=http://127.0.0.1:8015 \
+IOS_DEVICE_ID=00000000-0000000000000000 \
+python3 ../../scripts/ios_preview_benchmark.py --duration 30
+```

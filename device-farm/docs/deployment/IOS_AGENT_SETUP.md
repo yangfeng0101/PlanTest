@@ -173,7 +173,9 @@ iOS 设备开启静态调试模式：
 - 可以选择控件后点击控件中心点，或对控件中心点执行长按。
 - 可以使用键盘输入面板向当前焦点输入文本，也可以清空当前焦点输入框；
   输入和清空前都需要先点按目标输入框。
-- 可以打开“自动刷新”，每约 1 秒刷新一次静态截图；执行操作或获取控件树时会跳过本轮刷新。
+- 可以打开“自动刷新”，选择 1 秒、2 秒或 5 秒间隔刷新静态截图；执行操作或获取控件树时会跳过本轮刷新。
+- 页脚会展示最近刷新耗时、连续失败次数、最近错误和当前 iOS debug session 是否被静态预览占用。
+- 截图刷新失败时，前端会释放 iOS debug session 并自动重试一次；iOS Agent 也会在典型 WDA 代理断开时重建一次 session。
 - 坐标使用 Appium/WDA 的逻辑点坐标，不是 Retina 物理截图像素。
 - 离开页面或切换设备时，会通过 `DELETE /devices/<udid>/debug-session` 释放
   iOS Agent 内缓存的 Appium debug session。
@@ -198,6 +200,41 @@ curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/text \
 curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/clear-text
 curl -X DELETE http://127.0.0.1:8015/devices/<verified-udid>/debug-session
 ```
+
+## 静态预览 Benchmark 与投屏方案验证
+
+Phase 2.4 仍不把 iOS 标记为实时投屏设备。要评估后续 Phase 3 是否能复用
+Appium/WDA 截图轮询接入 `screen-svc -> LiveKit`，先用本地脚本对真实 iPhone
+连续采样：
+
+```bash
+IOS_AGENT_URL=http://127.0.0.1:8015 \
+IOS_DEVICE_ID=<verified-udid> \
+python3 device-farm/scripts/ios_preview_benchmark.py --duration 30
+```
+
+脚本会通过 iOS Agent 的 `source`、`screenshot` 和 `debug-session` 接口测量：
+
+- 平均 FPS、首帧耗时、P50/P95 截图耗时。
+- 成功/失败次数、前几条失败原因。
+- 截图尺寸、逻辑屏幕尺寸。
+- debug session 是否新建或因 WDA 断开而重建。
+
+如需仅探测 WDA/MJPEG 或 WDA 直接流是否可达，可以额外传入：
+
+```bash
+IOS_WDA_MJPEG_URL=http://127.0.0.1:<mjpeg-port>/ \
+python3 device-farm/scripts/ios_preview_benchmark.py --duration 30
+```
+
+当前决策边界：Appium `/screenshot` 轮询仍作为静态预览的稳定主链路；
+WDA/MJPEG 或 Mac 端采集只作为 Phase 3 实时投屏候选路线，不在本阶段进入前端产品入口。
+
+当前实测结论：`du-iPhone` 通过 iOS Agent 跑 30 秒采样时，Appium
+`/screenshot` 轮询成功 11/11、失败 0 次、平均约 0.35 FPS、首帧约 3.2 秒、
+P50 约 2.8 秒、P95 约 3.2 秒。结论是：这条链路稳定，适合作为静态预览；
+不适合作为 Phase 3 的实时 LiveKit 投屏主链路。Phase 3 应优先验证
+WDA/MJPEG 或 Mac 端采集方案。
 
 ## iOS Smoke 示例
 

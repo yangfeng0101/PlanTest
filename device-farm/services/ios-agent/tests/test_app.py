@@ -88,6 +88,13 @@ class IOSAgentAppTest(unittest.TestCase):
         response = httpx.Response(500, json={"value": {"error": "unknown error"}})
         self.assertFalse(self.app_module.is_invalid_session_response(response))
 
+    def test_broken_wda_session_detail_detection(self):
+        self.assertTrue(
+            self.app_module.is_broken_wda_session_detail("Could not proxy command to the remote server")
+        )
+        self.assertTrue(self.app_module.is_broken_wda_session_detail("connect ECONNREFUSED 127.0.0.1:8100"))
+        self.assertFalse(self.app_module.is_broken_wda_session_detail("xcodebuild failed with code 65"))
+
     def test_screen_from_window_rect_uses_positive_dimensions(self):
         screen = self.app_module.screen_from_window_rect({"x": 0, "y": 0, "width": 414, "height": 896})
 
@@ -317,6 +324,50 @@ class IOSAgentDebugSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response, {"device_id": "ios-udid", "success": True, "session_reused": False, "screen": None})
         self.assertEqual(calls[0], ("GET", "element/active", None))
         self.assertEqual(calls[1], ("POST", "element/element-1/clear", {}))
+
+    async def test_screenshot_endpoint_rebuilds_broken_wda_session_once(self):
+        calls = []
+        cleared = []
+
+        async def fake_get(udid, endpoint):
+            calls.append((udid, endpoint))
+            if len(calls) == 1:
+                raise self.app_module.HTTPException(
+                    status_code=502,
+                    detail="Could not proxy command to the remote server",
+                )
+            return "base64-png", False
+
+        async def fake_clear(udid):
+            cleared.append(udid)
+            return True
+
+        async def fake_screen(udid):
+            return {"width": 414, "height": 896}
+
+        self.app_module.appium_session_get = fake_get
+        self.app_module.clear_debug_session = fake_clear
+        self.app_module.appium_screen = fake_screen
+
+        response = await self.app_module.get_device_screenshot("ios-udid")
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(cleared, ["ios-udid"])
+        self.assertTrue(response["session_rebuilt"])
+        self.assertFalse(response["session_reused"])
+        self.assertEqual(response["screen"], {"width": 414, "height": 896})
+
+    async def test_screenshot_endpoint_keeps_generic_appium_error(self):
+        async def fake_get(udid, endpoint):
+            raise self.app_module.HTTPException(status_code=502, detail="xcodebuild failed with code 65")
+
+        self.app_module.appium_session_get = fake_get
+
+        with self.assertRaises(self.app_module.HTTPException) as ctx:
+            await self.app_module.get_device_screenshot("ios-udid")
+
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertIn("xcodebuild failed", ctx.exception.detail)
 
     async def test_text_endpoint_maps_missing_active_element_to_clear_error(self):
         async def fake_get(udid, endpoint):

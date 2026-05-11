@@ -8,7 +8,7 @@
 
 - 当前远程状态：`main` 已合并并推送 iOS 脚本执行 v1；`dev-reboot` 保留对应功能提交。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
-- 最近一次功能改动：iOS 静态操作调试增强，投屏页可在 iOS 设备上通过 Appium/WDA 获取静态截图、page source 控件树，并执行静态点按、滑动、长按、文本输入、清空输入和默认关闭的自动刷新截图预览；实时投屏/连续触控仍未开放。
+- 最近一次功能改动：iOS 静态预览稳定化与投屏方案验证工具，投屏页可在 iOS 设备上通过 Appium/WDA 获取静态截图、page source 控件树，并执行静态点按、滑动、长按、文本输入、清空输入和默认关闭的 1s/2s/5s 自动刷新截图预览；实时投屏/连续触控仍未开放。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -22,6 +22,7 @@
   - iOS 脚本执行 v1 静态验证：Python `compileall`、设备能力单测、`docker compose config`、前端 `npm run build`
   - iOS 静态调试真机验证：iPhone 通过 WDA/Appium 完成截图、控件树、静态点按、聚焦后文本输入；LaunchAgent 以 `0.0.0.0:8015` 暴露 iOS Agent，Docker 可通过 `IOS_AGENT_URL` 访问。
   - iOS Phase 2.3 真机验证：`du-iPhone` 通过 iOS Agent 和 Docker `device-svc` 代理完成 screenshot/source/ui-hierarchy、tap、text、clear-text、swipe、long-press；并发截图/控件树/手势请求经 Agent UDID 命令锁串行后均返回 200。
+  - iOS Phase 2.4 投屏方案 benchmark：`du-iPhone` 通过 iOS Agent 30 秒采样，Appium `/screenshot` 轮询成功 11/11、失败 0、平均约 0.35 FPS、首帧约 3.2 秒、P50 约 2.8 秒、P95 约 3.2 秒；结论是稳定但太慢，只适合静态预览，Phase 3 实时投屏应优先验证 WDA/MJPEG 或 Mac 端采集。
 
 ## 最近完成的改动
 
@@ -74,8 +75,10 @@
   - `test-svc` 会把 `_device_snapshot` 和 `_appium_diagnostics` 写入任务 `device_capabilities` 供详情页排查；这些内部字段不会传给 Appium。
   - iOS Appium/WDA session 创建失败时会在任务错误和日志中保留原始错误，并追加中文 hint，例如 Appium host 不可达、Team 签名异常、bundle id 冲突、设备未信任或 WDA 超时。
   - 设备能力新增 `automation`；iOS 设备在 `automation_ready=true` 后开放脚本执行、静态截图、控件树调试、静态点按、滑动、长按、文本输入和清空输入，仍不开放实时投屏和连续触控。
-  - 投屏页对 iOS 使用静态调试模式：不启动 LiveKit，可刷新截图、默认关闭自动刷新预览、拉取控件树、点按截图或控件中心点、拖动截图执行一次性滑动、长按控件中心点、向当前焦点输入或清空文本，并展示 iOS selector 片段；设备列表/详情页会以“调试”入口打开该页面，切换设备或离开页面会释放 iOS Agent debug session。
+  - 投屏页对 iOS 使用静态预览模式：不启动 LiveKit，可刷新截图、默认关闭自动刷新预览并支持 1s/2s/5s 间隔、拉取控件树、点按截图或控件中心点、拖动截图执行一次性滑动、长按控件中心点、向当前焦点输入或清空文本，并展示最近刷新耗时、连续失败次数、最近错误、iOS debug session 占用状态和 iOS selector 片段；设备列表/详情页会以“调试”入口打开该页面，切换设备或离开页面会释放 iOS Agent debug session。
   - iOS Agent 新增 `GET /devices/{udid}/screenshot`、`GET /devices/{udid}/source`、`POST /devices/{udid}/tap`、`POST /devices/{udid}/swipe`、`POST /devices/{udid}/long-press`、`POST /devices/{udid}/text`、`POST /devices/{udid}/clear-text`、`DELETE /devices/{udid}/debug-session`，内部按 UDID 缓存 Appium XCUITest debug session，并按 UDID 串行化 Appium 命令，避免并发请求打坏 WDA session。
+  - iOS Agent 截图路径遇到典型 WDA 代理断开/连接拒绝会自动清理并重建 debug session 一次；前端截图刷新失败也会释放 debug session 后重试一次。
+  - 新增 `scripts/ios_preview_benchmark.py`，通过 iOS Agent 的 source/screenshot/debug-session 接口连续采样输出平均 FPS、P50/P95 截图耗时、首帧耗时、失败次数、截图尺寸和 session 重建情况，用于 Phase 3 是否接入 `screen-svc -> LiveKit` 的方案决策。
   - 脚本 SDK 版本升级为 `1.3.0`，`app.click_text()` 在 iOS 上按 `label/name/value` 查询，并保留非 ASCII 文本用于中文 label 定位。
 - 旧 Python `services/ai-svc/`、前端 AI 工具菜单/页面、Vite/Nginx 的旧 `/ocr`、`/locate`、`/generate` 代理已移除；历史 `docs/project/*` 中的旧记录仍作为归档保留。
 - 控件树获取增强：
@@ -108,7 +111,7 @@
 - `MIDSCENE_MODEL_FAMILY` 需要填写 Midscene 支持的模型系列，例如 `qwen3-vl`，不要填具体模型名 `qwen3-vl-plus`；具体模型名应放在 `MIDSCENE_MODEL_NAME`。
 - `@midscene/android` 当前最新版本为 `1.7.9`；`npm audit --omit=dev --registry=https://registry.npmjs.org` 会报告其传递依赖中的漏洞，自动修复建议降级到旧版 `0.13.1`，当前不采用。`midscene-runner` 保持 Docker 内网服务、不映射宿主机端口，后续跟踪上游版本修复。
 - Midscene 第一版未接入 HTML 报告、断点/单步调试、pinch、数据提取方法，也未复用 screen-svc 的截图/触控链路。
-- iOS 当前支持脚本执行闭环、静态截图/控件树调试、静态点按、滑动、长按、文本输入、清空输入和准实时静态截图预览；实时投屏、连续远程触控和 LiveKit 推流待后续基于 WDA/独立 screen session 链路接入。
+- iOS 当前支持脚本执行闭环、静态截图/控件树调试、静态点按、滑动、长按、文本输入、清空输入和准实时静态截图预览；实时投屏、连续远程触控和 LiveKit 推流待 Phase 3 基于 benchmark 结果选择 WDA/Appium 轮询、WDA/MJPEG 或 Mac 端采集链路接入。
 - 前端生产构建有 chunk 体积 warning，当前不阻塞功能，后续可通过动态 import 或 manualChunks 优化。
 - WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。
 
