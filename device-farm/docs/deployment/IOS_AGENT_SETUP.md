@@ -236,6 +236,70 @@ P50 约 2.8 秒、P95 约 3.2 秒。结论是：这条链路稳定，适合作�
 不适合作为 Phase 3 的实时 LiveKit 投屏主链路。Phase 3 应优先验证
 WDA/MJPEG 或 Mac 端采集方案。
 
+## WDA/MJPEG 视频源 Probe
+
+Phase 3.1 使用独立 Appium probe session 验证 WDA/MJPEG 是否能作为实时投屏
+视频源，不改变 Device Farm 产品入口，也不把 iOS 标记为实时投屏设备：
+
+```bash
+export IOS_XCODE_ORG_ID=<apple-team-id>
+export IOS_XCODE_SIGNING_ID="Apple Development"
+export IOS_WDA_BUNDLE_ID=<unique-wda-bundle-id>
+export IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true
+
+IOS_APPIUM_HOST=http://127.0.0.1:4724 \
+IOS_AGENT_URL=http://127.0.0.1:8015 \
+python3 device-farm/scripts/ios_stream_source_probe.py --duration 30
+```
+
+默认情况下，probe 要求当前 shell 已导出 `IOS_XCODE_ORG_ID`、
+`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID`，避免 probe session 与 iOS Agent
+静态预览 session 使用不同 WDA bundle。只有明确需要验证默认 WDA bundle 时，
+才使用 `--allow-default-wda-signing`。
+
+probe 会创建一个临时 XCUITest session，并设置：
+
+- `appium:mjpegServerPort=9100`
+- `mjpegServerFramerate=10`
+- `mjpegScalingFactor=50`
+- `mjpegServerScreenshotQuality=40`
+
+输出会包含：
+
+- WDA/MJPEG 首帧耗时、平均 FPS、P50/P95 帧间隔、帧尺寸和帧大小。
+- Appium `/screenshot` 短基线，便于和 MJPEG 结果对比。
+- `recommendation.next_phase_source`，用于决定 Phase 3.2 走 WDA/MJPEG 还是转向 Mac 端采集。
+- probe session 是否创建和删除成功；报告只展示签名变量是否已配置，不展示具体值。
+- 开始前是否已释放 iOS Agent 静态 debug session；如需跳过可传 `--skip-ios-agent-release`。
+
+如果 WDA 安装后立刻消失，probe 支持预编译 WDA 信任引导：
+
+```bash
+IOS_APPIUM_HOST=http://127.0.0.1:4724 \
+IOS_AGENT_URL=http://127.0.0.1:8015 \
+python3 device-farm/scripts/ios_stream_source_probe.py --trust-preinstall-wda --duration 3
+```
+
+这会使用 Appium 已构建出的
+`Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app` 创建
+`usePreinstalledWDA` session。即使 iOS 因证书未信任而拒绝启动，Appium 也不会走普通
+session 的 WDA 卸载清理路径，WDA Runner 会留在手机上。随后进入 iPhone
+“设置 > 通用 > VPN 与设备管理”信任对应开发者证书，再重新运行普通 probe 或静态截图。
+如果预编译 WDA 路径不同，可传 `--prebuilt-wda-path <path-to-WebDriverAgentRunner-Runner.app>`。
+
+当前实测结论：`du-iPhone` 通过 `ios_stream_source_probe.py --duration 30`
+采样时，WDA/MJPEG 成功输出 285 帧，平均约 9.49 FPS，首帧约 224ms，
+P50 帧间隔约 105ms，P95 帧间隔约 116ms，JPEG 逻辑尺寸 414x896；
+Appium `/screenshot` 同 session 短基线约 3.4 FPS。结论是：
+WDA/MJPEG 达到 Phase 3.2 阈值，可优先作为 `screen-svc -> LiveKit`
+实时投屏视频源候选。
+
+注意：probe session 结束时会删除自己的 Appium session，可能会让 WDA 退出。
+如果运行 probe 时没有使用与 iOS Agent 相同的自定义 WDA 签名配置，后续 iOS
+Agent 重启 WDA 时可能出现 `xcodebuild failed with code 65`。遇到时优先检查
+当前 shell 的签名变量、自定义 WDA bundle、Team、证书信任和 Appium 日志，而
+不是把它当作 Device Farm 投屏链路问题。
+
 ## iOS Smoke 示例
 
 项目内提供了一个可复制到脚本管理页的 iOS 设置页 smoke：
@@ -267,6 +331,33 @@ security find-certificate -c "Apple Development" -p | openssl x509 -noout -subje
 ### WDA bundle id 不可用
 
 换一个唯一的 `IOS_WDA_BUNDLE_ID`，例如带公司域名和个人后缀的 bundle id。
+
+### WDA 安装后立刻消失，手机上没法信任
+
+这是 Appium/XCUITest 的失败清理行为：WDA 构建和安装成功后，如果 iOS 因开发者证书
+未信任而拒绝启动，Appium 会结束并卸载本次 WDA session，所以手机桌面或设置里可能
+一闪而过，看起来“根本没安装成功”。
+
+解决方式是用预编译 WDA 信任引导，让 WDA 留在手机上足够久：
+
+```bash
+export IOS_XCODE_ORG_ID=<apple-team-id>
+export IOS_XCODE_SIGNING_ID="Apple Development"
+export IOS_WDA_BUNDLE_ID=<unique-wda-bundle-id>
+export IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true
+
+IOS_APPIUM_HOST=http://127.0.0.1:4724 \
+IOS_AGENT_URL=http://127.0.0.1:8015 \
+IOS_DEVICE_ID=<ios-udid> \
+python3 device-farm/scripts/ios_stream_source_probe.py --trust-preinstall-wda --duration 3
+```
+
+如果命令仍以 “not explicitly trusted” / “invalid code signature” 失败，这是预期的：
+重点是 WDA Runner 已被保留在手机上。随后到 iPhone“设置 > 通用 > VPN 与设备管理”
+信任开发者证书，再重新运行普通静态截图、脚本任务或 probe。
+
+注意：Appium 的 `iosInstallPause` 只覆盖被测 App 安装后的暂停，不覆盖 WDA Runner 的
+安装/启动清理路径，所以不要用它来解决 WDA 信任问题。
 
 ### iPhone 提示开发者未受信任
 

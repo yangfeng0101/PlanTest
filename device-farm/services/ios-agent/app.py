@@ -169,7 +169,11 @@ def sanitize_appium_error(detail: str) -> str:
 
     lower = sanitized.lower()
     if "not been explicitly trusted" in lower or "invalid code signature" in lower:
-        return f"WDA 启动被 iPhone 安全策略拒绝：请在手机“设置 > 通用 > VPN 与设备管理”信任当前开发者证书后重试。原始错误：{sanitized}"
+        return (
+            "WDA 启动被 iPhone 安全策略拒绝：如果手机上看不到可信任的 WDA，请先运行 "
+            "ios_stream_source_probe.py --trust-preinstall-wda，把预编译 WDA 安装并留在手机上，"
+            f"再到手机“设置 > 通用 > VPN 与设备管理”信任开发者证书。原始错误：{sanitized}"
+        )
     if "xcodebuild failed with code 65" in lower:
         return f"WDA 启动失败：xcodebuild 返回 65，通常是 Xcode 签名、证书信任或 WDA 构建配置问题。原始错误：{sanitized}"
     return sanitized

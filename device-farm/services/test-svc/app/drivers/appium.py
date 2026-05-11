@@ -98,7 +98,7 @@ class AppiumDriver:
             ),
             (
                 ("invalid code signature", "not trusted", "profile has not been explicitly trusted", "developer app certificate"),
-                "iPhone 未信任开发者证书或签名无效，请在设备的 VPN 与设备管理中信任证书后重试。",
+                "iPhone 未信任开发者证书或签名无效；如果手机上看不到 WDA，请先运行 ios_stream_source_probe.py --trust-preinstall-wda，把预编译 WDA 安装并留在手机上，再到设备的 VPN 与设备管理中信任证书。",
             ),
             (
                 ("device is locked", "passcode", "trust", "lockdown", "not paired", "pair"),
