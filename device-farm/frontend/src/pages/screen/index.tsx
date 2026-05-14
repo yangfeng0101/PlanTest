@@ -13,10 +13,8 @@ import SendOutlined from '@ant-design/icons/SendOutlined'
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
 import PlusOutlined from '@ant-design/icons/PlusOutlined'
 import ReloadOutlined from '@ant-design/icons/ReloadOutlined'
-import { Room } from 'livekit-client'
+import type { Room } from 'livekit-client'
 import type { Device, Script, Task, TaskLogEntry } from '@/types'
-import WebrtcPlayer from '@/components/WebrtcPlayer'
-import { TouchOverlay } from '@/components/TouchHandler'
 import CodeEditor from '@/components/CodeEditor'
 import { scriptApi, taskApi } from '@/services/api'
 import { formatDeviceOs, mapDevice } from '@/utils/device'
@@ -61,6 +59,7 @@ import {
   taskStatusText,
   visibleDebugLogs as filterVisibleDebugLogs,
 } from './scriptWorkspace'
+import ScreenStage from './ScreenStage'
 import './ScreenPage.css'
 
 const { Text } = Typography
@@ -1480,45 +1479,6 @@ export default function ScreenPage() {
     </div>
   )
 
-  const uiElementOverlay = uiElements.length > 0 && renderMetrics && uiScreen ? (
-    <div
-      className="ui-element-layer"
-      style={{
-        left: renderMetrics.left,
-        top: renderMetrics.top,
-        width: renderMetrics.width,
-        height: renderMetrics.height,
-      }}
-    >
-      {visibleUiElements.map(({ element, bounds, zIndex }) => {
-        const isSelected = selectedUiElement?.uid === element.uid
-        return (
-          <button
-            key={element.uid}
-            type="button"
-            className={`ui-element-box ${isSelected ? 'selected' : ''} ${element.clickable ? 'clickable' : ''}`}
-            title={element.resource_id || element.content_desc || element.text || element.class_name}
-            style={{
-              left: `${(bounds.left / uiScreen.width) * 100}%`,
-              top: `${(bounds.top / uiScreen.height) * 100}%`,
-              width: `${(bounds.width / uiScreen.width) * 100}%`,
-              height: `${(bounds.height / uiScreen.height) * 100}%`,
-              zIndex,
-            }}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setSelectedUiElement(element)
-            }}
-            onPointerDown={(event) => {
-              event.stopPropagation()
-            }}
-          />
-        )
-      })}
-    </div>
-  ) : null
-
   return (
     <div className="screen-page">
       <div className="screen-workbench">
@@ -1546,132 +1506,72 @@ export default function ScreenPage() {
           </div>
 
           <div className="device-frame-wrap">
-            <div ref={playerViewportRef} className="player-viewport">
-              <div
-                ref={playerContainerRef}
-                className={`player-container ${isPlaying || isIosStaticDebug ? 'active' : ''}`}
-                style={playerBoxSize ? { width: playerBoxSize.width, height: playerBoxSize.height } : undefined}
-                >
-                  {isPlaying && isIosDirectMjpegMirror && iosMjpegStreamUrl ? (
-                    <TouchOverlay
-                    screenWidth={deviceInfo?.width || 1080}
-                    screenHeight={deviceInfo?.height || 1920}
-                    onInput={handleTouchInput}
-                    disabled={uiElements.length > 0}
-                  >
-                    <img
-                      className="static-debug-screenshot ios-mjpeg-stream"
-                      src={iosMjpegStreamUrl}
-                      alt="iOS MJPEG direct stream"
-                      onLoad={() => {
-                        setHasVideoFrame(true)
-                        setLoading(false)
-                        setSessionDiagnostics((current) => current && { ...current, last_error: undefined })
-                        if (startRequestedAtRef.current !== null) {
-                          setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
-                        }
-                      }}
-                      onError={() => {
-                        if (selectedDevice) {
-                          requestStopIOSMJPEG(selectedDevice)
-                        }
-                        setHasVideoFrame(false)
-                        setLoading(false)
-                        setIsPlaying(false)
-                        setMjpegStreamKey(0)
-                        activeSessionDeviceRef.current = null
-                        activeSessionKindRef.current = null
-                        setSessionDiagnostics({
-                          active: false,
-                          stage: 'error',
-                          stage_label: 'iOS MJPEG direct error',
-                          last_error: 'iOS MJPEG 直连流加载失败',
-                        })
-                      }}
-                    />
-                    {isInitializing && (
-                      <div className="video-waiting-overlay">
-                        <div className="video-waiting-content">
-                          <span>{startupStatusText}</span>
-                        </div>
-                      </div>
-                    )}
-                      {uiElementOverlay}
-                    </TouchOverlay>
-                ) : isPlaying && lkSession ? (
-                  <TouchOverlay
-                    screenWidth={deviceInfo?.width || 1080}
-                    screenHeight={deviceInfo?.height || 1920}
-                    onInput={handleTouchInput}
-                    disabled={uiElements.length > 0}
-                  >
-                    <WebrtcPlayer
-                      deviceId={selectedDevice}
-                      token={lkSession.token}
-                      serverUrl={lkSession.url}
-                      waitingText={isInitializing ? startupStatusText : ''}
-                      onConnectionStateChange={handleConnectionStateChange}
-                      onStats={handleWebRTCStats}
-                      onFirstFrame={() => {
-                        setHasVideoFrame(true)
-                        setLoading(false)
-                        if (startRequestedAtRef.current !== null) {
-                          setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
-                        }
-                      }}
-                      onRoomCreated={(room) => { lkRoomRef.current = room; }}
-                    />
-                    {isInitializing && (
-                      <div className="video-waiting-overlay">
-                        <div className="video-waiting-content">
-                          <span>{startupStatusText}</span>
-                        </div>
-                      </div>
-                    )}
-                    {uiElementOverlay}
-                  </TouchOverlay>
-                ) : isIosStaticDebug ? (
-                  <div
-                    className={`static-debug-stage ${iosTapMode ? 'tap-mode' : ''} ${iosSwipeMode ? 'swipe-mode' : ''}`}
-                    onClick={handleStaticStageClick}
-                    onPointerDown={handleStaticStagePointerDown}
-                    onPointerMove={handleStaticStagePointerMove}
-                    onPointerUp={handleStaticStagePointerUp}
-                    onPointerCancel={handleStaticStagePointerCancel}
-                  >
-                    {staticScreenshot ? (
-                      <img className="static-debug-screenshot" src={staticScreenshot} alt="iOS static screenshot" />
-                    ) : (
-                      <div className="player-placeholder static-debug-placeholder">
-                        <VideoCameraOutlined style={{ fontSize: 48, marginBottom: 12 }} />
-                        <p>iOS 静态预览</p>
-                        <span>刷新截图或获取控件后查看当前页面</span>
-                      </div>
-                    )}
-                    {staticScreenshotLoading && (
-                      <div className="video-waiting-overlay">
-                        <div className="video-waiting-content">
-                          <span>正在刷新截图...</span>
-                        </div>
-                      </div>
-                    )}
-                    {staticActionLoading && !staticScreenshotLoading && (
-                      <div className="video-waiting-overlay translucent">
-                        <div className="video-waiting-content">
-                          <span>正在执行静态操作...</span>
-                        </div>
-                      </div>
-                    )}
-                    {uiElementOverlay}
-                  </div>
-                ) : (
-                  <div className="player-placeholder">
-                    <VideoCameraOutlined style={{ fontSize: 56, marginBottom: 16 }} />
-                    <p>从设备管理选择设备后点击连接开始投屏</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            <ScreenStage
+              playerViewportRef={playerViewportRef}
+              playerContainerRef={playerContainerRef}
+              playerBoxSize={playerBoxSize}
+              isPlaying={isPlaying}
+              isIosStaticDebug={isIosStaticDebug}
+              isIosDirectMjpegMirror={isIosDirectMjpegMirror}
+              iosMjpegStreamUrl={iosMjpegStreamUrl}
+              deviceInfo={deviceInfo}
+              handleTouchInput={handleTouchInput}
+              uiElements={uiElements}
+              visibleUiElements={visibleUiElements}
+              selectedUiElement={selectedUiElement}
+              onSelectUiElement={setSelectedUiElement}
+              renderMetrics={renderMetrics}
+              uiScreen={uiScreen}
+              lkSession={lkSession}
+              selectedDevice={selectedDevice}
+              isInitializing={isInitializing}
+              startupStatusText={startupStatusText}
+              onIOSMJPEGLoad={() => {
+                setHasVideoFrame(true)
+                setLoading(false)
+                setSessionDiagnostics((current) => current && { ...current, last_error: undefined })
+                if (startRequestedAtRef.current !== null) {
+                  setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
+                }
+              }}
+              onIOSMJPEGError={() => {
+                if (selectedDevice) {
+                  requestStopIOSMJPEG(selectedDevice)
+                }
+                setHasVideoFrame(false)
+                setLoading(false)
+                setIsPlaying(false)
+                setMjpegStreamKey(0)
+                activeSessionDeviceRef.current = null
+                activeSessionKindRef.current = null
+                setSessionDiagnostics({
+                  active: false,
+                  stage: 'error',
+                  stage_label: 'iOS MJPEG direct error',
+                  last_error: 'iOS MJPEG 直连流加载失败',
+                })
+              }}
+              onConnectionStateChange={handleConnectionStateChange}
+              onWebRTCStats={handleWebRTCStats}
+              onWebRTCFirstFrame={() => {
+                setHasVideoFrame(true)
+                setLoading(false)
+                if (startRequestedAtRef.current !== null) {
+                  setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
+                }
+              }}
+              onRoomCreated={(room) => { lkRoomRef.current = room; }}
+              iosTapMode={iosTapMode}
+              iosSwipeMode={iosSwipeMode}
+              onStaticStageClick={handleStaticStageClick}
+              onStaticStagePointerDown={handleStaticStagePointerDown}
+              onStaticStagePointerMove={handleStaticStagePointerMove}
+              onStaticStagePointerUp={handleStaticStagePointerUp}
+              onStaticStagePointerCancel={handleStaticStagePointerCancel}
+              staticScreenshot={staticScreenshot}
+              staticScreenshotLoading={staticScreenshotLoading}
+              staticActionLoading={staticActionLoading}
+            />
 
             <div className="device-rail">
               <Button shape="circle" icon={<HomeOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_HOME')} />
