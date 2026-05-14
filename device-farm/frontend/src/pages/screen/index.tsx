@@ -29,7 +29,7 @@ import type {
   UIElementNode,
   WorkspaceTab,
 } from './types'
-import { buildLocatorSnippets, buildVisibleUiElements, pythonString } from './uiHierarchy'
+import { buildLocatorSnippets, buildVisibleUiElements } from './uiHierarchy'
 import {
   IOS_DIRECT_MJPEG_SCREEN_DRIVERS,
   KEYBOARD_KEY_CODE_MAP,
@@ -49,82 +49,26 @@ import {
   requestStopSession,
   startLiveKitSession,
 } from './api'
+import {
+  buildDebugTags,
+  countScriptLines,
+  createDefaultScreenScript,
+  findLatestScriptLine,
+  formatDateTime,
+  formatDuration,
+  isActiveTask,
+  taskStatusColors,
+  taskStatusText,
+  visibleDebugLogs as filterVisibleDebugLogs,
+} from './scriptWorkspace'
 import './ScreenPage.css'
 
 const { Text } = Typography
-
-const taskStatusColors: Record<Task['status'], string> = {
-  pending: 'default',
-  running: 'processing',
-  success: 'success',
-  failed: 'error',
-  cancelled: 'warning',
-}
-
-const taskStatusText: Record<Task['status'], string> = {
-  pending: '排队中',
-  running: '运行中',
-  success: '成功',
-  failed: '失败',
-  cancelled: '已取消',
-}
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   const tagName = target.tagName.toLowerCase()
   return tagName === 'input' || tagName === 'textarea' || target.isContentEditable
-}
-
-function createDefaultScreenScript(packageName = 'com.example.app') {
-  return `# 平台脚本示例：统一使用 app.xxx 调用平台能力
-# 创建任务时只需要选择设备，启动哪个 App 由脚本自己控制
-package = ${pythonString(packageName || 'com.example.app')}
-
-app.log("script start")
-
-# 启动或拉起 App
-app.activate_app(package)
-app.wait(5)
-
-# 截图会自动上传到任务详情
-app.screenshot()
-
-# 常见弹窗处理
-if app.has_text("同意"):
-    app.click_text("同意", timeout=5)
-    app.wait(2)
-    app.screenshot()
-
-if app.has_text("允许"):
-    app.click_text("允许", timeout=5)
-    app.wait(1)
-
-# 页面断言
-source = app.source()
-assert_true(len(source) > 0, "页面源码为空，App 可能未正常启动")
-
-# 退出 App，也可以使用 app.restart_app(package) 验证重启
-app.terminate_app(package)
-
-app.log("script passed")
-test_pass()
-`
-}
-
-const isActiveTask = (task?: Task | null) => Boolean(task && ['pending', 'running'].includes(task.status))
-
-const formatDateTime = (value?: string) => value ? new Date(value).toLocaleString() : '-'
-
-const formatDuration = (task?: Task | null) => {
-  if (!task) return '-'
-  if (typeof task.result?.duration === 'number') {
-    return `${task.result.duration.toFixed(2)}s`
-  }
-  if (task.started_at && task.finished_at) {
-    const duration = (new Date(task.finished_at).getTime() - new Date(task.started_at).getTime()) / 1000
-    return `${duration.toFixed(2)}s`
-  }
-  return '-'
 }
 
 export default function ScreenPage() {
@@ -1106,9 +1050,9 @@ export default function ScreenPage() {
     () => buildLocatorSnippets(selectedUiElement, isIosDevice ? 'ios' : 'android'),
     [isIosDevice, selectedUiElement],
   )
-  const scriptLineCount = useMemo(() => scriptContent.split(/\r\n|\r|\n/).length, [scriptContent])
+  const scriptLineCount = useMemo(() => countScriptLines(scriptContent), [scriptContent])
   const visibleDebugLogs = useMemo(
-    () => debugTaskLogs.filter((entry) => entry.event_type !== 'script_line'),
+    () => filterVisibleDebugLogs(debugTaskLogs),
     [debugTaskLogs],
   )
   const debugScreenshots = debugTask?.result?.screenshots || []
@@ -1136,10 +1080,7 @@ export default function ScreenPage() {
 
   const applyDebugLogs = (logs: TaskLogEntry[]) => {
     setDebugTaskLogs(logs)
-    const latestLineEvent = [...logs]
-      .reverse()
-      .find((entry) => entry.event_type === 'script_line' && typeof entry.line_number === 'number')
-    setDebugCurrentLine(latestLineEvent?.line_number || null)
+    setDebugCurrentLine(findLatestScriptLine(logs))
   }
 
   useEffect(() => {
@@ -1386,7 +1327,7 @@ export default function ScreenPage() {
   }
 
   const saveDebugDraft = async (): Promise<Script> => {
-    const debugTags = Array.from(new Set([...scriptTags, 'screen-debug', 'debug-run']))
+    const debugTags = buildDebugTags(scriptTags)
     const data = {
       name: `${currentDevice?.name || selectedDevice || '投屏'} 调试脚本`,
       description: '投屏页自动保存的调试脚本草稿',
@@ -2144,7 +2085,7 @@ export default function ScreenPage() {
                   <Space direction="vertical" size={2}>
                     <Text type="secondary">{script.description || '无描述'}</Text>
                     <Text type="secondary">
-                      更新：{formatDateTime(script.updated_at)} · {script.content.split(/\r\n|\r|\n/).length} 行
+                      更新：{formatDateTime(script.updated_at)} · {countScriptLines(script.content)} 行
                     </Text>
                   </Space>
                 }
