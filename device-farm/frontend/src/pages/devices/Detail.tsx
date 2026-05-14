@@ -756,7 +756,13 @@ export default function DeviceDetail() {
     const { color, text } = statusConfig[device.status] || { color: 'default', text: '未知' }
     const isScreenSessionActive = Boolean(screenSessionDiagnostics?.active)
     const debugLabel = screenDebugLabel(device)
-    const debugDisabled = !deviceId || device.status === 'offline' || !supportsScreenDebug(device) || isScreenSessionActive
+    const isOccupied = device.status === 'busy' || isScreenSessionActive
+    const debugDisabled = !deviceId || device.status !== 'online' || !supportsScreenDebug(device) || isScreenSessionActive
+    const disabledReason = isOccupied
+      ? '设备已被投屏或任务占用'
+      : device.status !== 'online'
+        ? '设备当前不可用'
+        : undefined
 
     return (
       <div>
@@ -789,10 +795,10 @@ export default function DeviceDetail() {
             type="primary"
             icon={<PlayCircleOutlined />}
             disabled={debugDisabled}
-            title={isScreenSessionActive ? '设备已被投屏会话占用' : undefined}
+            title={disabledReason}
             onClick={() => window.open(`/screen?deviceId=${encodeURIComponent(device.id)}`, '_blank', 'noopener,noreferrer')}
           >
-            {isScreenSessionActive ? '占用中' : `开始${debugLabel}`}
+            {isOccupied ? '占用中' : `开始${debugLabel}`}
           </Button>
         </Space>
       </div>

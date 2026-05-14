@@ -237,6 +237,88 @@ function findSelector(element: UIElementNode, type: string) {
   return element.selector_suggestions.find((selector) => selector.type === type)?.value || ''
 }
 
+function isFalseAttribute(value: unknown) {
+  return value === false || value === 'false' || value === 0 || value === '0'
+}
+
+function hasUsefulOverlaySignal(element: UIElementNode, isIos: boolean) {
+  return Boolean(
+    (!isIos && element.clickable)
+    || element.scrollable
+    || element.focused
+    || element.selected
+    || element.resource_id
+    || element.text
+    || element.content_desc,
+  )
+}
+
+function overlayBounds(element: UIElementNode, screen: { width: number; height: number }) {
+  const left = Math.max(0, element.bounds.x)
+  const top = Math.max(0, element.bounds.y)
+  const right = Math.min(screen.width, element.bounds.x + element.bounds.width)
+  const bottom = Math.min(screen.height, element.bounds.y + element.bounds.height)
+  const width = Math.max(0, right - left)
+  const height = Math.max(0, bottom - top)
+  return { left, top, width, height }
+}
+
+function shouldRenderElementBox(element: UIElementNode, screen: { width: number; height: number }, isIos: boolean) {
+  if (element.bounds.width <= 0 || element.bounds.height <= 0 || screen.width <= 0 || screen.height <= 0) {
+    return false
+  }
+
+  const clipped = overlayBounds(element, screen)
+  if (clipped.width <= 0 || clipped.height <= 0) {
+    return false
+  }
+
+  if (!isIos) {
+    return true
+  }
+
+  if (isFalseAttribute(element.attributes?.visible)) {
+    return false
+  }
+
+  const screenArea = screen.width * screen.height
+  const areaRatio = (clipped.width * clipped.height) / screenArea
+  if (areaRatio > 0.85) {
+    return false
+  }
+
+  return hasUsefulOverlaySignal(element, true) || areaRatio < 0.5
+}
+
+function iOSOverlayElementScore(element: UIElementNode) {
+  let score = 0
+  if (element.text) score += 100
+  if (element.content_desc) score += 80
+  if (element.focused || element.selected) score += 40
+  if (element.scrollable) score += 20
+  if (element.class_name.includes('Button') || element.class_name.includes('Cell') || element.class_name.includes('TextField')) {
+    score += 35
+  } else if (element.class_name.includes('StaticText')) {
+    score += 25
+  } else if (element.class_name.includes('Image')) {
+    score -= 10
+  }
+  score += element.depth
+  return score
+}
+
+function dedupeIOSOverlayElements(elements: UIElementNode[]) {
+  const byBounds = new Map<string, UIElementNode>()
+  for (const element of elements) {
+    const key = `${element.bounds.x}:${element.bounds.y}:${element.bounds.width}:${element.bounds.height}`
+    const existing = byBounds.get(key)
+    if (!existing || iOSOverlayElementScore(element) > iOSOverlayElementScore(existing)) {
+      byBounds.set(key, element)
+    }
+  }
+  return Array.from(byBounds.values())
+}
+
 function buildLocatorSnippets(element: UIElementNode | null, platform = 'android'): LocatorSnippet[] {
   if (!element) return []
 
@@ -853,7 +935,10 @@ export default function ScreenPage() {
           message.warning('截图刷新失败，但会继续尝试获取控件树')
         }
       }
-      const res = await fetch(`/api/v1/devices/${selectedDevice}/ui-hierarchy`, {
+      const hierarchyEndpoint = isIosDirectMjpegMirror
+        ? `${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg/ui-hierarchy`
+        : `/api/v1/devices/${encodeURIComponent(selectedDevice)}/ui-hierarchy`
+      const res = await fetch(hierarchyEndpoint, {
         credentials: 'include',
         signal: controller.signal,
       })
@@ -886,7 +971,7 @@ export default function ScreenPage() {
       window.clearTimeout(timeoutId)
       setLoadingUiHierarchy(false)
     }
-  }, [currentDevice, isIosDevice, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice])
+  }, [currentDevice, isIosDevice, isIosDirectMjpegMirror, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice])
 
   const postStaticDebugAction = useCallback(async (
     path: 'tap' | 'text' | 'swipe' | 'long-press' | 'clear-text',
@@ -896,19 +981,22 @@ export default function ScreenPage() {
       throw new Error('当前设备不支持 iOS 静态操作')
     }
 
-    const res = await fetch(`/api/v1/devices/${selectedDevice}/debug/${path}`, {
+    const endpoint = isIosDirectMjpegMirror
+      ? `${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg/debug/${path}`
+      : `/api/v1/devices/${encodeURIComponent(selectedDevice)}/debug/${path}`
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ includeScreen: isIosStaticDebug, ...payload }),
+      body: JSON.stringify({ includeScreen: isIosStaticDebug && !isIosDirectMjpegMirror, ...payload }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
-      throw new Error(data.detail || 'iOS 静态操作失败')
+      throw new Error(data.detail || data.error || 'iOS 静态操作失败')
     }
     setStaticDebugSessionActive(true)
     return data as StaticDebugActionResponse
-  }, [isIosStaticActionSupported, isIosStaticDebug, selectedDevice])
+  }, [isIosDirectMjpegMirror, isIosStaticActionSupported, isIosStaticDebug, selectedDevice])
 
   const applyStaticActionScreen = useCallback((data: StaticDebugActionResponse) => {
     if (data.screen?.width && data.screen?.height) {
@@ -1392,9 +1480,27 @@ export default function ScreenPage() {
       ]
     : []
 
-  const visibleUiElements = uiElements
-    .filter((element) => element.bounds.width > 0 && element.bounds.height > 0)
-    .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
+  const visibleUiElements = useMemo(() => {
+    if (!uiScreen) return []
+    const elementsForOverlay = uiElements
+      .filter((element) => shouldRenderElementBox(element, uiScreen, isIosDevice))
+    const dedupedElements = isIosDevice ? dedupeIOSOverlayElements(elementsForOverlay) : elementsForOverlay
+    return dedupedElements
+      .map((element) => {
+        const bounds = overlayBounds(element, uiScreen)
+        const areaRatio = (bounds.width * bounds.height) / (uiScreen.width * uiScreen.height)
+        return {
+          element,
+          bounds,
+          zIndex: Math.max(1, Math.round((1 - areaRatio) * 1000) + element.depth),
+        }
+      })
+      .sort((a, b) => {
+        const areaA = a.bounds.width * a.bounds.height
+        const areaB = b.bounds.width * b.bounds.height
+        return areaB - areaA
+      })
+  }, [isIosDevice, uiElements, uiScreen])
   const locatorSnippets = useMemo(
     () => buildLocatorSnippets(selectedUiElement, isIosDevice ? 'ios' : 'android'),
     [isIosDevice, selectedUiElement],
@@ -1843,7 +1949,7 @@ export default function ScreenPage() {
         height: renderMetrics.height,
       }}
     >
-      {visibleUiElements.map((element) => {
+      {visibleUiElements.map(({ element, bounds, zIndex }) => {
         const isSelected = selectedUiElement?.uid === element.uid
         return (
           <button
@@ -1852,11 +1958,11 @@ export default function ScreenPage() {
             className={`ui-element-box ${isSelected ? 'selected' : ''} ${element.clickable ? 'clickable' : ''}`}
             title={element.resource_id || element.content_desc || element.text || element.class_name}
             style={{
-              left: `${(element.bounds.x / uiScreen.width) * 100}%`,
-              top: `${(element.bounds.y / uiScreen.height) * 100}%`,
-              width: `${(element.bounds.width / uiScreen.width) * 100}%`,
-              height: `${(element.bounds.height / uiScreen.height) * 100}%`,
-              zIndex: element.depth + 1,
+              left: `${(bounds.left / uiScreen.width) * 100}%`,
+              top: `${(bounds.top / uiScreen.height) * 100}%`,
+              width: `${(bounds.width / uiScreen.width) * 100}%`,
+              height: `${(bounds.height / uiScreen.height) * 100}%`,
+              zIndex,
             }}
             onClick={(event) => {
               event.preventDefault()

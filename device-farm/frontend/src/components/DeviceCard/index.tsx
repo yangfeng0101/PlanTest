@@ -53,7 +53,12 @@ export default function DeviceCard({
     : statusConfig[device.status] || { color: 'default', text: '未知' }
   const batteryLevel = metrics?.battery_level ?? device.batteryLevel
   const debugLabel = screenDebugLabel(device)
-  const canOpenScreenDebug = device.status !== 'offline' && supportsScreenDebug(device) && !screenActive
+  const canOpenScreenDebug = device.status === 'online' && supportsScreenDebug(device) && !screenActive
+  const disabledReason = screenActive || device.status === 'busy'
+    ? '设备已被投屏或任务占用'
+    : device.status !== 'online'
+      ? '设备当前不可用'
+      : undefined
 
   // Check if device has abnormal metrics
   const hasWarning = metrics && (
@@ -94,9 +99,9 @@ export default function DeviceCard({
             onScreen(device.id)
           }}
           disabled={!canOpenScreenDebug}
-          title={screenActive ? '设备已被投屏会话占用' : undefined}
+          title={disabledReason}
         >
-          {screenActive ? '占用中' : debugLabel}
+          {screenActive || device.status === 'busy' ? '占用中' : debugLabel}
         </Button>,
       ]}
     >

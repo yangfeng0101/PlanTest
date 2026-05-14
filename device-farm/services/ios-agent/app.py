@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -29,13 +30,25 @@ AUTOMATION_READY_UDIDS = {
     if udid.strip()
 }
 
-app = FastAPI(title="Device Farm iOS Agent", version="0.1.0")
 debug_sessions: dict[str, dict[str, Any]] = {}
 stream_sessions: dict[str, dict[str, Any]] = {}
 debug_session_locks: dict[str, asyncio.Lock] = {}
 stream_session_locks: dict[str, asyncio.Lock] = {}
 debug_command_locks: dict[str, asyncio.Lock] = {}
 stream_sessions_lock = asyncio.Lock()
+session_reaper_task: Optional[asyncio.Task] = None
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_: FastAPI):
+    await start_session_reaper()
+    try:
+        yield
+    finally:
+        await stop_session_reaper()
+
+
+app = FastAPI(title="Device Farm iOS Agent", version="0.1.0", lifespan=lifespan)
 
 
 class TapRequest(BaseModel):
@@ -255,6 +268,58 @@ async def ensure_debug_allowed(udid: str) -> None:
 def is_stale_session(session: dict[str, Any]) -> bool:
     last_used_at = float(session.get("last_used_at") or 0)
     return time.time() - last_used_at > DEBUG_SESSION_TTL_SECONDS
+
+
+async def reap_stale_sessions_once() -> dict[str, int]:
+    stale_debug_udids = [
+        udid
+        for udid, session in list(debug_sessions.items())
+        if is_stale_session(session)
+    ]
+    async with stream_sessions_lock:
+        stale_stream_udids = [
+            udid
+            for udid, session in list(stream_sessions.items())
+            if is_stale_session(session)
+        ]
+
+    released_debug = 0
+    for udid in stale_debug_udids:
+        if debug_sessions.get(udid) and is_stale_session(debug_sessions[udid]):
+            if await clear_debug_session(udid):
+                released_debug += 1
+
+    released_stream = 0
+    for udid in stale_stream_udids:
+        async with stream_sessions_lock:
+            cached = stream_sessions.get(udid)
+            still_stale = bool(cached and is_stale_session(cached))
+        if still_stale and await clear_stream_session(udid):
+            released_stream += 1
+
+    return {"debug": released_debug, "stream": released_stream}
+
+
+async def session_reaper_loop() -> None:
+    interval = max(30, min(60, DEBUG_SESSION_TTL_SECONDS // 2 or 30))
+    while True:
+        await asyncio.sleep(interval)
+        await reap_stale_sessions_once()
+
+
+async def start_session_reaper() -> None:
+    global session_reaper_task
+    if session_reaper_task is None or session_reaper_task.done():
+        session_reaper_task = asyncio.create_task(session_reaper_loop())
+
+
+async def stop_session_reaper() -> None:
+    global session_reaper_task
+    if session_reaper_task is not None:
+        session_reaper_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await session_reaper_task
+        session_reaper_task = None
 
 
 async def delete_appium_session(session_id: str) -> None:

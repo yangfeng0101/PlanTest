@@ -196,6 +196,14 @@ class DeviceService:
         self._apply_ios_automation_capability(device, bool(info.get("automation_ready")))
         return device
 
+    def _merge_scanned_status(self, existing: Device, scanned_status: DeviceStatus) -> DeviceStatus:
+        """Preserve logical occupancy while the physical connection is online."""
+        if scanned_status == DeviceStatus.ONLINE and (
+            existing.status == DeviceStatus.BUSY or existing.occupied_by
+        ):
+            return DeviceStatus.BUSY
+        return scanned_status
+
     async def scan_devices(self) -> List[Device]:
         """Scan and update device list"""
         try:
@@ -213,14 +221,17 @@ class DeviceService:
 
             if device_id in self._devices:
                 # Update existing device status
-                self._devices[device_id].status = device_info["status"]
-                self._devices[device_id].last_active_at = datetime.now()
-                await self._refresh_existing_device_metadata(self._devices[device_id])
-                self._devices[device_id].refresh_runtime_fields()
+                existing = self._devices[device_id]
+                existing.status = self._merge_scanned_status(existing, DeviceStatus(device_info["status"]))
+                existing.last_active_at = datetime.now()
+                await self._refresh_existing_device_metadata(existing)
+                existing.refresh_runtime_fields()
                 # Persist status update to database
                 await device_db_service.update_device_status(
                     device_id,
-                    DeviceStatus(device_info["status"])
+                    existing.status,
+                    existing.occupied_by if existing.status == DeviceStatus.BUSY else None,
+                    existing.occupied_at if existing.status == DeviceStatus.BUSY else None,
                 )
             else:
                 # New device - get full info
@@ -264,7 +275,7 @@ class DeviceService:
                 existing.brand = device.brand
                 existing.os = device.os
                 existing.os_version = device.os_version
-                existing.status = device.status
+                existing.status = self._merge_scanned_status(existing, device.status)
                 existing.screen_resolution = device.screen_resolution
                 existing.screen_size = device.screen_size
                 existing.cpu = device.cpu

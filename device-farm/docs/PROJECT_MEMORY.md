@@ -8,7 +8,7 @@
 
 - 当前远程状态：`main` 已合并并推送 iOS 脚本执行 v1；`dev-reboot` 保留对应功能提交。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
-- 最近一次功能改动：iOS `mjpeg-direct` 直连预览补齐低延迟一次性触控优化。默认仍保持 iOS 静态预览，只有 `IOS_ENABLE_EXPERIMENTAL_SCREEN=true` 且显式配置实验 driver 时才开放 iOS 画面预览，连续实时触控仍未开放。
+- 最近一次功能改动：投屏生命周期收敛到 device-svc 现有设备占用语义。Android/LiveKit 投屏和 iOS `mjpeg-direct` 预览启动前都会占用设备，启动失败、停止、断连或本地 session 结束时只释放 screen-svc 本次成功占用的设备；iOS MJPEG prepare 后如果 30 秒内没有真正接入 MJPEG GET，会自动释放占用；device-svc 扫描会保留已占用设备的 `busy` 状态，不再刷回 `online + occupied_by` 的半占用状态；iOS `mjpeg-direct` 投屏态的点按、滑动、长按、输入、清空和控件树获取会走 screen-svc 当前 session 代理，不再走 device-svc 静态调试接口；设备管理页投屏入口按 `online` 状态和 screen-svc session 状态禁用；iOS Agent 增加 debug/stream session TTL 后台清理。iOS 连续实时触控仍未开放。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -26,6 +26,7 @@
   - iOS MJPEG 直连验证：`du-iPhone` 通过 `screen-svc` 直连代理 WDA/MJPEG 到浏览器，真机体感明显比此前 `MJPEG -> ffmpeg/H264 -> LiveKit/WebRTC` 链路流畅；因此保留 `mjpeg-direct` 作为实验预览 driver，暂不再推进 iOS MJPEG 转 H264/LiveKit 方案。
   - iOS WDA 信任问题已通过 `ios_stream_source_probe.py --trust-preinstall-wda` 验证修复路径：预编译 WDA Runner 能留在手机安装列表中；用户在 iPhone 信任开发者证书后，普通 probe 成功创建 WDA session，5 秒 MJPEG 短测 47 帧、平均约 9.37 FPS、首帧约 190ms，Appium `/screenshot` 短基线成功 7/7、约 3.47 FPS；iOS Agent 静态截图接口也可正常返回并复用 debug session。
   - iOS 低延迟触控真机验证：`du-iPhone` 在 `mjpeg-direct` stream session 复用状态下，iOS Agent 热路径已绕开重复设备枚举/Appium status；10 次 tap 约 586-818ms，顺序 swipe 约 1.3s，long-press 约 1.3s，device-svc 代理 tap 约 745ms。此前 Appium `mobile: tap` 约 1.7-2.6s，主要慢点已确认在热路径重复设备校验和 Appium 动作代理；当前 WDA 8100 直连端口不稳定可用，因此 Agent 保留 WDA direct 优先、Appium `mobile:` fallback。
+  - 投屏占用收敛真机验收：华为 P50 Pro Android/Harmony 投屏启动后设备保持 `busy`，投屏期间创建脚本任务返回 409，停止后恢复 `online`；`du-iPhone` iOS `mjpeg-direct` prepare 后设备保持 `busy`，投屏期间 iOS 脚本任务和静态截图调试均返回 409，MJPEG GET 可拉取约 1.4 MB 数据，GET 断开或 DELETE 停止后恢复 `online`；prepare 后不接 GET 的场景 30 秒后自动恢复 `online`。本次验收发现并修复 device-svc 扫描把已占用设备刷回 `online` 的问题。
 
 ## 最近完成的改动
 
@@ -78,7 +79,8 @@
   - `test-svc` 会把 `_device_snapshot` 和 `_appium_diagnostics` 写入任务 `device_capabilities` 供详情页排查；这些内部字段不会传给 Appium。
   - iOS Appium/WDA session 创建失败时会在任务错误和日志中保留原始错误，并追加中文 hint，例如 Appium host 不可达、Team 签名异常、bundle id 冲突、设备未信任或 WDA 超时。
   - 设备能力新增 `automation`；iOS 设备在 `automation_ready=true` 后开放脚本执行、静态截图、控件树调试、静态点按、滑动、长按、文本输入和清空输入，默认不开放投屏和连续触控。
-  - iOS 投屏页支持实验 `mjpeg-direct` 直连预览：`device-svc` 设置 `IOS_ENABLE_EXPERIMENTAL_SCREEN=true`、`IOS_SCREEN_DRIVER=mjpeg-direct` 后，正式 `/screen` 页面先通过 `screen-svc POST /api/v1/sessions/<udid>/ios-mjpeg/prepare` 获取 WDA 逻辑屏幕尺寸，再通过 `GET /api/v1/sessions/<udid>/ios-mjpeg` 直接代理 iOS Agent WDA/MJPEG multipart 到浏览器，不启动 LiveKit、不做 ffmpeg/H264 转码；前端直连模式已收敛成接近 Android 投屏的界面，不再展示静态截图刷新/点按模式/滑动模式等额外控件，点击/拖动画面会走低延迟一次性 WDA direct actions，默认不再随动作刷新 screen，并会在页脚展示最近一次触控耗时和 control method。Android/Harmony 不受影响。旧的 Go 侧 iOS MJPEG/PNG 转 H264 实验代码已移除，避免误导后续维护。
+  - iOS 投屏页支持实验 `mjpeg-direct` 直连预览：`device-svc` 设置 `IOS_ENABLE_EXPERIMENTAL_SCREEN=true`、`IOS_SCREEN_DRIVER=mjpeg-direct` 后，正式 `/screen` 页面先通过 `screen-svc POST /api/v1/sessions/<udid>/ios-mjpeg/prepare` 获取 WDA 逻辑屏幕尺寸，再通过 `GET /api/v1/sessions/<udid>/ios-mjpeg` 直接代理 iOS Agent WDA/MJPEG multipart 到浏览器，不启动 LiveKit、不做 ffmpeg/H264 转码；前端直连模式已收敛成接近 Android 投屏的界面，不再展示静态截图刷新/点按模式/滑动模式等额外控件，点击/拖动画面会走 `screen-svc POST /api/v1/sessions/<udid>/ios-mjpeg/debug/<action>`，控件树会走 `screen-svc GET /api/v1/sessions/<udid>/ios-mjpeg/ui-hierarchy`，由当前投屏 session owner 校验后代理到 iOS Agent 并解析 Appium source，默认不再随动作刷新 screen，并会在页脚展示最近一次触控耗时和 control method。Android/Harmony 不受影响。旧的 Go 侧 iOS MJPEG/PNG 转 H264 实验代码已移除，避免误导后续维护。
+  - `screen-svc` 投屏启动统一走 device-svc 的 `occupy/release`：Android/LiveKit session 与 iOS `mjpeg-direct` session 都会让设备进入 `busy`，从而阻止脚本任务或另一个投屏入口抢同一台设备；启动失败、停止接口、iOS MJPEG 图片连接结束和 Android session done 都会按本地 lease 记录释放设备，避免释放脚本任务或其他服务占用。device-svc 后台扫描看到已占用设备仍在线时会保留 `busy`，避免扫描周期破坏占用语义。
   - 投屏页对 iOS 使用静态预览模式：不启动 LiveKit，可刷新截图、默认关闭自动刷新预览并支持 1s/2s/5s 间隔、拉取控件树、点按截图或控件中心点、拖动截图执行一次性滑动、长按控件中心点、向当前焦点输入或清空文本，并展示最近刷新耗时、连续失败次数、最近错误、iOS debug session 占用状态和 iOS selector 片段；设备列表/详情页会以“调试”入口打开该页面，切换设备或离开页面会释放 iOS Agent debug session。
   - iOS Agent 新增 `GET /devices/{udid}/screenshot`、`GET /devices/{udid}/source`、`POST /devices/{udid}/tap`、`POST /devices/{udid}/swipe`、`POST /devices/{udid}/long-press`、`POST /devices/{udid}/text`、`POST /devices/{udid}/clear-text`、`POST /devices/{udid}/stream-session`、`DELETE /devices/{udid}/stream-session`、`DELETE /devices/{udid}/debug-session`，内部按 UDID 缓存 Appium XCUITest debug/stream session，debug/stream session 均按 TTL 过期清理，并按 UDID 串行化 Appium 命令，避免并发请求打坏 WDA session；动作接口默认 `includeScreen=false` 并返回 `latency_ms`、`control_method`、`session_reused`，tap/long-press/swipe 优先直连 `IOS_WDA_BASE_URL` 的 WDA `/actions`，不可用时 fallback 到 Appium `mobile:` 指令和 W3C actions。
   - iOS Agent 创建 Appium session 使用独立 `IOS_AGENT_SESSION_CREATE_TIMEOUT`，默认 90 秒；普通命令仍使用 `IOS_AGENT_COMMAND_TIMEOUT` 默认 20 秒，避免首次 WDA 启动超过 20 秒时 Agent 过早返回 503。
@@ -118,6 +120,7 @@
 - `@midscene/android` 当前最新版本为 `1.7.9`；`npm audit --omit=dev --registry=https://registry.npmjs.org` 会报告其传递依赖中的漏洞，自动修复建议降级到旧版 `0.13.1`，当前不采用。`midscene-runner` 保持 Docker 内网服务、不映射宿主机端口，后续跟踪上游版本修复。
 - Midscene 第一版未接入 HTML 报告、断点/单步调试、pinch、数据提取方法，也未复用 screen-svc 的截图/触控链路。
 - iOS 当前支持脚本执行闭环、静态截图/控件树调试、静态点按、滑动、长按、文本输入、清空输入和准实时静态截图预览；`mjpeg-direct` 直连预览是实验能力，默认不开放，并已做低延迟一次性触控优化。连续实时触控、Home/Back/App Switch 等系统键仍未接入。
+- iOS 控件树来自 Appium/WDA accessibility source；投屏页控件框会过滤不可见节点、超大无语义容器和重复同 bounds 节点，只在画面上展示更接近真实可点/可定位元素的框。右侧属性/selector 仍来自原始控件树。若 App 内存在自绘、透明覆盖层或无 accessibility 标识的元素，WDA source 本身仍可能与视觉元素不完全一致。
 - iOS WDA/MJPEG probe session 结束会删除自己的 Appium session，可能导致 WDA 退出；如果 probe 与 iOS Agent 使用不同 WDA bundle，后续 iOS Agent 重启 WDA 可能出现 `xcodebuild failed with code 65`，优先检查当前 shell 的 WDA 签名环境变量、自定义 bundle、Team、证书信任和 Appium 日志。若 Appium 日志显示 WDA 已安装但 launch 因 `invalid code signature` / `not explicitly trusted` 失败，普通 session 会卸载 WDA，需先用 `ios_stream_source_probe.py --trust-preinstall-wda` 安装并保留预编译 WDA Runner，完成手机端开发者证书信任后再运行普通会话；`iosInstallPause` 只暂停被测 App 安装，不解决 WDA 信任。
 - 前端生产构建有 chunk 体积 warning，当前不阻塞功能，后续可通过动态 import 或 manualChunks 优化。
 - WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。

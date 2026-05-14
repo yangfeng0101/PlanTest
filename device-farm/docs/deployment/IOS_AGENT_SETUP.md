@@ -246,13 +246,27 @@ Browser <img>
 
 这条链路不启动 LiveKit，也不做 ffmpeg/H264 转码；Android/Harmony 投屏仍走原来的
 LiveKit/WebRTC。iOS `remoteControl` 仍为 `false`，点按、滑动、长按、输入和清空
-继续通过 iOS Agent 的低延迟一次性 Appium/WDA 操作接口完成；它不是 Android/scrcpy
-那种连续实时触控流。
+在 `mjpeg-direct` 投屏态会通过
+`screen-svc POST /api/v1/sessions/<udid>/ios-mjpeg/debug/<action>` 转发到 iOS Agent，
+并校验当前投屏 session owner；静态调试模式才直接走 device-svc 的
+`/devices/<udid>/debug/<action>`。它不是 Android/scrcpy 那种连续实时触控流。
+投屏态点击“获取控件”会走
+`screen-svc GET /api/v1/sessions/<udid>/ios-mjpeg/ui-hierarchy`，由 screen-svc
+复用当前 iOS Agent stream/debug session 拉取 Appium source 并解析控件树，避免被
+device-svc 的静态调试独占校验拦截。
+
+`screen-svc` 在 prepare 成功前会先通过 device-svc 占用这台 iPhone。占用后设备状态
+会变成 `busy`，脚本任务、静态调试或另一个投屏入口都不应再抢同一台设备。投屏停止、
+浏览器断开 MJPEG 图片连接或启动失败时，`screen-svc` 只释放自己本次成功占用的设备，
+不会释放脚本任务或其他服务持有的占用。
+如果 prepare 成功后浏览器没有真正接入 MJPEG GET，`screen-svc` 会在 30 秒后自动
+清理 iOS Agent stream session 并释放 device-svc 占用，避免页面中断时留下 stale busy。
 
 关闭页面或断开投屏时，前端会调用
 `DELETE /api/v1/sessions/<udid>/ios-mjpeg`，`screen-svc` 再调用
 `DELETE /devices/<udid>/stream-session` 释放 iOS Agent 内的 stream session。iOS Agent
-也会按 debug session TTL 清理过期 stream session，避免异常断开后长期占用 WDA。
+也会启动后台 reaper，按 `IOS_AGENT_DEBUG_SESSION_TTL_SECONDS` 清理过期 debug/stream
+session，避免异常断开后长期占用 WDA。
 同一台 iPhone 同时只应打开一个投屏/调试入口，避免抢占 WDA session。
 
 ## iOS Smoke 示例

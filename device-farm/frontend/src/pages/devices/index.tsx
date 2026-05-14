@@ -389,11 +389,17 @@ export default function DevicesPage() {
       render: (_: unknown, record: Device) => {
         const screenActive = Boolean(screenSessions[record.id])
         const debugLabel = screenDebugLabel(record)
-        const screenDisabled = record.status === 'offline' || !supportsScreenDebug(record) || screenActive
+        const isOccupied = record.status === 'busy' || screenActive
+        const screenDisabled = record.status !== 'online' || !supportsScreenDebug(record) || screenActive
+        const disabledReason = isOccupied
+          ? '设备已被投屏或任务占用'
+          : record.status !== 'online'
+            ? '设备当前不可用'
+            : undefined
 
         return (
           <Space>
-            <Tooltip title={screenActive ? '设备已被投屏会话占用' : undefined}>
+            <Tooltip title={disabledReason}>
               <Button
                 type="link"
                 size="small"
@@ -401,7 +407,7 @@ export default function DevicesPage() {
                 icon={<PlayCircleOutlined />}
                 disabled={screenDisabled}
               >
-                {screenActive ? '占用中' : debugLabel}
+                {isOccupied ? '占用中' : debugLabel}
               </Button>
             </Tooltip>
           </Space>

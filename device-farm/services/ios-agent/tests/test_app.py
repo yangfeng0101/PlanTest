@@ -625,6 +625,41 @@ class IOSAgentDebugSessionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session["session_id"], "stream-session-2")
         self.assertEqual(calls[0][1], {"appium:mjpegServerPort": 9100})
 
+    async def test_reaper_clears_only_expired_debug_and_stream_sessions(self):
+        deleted = []
+
+        async def fake_delete(session_id):
+            deleted.append(session_id)
+
+        self.app_module.delete_appium_session = fake_delete
+        self.app_module.debug_sessions["stale-debug"] = {
+            "session_id": "debug-session-1",
+            "last_used_at": time.time() - self.app_module.DEBUG_SESSION_TTL_SECONDS - 1,
+        }
+        self.app_module.debug_sessions["fresh-debug"] = {
+            "session_id": "debug-session-2",
+            "last_used_at": time.time(),
+        }
+        self.app_module.stream_sessions["stale-stream"] = {
+            "session_id": "stream-session-1",
+            "mjpeg_port": 9100,
+            "last_used_at": time.time() - self.app_module.DEBUG_SESSION_TTL_SECONDS - 1,
+        }
+        self.app_module.stream_sessions["fresh-stream"] = {
+            "session_id": "stream-session-2",
+            "mjpeg_port": 9101,
+            "last_used_at": time.time(),
+        }
+
+        released = await self.app_module.reap_stale_sessions_once()
+
+        self.assertEqual(released, {"debug": 1, "stream": 1})
+        self.assertEqual(set(deleted), {"debug-session-1", "stream-session-1"})
+        self.assertNotIn("stale-debug", self.app_module.debug_sessions)
+        self.assertNotIn("stale-stream", self.app_module.stream_sessions)
+        self.assertIn("fresh-debug", self.app_module.debug_sessions)
+        self.assertIn("fresh-stream", self.app_module.stream_sessions)
+
 
 if __name__ == "__main__":
     unittest.main()
