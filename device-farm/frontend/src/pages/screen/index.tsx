@@ -21,17 +21,34 @@ import CodeEditor from '@/components/CodeEditor'
 import { scriptApi, taskApi } from '@/services/api'
 import { formatDeviceOs, mapDevice } from '@/utils/device'
 import type {
-  IOSMJPEGPrepareResponse,
   LocatorSnippet,
   RenderMetrics,
   ScreenSessionDiagnostics,
   StaticDebugActionResponse,
   StaticDebugPoint,
   UIElementNode,
-  UIHierarchyResponse,
   WorkspaceTab,
 } from './types'
 import { buildLocatorSnippets, buildVisibleUiElements, pythonString } from './uiHierarchy'
+import {
+  IOS_DIRECT_MJPEG_SCREEN_DRIVERS,
+  KEYBOARD_KEY_CODE_MAP,
+  STATIC_AUTO_REFRESH_INTERVAL_OPTIONS,
+  TOUCH_MOVE_INTERVAL_MS,
+  buildIOSMJPEGStreamUrl,
+  fetchDeviceScreenInfo,
+  fetchDeviceScreenshot,
+  fetchDevicesPayload,
+  fetchSessionDiagnostics,
+  fetchUIHierarchy,
+  postIOSDebugAction,
+  prepareIOSMJPEGSession,
+  releaseDebugSession,
+  requestReleaseDebugSession,
+  requestStopIOSMJPEG,
+  requestStopSession,
+  startLiveKitSession,
+} from './api'
 import './ScreenPage.css'
 
 const { Text } = Typography
@@ -50,67 +67,6 @@ const taskStatusText: Record<Task['status'], string> = {
   success: '成功',
   failed: '失败',
   cancelled: '已取消',
-}
-
-const SCREEN_HTTP_URL = import.meta.env.VITE_SCREEN_HTTP_URL || ''
-const TOUCH_MOVE_INTERVAL_MS = 16
-const STATIC_AUTO_REFRESH_INTERVAL_OPTIONS = [
-  { label: '1s', value: 1000 },
-  { label: '2s', value: 2000 },
-  { label: '5s', value: 5000 },
-]
-const IOS_DIRECT_MJPEG_SCREEN_DRIVERS = new Set([
-  'mjpeg-direct',
-  'wda-mjpeg',
-  'wda-mjpeg-direct',
-  'ios-mjpeg',
-  'ios-mjpeg-direct',
-])
-const KEYBOARD_KEY_CODE_MAP: Record<string, number> = {
-  Backspace: 67,
-  Enter: 66,
-  Tab: 61,
-  Escape: 111,
-  Delete: 112,
-  ArrowUp: 19,
-  ArrowDown: 20,
-  ArrowLeft: 21,
-  ArrowRight: 22,
-}
-
-function requestStopSession(deviceId: string) {
-  void fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(deviceId)}/stop`, {
-    method: 'POST',
-    credentials: 'include',
-    keepalive: true,
-  }).catch((error) => {
-    console.error('Failed to stop session:', error)
-  })
-}
-
-function requestStopIOSMJPEG(deviceId: string) {
-  void fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(deviceId)}/ios-mjpeg`, {
-    method: 'DELETE',
-    credentials: 'include',
-    keepalive: true,
-  }).catch((error) => {
-    console.error('Failed to stop iOS MJPEG stream:', error)
-  })
-}
-
-async function releaseDebugSession(deviceId: string, keepalive = false) {
-  const res = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/debug-session`, {
-    method: 'DELETE',
-    credentials: 'include',
-    keepalive,
-  })
-  return res.ok
-}
-
-function requestReleaseDebugSession(deviceId: string) {
-  void releaseDebugSession(deviceId, true).catch((error) => {
-    console.error('Failed to release debug session:', error)
-  })
 }
 
 function isEditableTarget(target: EventTarget | null) {
@@ -301,8 +257,7 @@ export default function ScreenPage() {
   useEffect(() => {
     const fetchDevices = async () => {
       try {
-        const res = await fetch('/api/v1/devices')
-        const data = await res.json()
+        const data = await fetchDevicesPayload()
         setDevices((data.devices || []).map((d: Record<string, unknown>) => mapDevice(d)))
       } catch (e) {
         console.error('Failed to fetch devices:', e)
@@ -323,8 +278,7 @@ export default function ScreenPage() {
         return
       }
       try {
-        const res = await fetch(`/api/v1/devices/${selectedDevice}`)
-        const data = await res.json()
+        const data = await fetchDeviceScreenInfo(selectedDevice)
         const resolution = data.screen_resolution || data.screenResolution || '1080x1920'
         const [width, height] = resolution.split('x').map(Number)
         setDeviceInfo({ width: width || 1080, height: height || 1920 })
@@ -370,14 +324,7 @@ export default function ScreenPage() {
     startRequestedAtRef.current = performance.now()
     try {
       if (isIosDirectMjpegMirror) {
-        const prepareRes = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg/prepare`, {
-          method: 'POST',
-          credentials: 'include',
-        })
-        const prepareData = await prepareRes.json().catch(() => ({})) as IOSMJPEGPrepareResponse & { error?: string }
-        if (!prepareRes.ok) {
-          throw new Error(prepareData.error || 'iOS MJPEG 直连预览初始化失败')
-        }
+        const prepareData = await prepareIOSMJPEGSession(selectedDevice)
         applyIosLogicalScreen(prepareData.screen)
         setHasVideoFrame(false)
         setFps(0)
@@ -394,27 +341,18 @@ export default function ScreenPage() {
         return
       }
 
-      const res = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      })
-      const data = await res.json()
-      if (res.ok && data.token) {
-        const videoWidth = Number(data.video_width || data.videoWidth)
-        const videoHeight = Number(data.video_height || data.videoHeight)
-        if (videoWidth > 0 && videoHeight > 0) {
-          setDeviceInfo({ width: videoWidth, height: videoHeight })
-        }
-        setHasVideoFrame(false)
-        setSessionDiagnostics(data as ScreenSessionDiagnostics)
-        activeSessionDeviceRef.current = selectedDevice
-        activeSessionKindRef.current = 'livekit'
-        setLkSession({ url: data.livekit_url || 'ws://localhost:7880', token: data.token })
-        setIsPlaying(true)
-      } else {
-        message.error(data.error || '无法获取连接 Token')
+      const data = await startLiveKitSession(selectedDevice)
+      const videoWidth = Number(data.video_width || data.videoWidth)
+      const videoHeight = Number(data.video_height || data.videoHeight)
+      if (videoWidth > 0 && videoHeight > 0) {
+        setDeviceInfo({ width: videoWidth, height: videoHeight })
       }
+      setHasVideoFrame(false)
+      setSessionDiagnostics(data)
+      activeSessionDeviceRef.current = selectedDevice
+      activeSessionKindRef.current = 'livekit'
+      setLkSession({ url: data.livekit_url || 'ws://localhost:7880', token: data.token })
+      setIsPlaying(true)
     } catch (e) {
       const error = e as Error
       message.error(error.message || '启动会话失败')
@@ -572,33 +510,19 @@ export default function ScreenPage() {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
     const startedAt = performance.now()
-    const fetchScreenshot = async () => {
-      const res = await fetch(`/api/v1/devices/${selectedDevice}/screenshot`, {
-        credentials: 'include',
-        signal: controller.signal,
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        throw new Error(data.detail || '刷新截图失败')
-      }
-      if (!data.image) {
-        throw new Error('截图数据为空')
-      }
-      return data
-    }
 
     setStaticScreenshotLoading(true)
     try {
       let data: Record<string, unknown>
       try {
-        data = await fetchScreenshot()
+        data = await fetchDeviceScreenshot(selectedDevice, controller.signal)
       } catch (error) {
         if (!retryRebuild || (error as Error).name === 'AbortError') {
           throw error
         }
         setStaticDebugSessionActive(false)
         await releaseDebugSession(selectedDevice)
-        data = await fetchScreenshot()
+        data = await fetchDeviceScreenshot(selectedDevice, controller.signal)
       }
 
       const image = typeof data.image === 'string' ? data.image : ''
@@ -653,19 +577,7 @@ export default function ScreenPage() {
           message.warning('截图刷新失败，但会继续尝试获取控件树')
         }
       }
-      const hierarchyEndpoint = isIosDirectMjpegMirror
-        ? `${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg/ui-hierarchy`
-        : `/api/v1/devices/${encodeURIComponent(selectedDevice)}/ui-hierarchy`
-      const res = await fetch(hierarchyEndpoint, {
-        credentials: 'include',
-        signal: controller.signal,
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.detail || '获取控件失败')
-      }
-
-      const result = data as UIHierarchyResponse
+      const result = await fetchUIHierarchy(selectedDevice, isIosDirectMjpegMirror, controller.signal)
       setUiElements(result.elements || [])
       setSelectedUiElement(null)
       if (result.screen?.width > 0 && result.screen?.height > 0) {
@@ -699,21 +611,12 @@ export default function ScreenPage() {
       throw new Error('当前设备不支持 iOS 静态操作')
     }
 
-    const endpoint = isIosDirectMjpegMirror
-      ? `${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg/debug/${path}`
-      : `/api/v1/devices/${encodeURIComponent(selectedDevice)}/debug/${path}`
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ includeScreen: isIosStaticDebug && !isIosDirectMjpegMirror, ...payload }),
+    const data = await postIOSDebugAction(selectedDevice, path, payload, {
+      isIosDirectMjpegMirror,
+      includeScreen: isIosStaticDebug && !isIosDirectMjpegMirror,
     })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      throw new Error(data.detail || data.error || 'iOS 静态操作失败')
-    }
     setStaticDebugSessionActive(true)
-    return data as StaticDebugActionResponse
+    return data
   }, [isIosDirectMjpegMirror, isIosStaticActionSupported, isIosStaticDebug, selectedDevice])
 
   const applyStaticActionScreen = useCallback((data: StaticDebugActionResponse) => {
@@ -1030,22 +933,19 @@ export default function ScreenPage() {
     if (!selectedDevice || !isPlaying || hasVideoFrame || isIosDirectMjpegMirror) return
 
     let cancelled = false
-    const fetchSessionDiagnostics = async () => {
+    const refreshSessionDiagnostics = async () => {
       try {
-        const res = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}`, {
-          credentials: 'include',
-        })
-        const data = await res.json()
-        if (!cancelled && res.ok) {
-          setSessionDiagnostics(data as ScreenSessionDiagnostics)
+        const data = await fetchSessionDiagnostics(selectedDevice)
+        if (!cancelled) {
+          setSessionDiagnostics(data)
         }
       } catch (e) {
         console.error('Failed to fetch screen session diagnostics:', e)
       }
     }
 
-    void fetchSessionDiagnostics()
-    const interval = window.setInterval(fetchSessionDiagnostics, 1000)
+    void refreshSessionDiagnostics()
+    const interval = window.setInterval(refreshSessionDiagnostics, 1000)
     return () => {
       cancelled = true
       window.clearInterval(interval)
@@ -1220,8 +1120,7 @@ export default function ScreenPage() {
   const inspectReady = isPlaying || isIosStaticDebug
   const iosMjpegStreamUrl = useMemo(() => {
     if (!selectedDevice || !isPlaying || !isIosDirectMjpegMirror || !mjpegStreamKey) return ''
-    const query = new URLSearchParams({ t: String(mjpegStreamKey) })
-    return `${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg?${query.toString()}`
+    return buildIOSMJPEGStreamUrl(selectedDevice, mjpegStreamKey)
   }, [isIosDirectMjpegMirror, isPlaying, mjpegStreamKey, selectedDevice])
 
   const hasStartupError = !isIosStaticDebug && Boolean(sessionDiagnostics?.last_error)

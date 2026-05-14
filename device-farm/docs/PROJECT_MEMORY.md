@@ -143,6 +143,7 @@
   - `device-farm/frontend/src/types/index.ts`
 - 处理投屏页和控件检查时优先看：
   - `device-farm/frontend/src/pages/screen/index.tsx`
+  - `device-farm/frontend/src/pages/screen/api.ts`
   - `device-farm/frontend/src/pages/screen/types.ts`
   - `device-farm/frontend/src/pages/screen/uiHierarchy.ts`
   - `device-farm/frontend/src/pages/screen/ScreenPage.css`
