@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     REPORT_SVC_URL: str = os.getenv("REPORT_SVC_URL", "http://localhost:8004")
     IOS_AGENT_URL: str = os.getenv("IOS_AGENT_URL", "")
     IOS_AGENT_REQUEST_TIMEOUT: float = float(os.getenv("IOS_AGENT_REQUEST_TIMEOUT", "90"))
+    IOS_ENABLE_EXPERIMENTAL_SCREEN: bool = False
+    IOS_SCREEN_DRIVER: str = ""
 
     # CORS - comma-separated origins from environment
     CORS_ORIGINS: List[str] = [

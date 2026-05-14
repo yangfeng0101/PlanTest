@@ -12,8 +12,17 @@ from pydantic import BaseModel, Field
 
 
 APPIUM_HOST = os.getenv("IOS_APPIUM_HOST", "http://127.0.0.1:4724").rstrip("/")
+WDA_BASE_URL = os.getenv("IOS_WDA_BASE_URL", "http://127.0.0.1:8100").rstrip("/")
 COMMAND_TIMEOUT = float(os.getenv("IOS_AGENT_COMMAND_TIMEOUT", "20"))
+SESSION_CREATE_TIMEOUT = float(os.getenv("IOS_AGENT_SESSION_CREATE_TIMEOUT", "90"))
 DEBUG_SESSION_TTL_SECONDS = int(os.getenv("IOS_AGENT_DEBUG_SESSION_TTL_SECONDS", "300"))
+STREAM_MJPEG_PORT_START = int(os.getenv("IOS_WDA_MJPEG_PORT_START", "9100"))
+STREAM_MJPEG_PORT_END = int(os.getenv("IOS_WDA_MJPEG_PORT_END", "9199"))
+STREAM_MJPEG_PUBLIC_SCHEME = os.getenv("IOS_WDA_MJPEG_PUBLIC_SCHEME", "http")
+STREAM_MJPEG_PUBLIC_HOST = os.getenv("IOS_WDA_MJPEG_PUBLIC_HOST", "host.docker.internal")
+STREAM_MJPEG_FRAMERATE = int(os.getenv("IOS_WDA_MJPEG_FRAMERATE", "20"))
+STREAM_MJPEG_SCALING_FACTOR = float(os.getenv("IOS_WDA_MJPEG_SCALING_FACTOR", "35"))
+STREAM_MJPEG_QUALITY = int(os.getenv("IOS_WDA_MJPEG_QUALITY", "25"))
 AUTOMATION_READY_UDIDS = {
     udid.strip()
     for udid in os.getenv("IOS_AGENT_AUTOMATION_READY_UDIDS", "").split(",")
@@ -22,17 +31,22 @@ AUTOMATION_READY_UDIDS = {
 
 app = FastAPI(title="Device Farm iOS Agent", version="0.1.0")
 debug_sessions: dict[str, dict[str, Any]] = {}
+stream_sessions: dict[str, dict[str, Any]] = {}
 debug_session_locks: dict[str, asyncio.Lock] = {}
+stream_session_locks: dict[str, asyncio.Lock] = {}
 debug_command_locks: dict[str, asyncio.Lock] = {}
+stream_sessions_lock = asyncio.Lock()
 
 
 class TapRequest(BaseModel):
     x: float = Field(..., ge=0)
     y: float = Field(..., ge=0)
+    includeScreen: bool = False
 
 
 class TextRequest(BaseModel):
     text: str = Field(..., min_length=1)
+    includeScreen: bool = False
 
 
 class SwipeRequest(BaseModel):
@@ -41,12 +55,18 @@ class SwipeRequest(BaseModel):
     endX: float = Field(..., ge=0)
     endY: float = Field(..., ge=0)
     durationMs: int = Field(500, ge=50, le=5000)
+    includeScreen: bool = False
 
 
 class LongPressRequest(BaseModel):
     x: float = Field(..., ge=0)
     y: float = Field(..., ge=0)
     durationMs: int = Field(800, ge=100, le=5000)
+    includeScreen: bool = False
+
+
+class ClearTextRequest(BaseModel):
+    includeScreen: bool = False
 
 
 def python_executable() -> str:
@@ -187,6 +207,14 @@ def debug_session_lock(udid: str) -> asyncio.Lock:
     return lock
 
 
+def stream_session_lock(udid: str) -> asyncio.Lock:
+    lock = stream_session_locks.get(udid)
+    if lock is None:
+        lock = asyncio.Lock()
+        stream_session_locks[udid] = lock
+    return lock
+
+
 def debug_command_lock(udid: str) -> asyncio.Lock:
     lock = debug_command_locks.get(udid)
     if lock is None:
@@ -238,9 +266,15 @@ async def delete_appium_session(session_id: str) -> None:
 
 
 async def create_appium_session(udid: str) -> str:
-    payload = {"capabilities": {"alwaysMatch": ios_debug_capabilities(udid), "firstMatch": [{}]}}
+    return await create_appium_session_with_caps(udid, {})
+
+
+async def create_appium_session_with_caps(udid: str, extra_caps: dict[str, Any]) -> str:
+    caps = ios_debug_capabilities(udid)
+    caps.update(extra_caps)
+    payload = {"capabilities": {"alwaysMatch": caps, "firstMatch": [{}]}}
     try:
-        async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=SESSION_CREATE_TIMEOUT) as client:
             response = await client.post(f"{APPIUM_HOST}/session", json=payload)
     except httpx.RequestError as exc:
         raise HTTPException(status_code=503, detail=f"Unable to reach Appium XCUITest service: {exc}") from exc
@@ -258,8 +292,80 @@ async def create_appium_session(udid: str) -> str:
     return str(session_id)
 
 
+async def configure_mjpeg_settings(session_id: str) -> None:
+    payload = {
+        "settings": {
+            "mjpegServerFramerate": STREAM_MJPEG_FRAMERATE,
+            "mjpegScalingFactor": STREAM_MJPEG_SCALING_FACTOR,
+            "mjpegServerScreenshotQuality": STREAM_MJPEG_QUALITY,
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
+            response = await client.post(f"{APPIUM_HOST}/session/{session_id}/appium/settings", json=payload)
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Unable to configure WDA/MJPEG settings: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=sanitize_appium_error(response.text))
+
+
+def allocate_mjpeg_port(udid: str) -> int:
+    # Caller must hold stream_sessions_lock so parallel devices cannot reserve
+    # the same WDA/MJPEG port.
+    cached = stream_sessions.get(udid)
+    if cached and cached.get("mjpeg_port"):
+        return int(cached["mjpeg_port"])
+
+    used = {
+        int(session["mjpeg_port"])
+        for session in stream_sessions.values()
+        if session.get("mjpeg_port")
+    }
+    for port in range(STREAM_MJPEG_PORT_START, STREAM_MJPEG_PORT_END + 1):
+        if port not in used:
+            return port
+    raise HTTPException(status_code=503, detail="No available WDA/MJPEG ports")
+
+
+def mjpeg_public_url(port: int) -> str:
+    return f"{STREAM_MJPEG_PUBLIC_SCHEME}://{STREAM_MJPEG_PUBLIC_HOST}:{port}"
+
+
+async def request_appium_session(
+    session_id: str,
+    method: str,
+    endpoint: str,
+    payload: Optional[dict[str, Any]] = None,
+) -> Any:
+    async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
+        response = await client.request(
+            method,
+            f"{APPIUM_HOST}/session/{session_id}/{endpoint.lstrip('/')}",
+            json=payload,
+        )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=sanitize_appium_error(response.text))
+    data = response.json()
+    return data.get("value") if isinstance(data, dict) else None
+
+
 async def get_debug_session(udid: str) -> tuple[str, bool]:
+    stream = stream_sessions.get(udid)
+    if stream:
+        if is_stale_session(stream):
+            await clear_stream_session(udid)
+        else:
+            stream["last_used_at"] = time.time()
+            return str(stream["session_id"]), True
+
+    cached = debug_sessions.get(udid)
+    if cached and not is_stale_session(cached):
+        cached["last_used_at"] = time.time()
+        return str(cached["session_id"]), True
+
     await ensure_debug_allowed(udid)
+
     async with debug_session_lock(udid):
         cached = debug_sessions.get(udid)
         if cached and not is_stale_session(cached):
@@ -271,13 +377,79 @@ async def get_debug_session(udid: str) -> tuple[str, bool]:
             debug_sessions.pop(udid, None)
 
         session_id = await create_appium_session(udid)
+        wda_id = await optional_wda_session_id()
         debug_sessions[udid] = {
             "session_id": session_id,
+            "wda_session_id": wda_id,
             "created_at": time.time(),
             "last_used_at": time.time(),
         }
         return session_id, False
 
+
+async def get_stream_session(udid: str) -> tuple[dict[str, Any], bool]:
+    await ensure_debug_allowed(udid)
+    stale_session_id: Optional[str] = None
+    async with stream_sessions_lock:
+        cached = stream_sessions.get(udid)
+        if cached and not is_stale_session(cached):
+            cached["last_used_at"] = time.time()
+            return cached, True
+
+        if cached:
+            stream_sessions.pop(udid, None)
+            stale_session_id = str(cached["session_id"])
+
+    if stale_session_id:
+        await delete_appium_session(stale_session_id)
+
+    await clear_debug_session(udid)
+
+    async with stream_sessions_lock:
+        cached = stream_sessions.get(udid)
+        if cached and not is_stale_session(cached):
+            cached["last_used_at"] = time.time()
+            return cached, True
+
+        if cached:
+            stream_sessions.pop(udid, None)
+            stale_session_id = str(cached["session_id"])
+        else:
+            stale_session_id = None
+
+    if stale_session_id:
+        await delete_appium_session(stale_session_id)
+
+    async with stream_sessions_lock:
+        cached = stream_sessions.get(udid)
+        if cached and not is_stale_session(cached):
+            cached["last_used_at"] = time.time()
+            return cached, True
+
+        mjpeg_port = allocate_mjpeg_port(udid)
+        session_id = await create_appium_session_with_caps(
+            udid,
+            {"appium:mjpegServerPort": mjpeg_port},
+        )
+        try:
+            await configure_mjpeg_settings(session_id)
+            screen = screen_from_window_rect(await request_appium_session(session_id, "GET", "window/rect"))
+            wda_id = await optional_wda_session_id()
+        except Exception:
+            await delete_appium_session(session_id)
+            raise
+
+        session = {
+            "session_id": session_id,
+            "mjpeg_port": mjpeg_port,
+            "mjpeg_url": mjpeg_public_url(mjpeg_port),
+            "screen": screen,
+            "wda_session_id": wda_id,
+            "created_at": time.time(),
+            "last_used_at": time.time(),
+        }
+        stream_sessions[udid] = session
+        return session, False
 
 def is_invalid_session_response(response: httpx.Response) -> bool:
     if response.status_code == 404:
@@ -316,6 +488,19 @@ async def clear_debug_session(udid: str) -> bool:
     return bool(cached)
 
 
+async def clear_stream_session(udid: str) -> bool:
+    async with stream_sessions_lock:
+        cached = stream_sessions.pop(udid, None)
+    if cached:
+        await delete_appium_session(str(cached["session_id"]))
+    return bool(cached)
+
+
+async def clear_reusable_session(udid: str) -> bool:
+    debug_released = await clear_debug_session(udid)
+    stream_released = await clear_stream_session(udid)
+    return debug_released or stream_released
+
 async def appium_session_request(
     udid: str,
     method: str,
@@ -341,8 +526,7 @@ async def _appium_session_request(
         )
 
     if is_invalid_session_response(response):
-        async with debug_session_lock(udid):
-            debug_sessions.pop(udid, None)
+        await clear_reusable_session(udid)
         session_id, _ = await get_debug_session(udid)
         async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
             response = await client.request(
@@ -368,6 +552,10 @@ async def appium_session_post(udid: str, endpoint: str, payload: dict[str, Any])
     return await appium_session_request(udid, "POST", endpoint, payload)
 
 
+def elapsed_ms(started_at: float) -> int:
+    return max(0, round((time.monotonic() - started_at) * 1000))
+
+
 def screen_from_window_rect(value: Any) -> Optional[dict[str, int]]:
     if not isinstance(value, dict):
         return None
@@ -386,6 +574,12 @@ async def appium_screen(udid: str) -> Optional[dict[str, int]]:
         return None
 
 
+async def optional_appium_screen(udid: str, include_screen: bool) -> Optional[dict[str, int]]:
+    if not include_screen:
+        return None
+    return await appium_screen(udid)
+
+
 def tap_actions_payload(x: float, y: float) -> dict[str, Any]:
     point_x = round(x)
     point_y = round(y)
@@ -398,7 +592,7 @@ def tap_actions_payload(x: float, y: float) -> dict[str, Any]:
                 "actions": [
                     {"type": "pointerMove", "duration": 0, "x": point_x, "y": point_y, "origin": "viewport"},
                     {"type": "pointerDown", "button": 0},
-                    {"type": "pause", "duration": 100},
+                    {"type": "pause", "duration": 50},
                     {"type": "pointerUp", "button": 0},
                 ],
             }
@@ -460,6 +654,124 @@ async def release_pointer_actions(udid: str) -> None:
         await appium_session_post(udid, "actions", {"actions": []})
     except HTTPException:
         pass
+
+
+async def release_pointer_actions_unlocked(udid: str) -> None:
+    try:
+        await _appium_session_request(udid, "POST", "actions", {"actions": []})
+    except HTTPException:
+        pass
+
+
+def mobile_execute_payload(script: str, args: dict[str, Any]) -> dict[str, Any]:
+    return {"script": script, "args": [args]}
+
+
+def wda_session_id_from_status(payload: Any) -> Optional[str]:
+    if not isinstance(payload, dict):
+        return None
+    session_id = payload.get("sessionId")
+    if session_id:
+        return str(session_id)
+    value = payload.get("value")
+    if isinstance(value, dict) and value.get("sessionId"):
+        return str(value["sessionId"])
+    return None
+
+
+async def wda_session_id() -> str:
+    try:
+        async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
+            response = await client.get(f"{WDA_BASE_URL}/status")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Unable to reach WebDriverAgent: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=sanitize_appium_error(response.text))
+
+    session_id = wda_session_id_from_status(response.json())
+    if not session_id:
+        raise HTTPException(status_code=502, detail="WebDriverAgent did not return a session id")
+    return session_id
+
+
+async def optional_wda_session_id() -> Optional[str]:
+    try:
+        return await wda_session_id()
+    except HTTPException:
+        return None
+
+
+def reusable_session_record(udid: str) -> Optional[dict[str, Any]]:
+    stream = stream_sessions.get(udid)
+    if stream and not is_stale_session(stream):
+        return stream
+    cached = debug_sessions.get(udid)
+    if cached and not is_stale_session(cached):
+        return cached
+    return None
+
+
+async def cached_wda_session_id(udid: str) -> str:
+    session = reusable_session_record(udid)
+    if session and session.get("wda_session_id"):
+        return str(session["wda_session_id"])
+
+    session_id = await wda_session_id()
+    session = reusable_session_record(udid)
+    if session is not None:
+        session["wda_session_id"] = session_id
+    return session_id
+
+
+def clear_cached_wda_session_id(udid: str) -> None:
+    session = reusable_session_record(udid)
+    if session is not None:
+        session.pop("wda_session_id", None)
+
+
+async def post_wda_actions(session_id: str, actions_payload: dict[str, Any]) -> httpx.Response:
+    try:
+        async with httpx.AsyncClient(timeout=COMMAND_TIMEOUT) as client:
+            return await client.post(f"{WDA_BASE_URL}/session/{session_id}/actions", json=actions_payload)
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail=f"Unable to send direct WebDriverAgent actions: {exc}") from exc
+
+
+async def wda_actions(udid: str, actions_payload: dict[str, Any]) -> None:
+    session_id = await cached_wda_session_id(udid)
+    response = await post_wda_actions(session_id, actions_payload)
+    if response.status_code == 404:
+        clear_cached_wda_session_id(udid)
+        session_id = await cached_wda_session_id(udid)
+        response = await post_wda_actions(session_id, actions_payload)
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=sanitize_appium_error(response.text))
+
+
+async def run_low_latency_actions_with_fallback(
+    udid: str,
+    script: str,
+    args: dict[str, Any],
+    actions_payload: dict[str, Any],
+) -> tuple[bool, str]:
+    async with debug_command_lock(udid):
+        _, reused = await get_debug_session(udid)
+
+        try:
+            await wda_actions(udid, actions_payload)
+            return reused, "wda direct actions"
+        except HTTPException:
+            pass
+
+        try:
+            _, reused = await _appium_session_request(udid, "POST", "execute/sync", mobile_execute_payload(script, args))
+            return reused, script
+        except HTTPException:
+            _, reused = await _appium_session_request(udid, "POST", "actions", actions_payload)
+            await release_pointer_actions_unlocked(udid)
+            return reused, "w3c actions"
 
 
 def element_id_from_active_element(value: Any) -> Optional[str]:
@@ -629,7 +941,7 @@ async def get_device_screenshot(udid: str):
     except HTTPException as exc:
         if exc.status_code != 502 or not is_broken_wda_session_detail(exc.detail):
             raise
-        await clear_debug_session(udid)
+        await clear_reusable_session(udid)
         value, reused = await appium_session_get(udid, "screenshot")
         session_rebuilt = True
 
@@ -657,6 +969,33 @@ async def get_device_source(udid: str):
     }
 
 
+@app.post("/devices/{udid}/stream-session")
+async def start_stream_session(udid: str):
+    session, reused = await get_stream_session(udid)
+    return {
+        "device_id": udid,
+        "session_id": session["session_id"],
+        "mjpeg_url": session["mjpeg_url"],
+        "mjpeg_port": session["mjpeg_port"],
+        "session_reused": reused,
+        "screen": session.get("screen"),
+        "settings": {
+            "mjpegServerFramerate": STREAM_MJPEG_FRAMERATE,
+            "mjpegScalingFactor": STREAM_MJPEG_SCALING_FACTOR,
+            "mjpegServerScreenshotQuality": STREAM_MJPEG_QUALITY,
+        },
+    }
+
+
+@app.delete("/devices/{udid}/stream-session")
+async def delete_stream_session(udid: str):
+    released = await clear_stream_session(udid)
+    return {
+        "device_id": udid,
+        "released": released,
+    }
+
+
 @app.delete("/devices/{udid}/debug-session")
 async def delete_debug_session(udid: str):
     released = await clear_debug_session(udid)
@@ -668,26 +1007,40 @@ async def delete_debug_session(udid: str):
 
 @app.post("/devices/{udid}/tap")
 async def tap_device(udid: str, request: TapRequest):
-    _, reused = await appium_session_post(udid, "actions", tap_actions_payload(request.x, request.y))
-    await release_pointer_actions(udid)
+    started_at = time.monotonic()
+    reused, control_method = await run_low_latency_actions_with_fallback(
+        udid,
+        "mobile: tap",
+        {"x": round(request.x), "y": round(request.y)},
+        tap_actions_payload(request.x, request.y),
+    )
     return {
         "device_id": udid,
         "success": True,
         "x": round(request.x),
         "y": round(request.y),
         "session_reused": reused,
-        "screen": await appium_screen(udid),
+        "latency_ms": elapsed_ms(started_at),
+        "control_method": control_method,
+        "screen": await optional_appium_screen(udid, request.includeScreen),
     }
 
 
 @app.post("/devices/{udid}/swipe")
 async def swipe_device(udid: str, request: SwipeRequest):
-    _, reused = await appium_session_post(
+    started_at = time.monotonic()
+    reused, control_method = await run_low_latency_actions_with_fallback(
         udid,
-        "actions",
+        "mobile: dragFromToForDuration",
+        {
+            "fromX": round(request.startX),
+            "fromY": round(request.startY),
+            "toX": round(request.endX),
+            "toY": round(request.endY),
+            "duration": max(0.05, request.durationMs / 1000),
+        },
         swipe_actions_payload(request.startX, request.startY, request.endX, request.endY, request.durationMs),
     )
-    await release_pointer_actions(udid)
     return {
         "device_id": udid,
         "success": True,
@@ -697,18 +1050,25 @@ async def swipe_device(udid: str, request: SwipeRequest):
         "endY": round(request.endY),
         "durationMs": request.durationMs,
         "session_reused": reused,
-        "screen": await appium_screen(udid),
+        "latency_ms": elapsed_ms(started_at),
+        "control_method": control_method,
+        "screen": await optional_appium_screen(udid, request.includeScreen),
     }
 
 
 @app.post("/devices/{udid}/long-press")
 async def long_press_device(udid: str, request: LongPressRequest):
-    _, reused = await appium_session_post(
+    started_at = time.monotonic()
+    reused, control_method = await run_low_latency_actions_with_fallback(
         udid,
-        "actions",
+        "mobile: touchAndHold",
+        {
+            "x": round(request.x),
+            "y": round(request.y),
+            "duration": max(0.1, request.durationMs / 1000),
+        },
         long_press_actions_payload(request.x, request.y, request.durationMs),
     )
-    await release_pointer_actions(udid)
     return {
         "device_id": udid,
         "success": True,
@@ -716,30 +1076,39 @@ async def long_press_device(udid: str, request: LongPressRequest):
         "y": round(request.y),
         "durationMs": request.durationMs,
         "session_reused": reused,
-        "screen": await appium_screen(udid),
+        "latency_ms": elapsed_ms(started_at),
+        "control_method": control_method,
+        "screen": await optional_appium_screen(udid, request.includeScreen),
     }
 
 
 @app.post("/devices/{udid}/text")
 async def input_text_device(udid: str, request: TextRequest):
+    started_at = time.monotonic()
     element_id, reused = await active_element_id(udid)
-    await appium_session_post(udid, f"element/{element_id}/value", text_value_payload(request.text))
+    _, post_reused = await appium_session_post(udid, f"element/{element_id}/value", text_value_payload(request.text))
     return {
         "device_id": udid,
         "success": True,
         "text_length": len(request.text),
-        "session_reused": reused,
-        "screen": await appium_screen(udid),
+        "session_reused": reused and post_reused,
+        "latency_ms": elapsed_ms(started_at),
+        "control_method": "element value",
+        "screen": await optional_appium_screen(udid, request.includeScreen),
     }
 
 
 @app.post("/devices/{udid}/clear-text")
-async def clear_text_device(udid: str):
+async def clear_text_device(udid: str, request: Optional[ClearTextRequest] = None):
+    started_at = time.monotonic()
+    include_screen = bool(request.includeScreen) if request else False
     element_id, reused = await active_element_id(udid)
-    await appium_session_post(udid, f"element/{element_id}/clear", {})
+    _, post_reused = await appium_session_post(udid, f"element/{element_id}/clear", {})
     return {
         "device_id": udid,
         "success": True,
-        "session_reused": reused,
-        "screen": await appium_screen(udid),
+        "session_reused": reused and post_reused,
+        "latency_ms": elapsed_ms(started_at),
+        "control_method": "element clear",
+        "screen": await optional_appium_screen(udid, include_screen),
     }

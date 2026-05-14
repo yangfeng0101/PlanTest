@@ -47,6 +47,13 @@ const STATIC_AUTO_REFRESH_INTERVAL_OPTIONS = [
   { label: '2s', value: 2000 },
   { label: '5s', value: 5000 },
 ]
+const IOS_DIRECT_MJPEG_SCREEN_DRIVERS = new Set([
+  'mjpeg-direct',
+  'wda-mjpeg',
+  'wda-mjpeg-direct',
+  'ios-mjpeg',
+  'ios-mjpeg-direct',
+])
 const KEYBOARD_KEY_CODE_MAP: Record<string, number> = {
   Backspace: 67,
   Enter: 66,
@@ -66,6 +73,16 @@ function requestStopSession(deviceId: string) {
     keepalive: true,
   }).catch((error) => {
     console.error('Failed to stop session:', error)
+  })
+}
+
+function requestStopIOSMJPEG(deviceId: string) {
+  void fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(deviceId)}/ios-mjpeg`, {
+    method: 'DELETE',
+    credentials: 'include',
+    keepalive: true,
+  }).catch((error) => {
+    console.error('Failed to stop iOS MJPEG stream:', error)
   })
 }
 
@@ -141,6 +158,13 @@ interface RenderMetrics {
 
 interface StaticDebugActionResponse {
   success?: boolean
+  screen?: { width: number; height: number } | null
+  latency_ms?: number
+  control_method?: string
+  session_reused?: boolean
+}
+
+interface IOSMJPEGPrepareResponse {
   screen?: { width: number; height: number } | null
 }
 
@@ -405,18 +429,32 @@ export default function ScreenPage() {
   const [staticDebugSessionActive, setStaticDebugSessionActive] = useState(false)
   const [staticPointerPoint, setStaticPointerPoint] = useState<StaticDebugPoint | null>(null)
   const [lastStaticAction, setLastStaticAction] = useState('未操作')
+  const [lastIosControlStatus, setLastIosControlStatus] = useState('未操作')
+  const [mjpegStreamKey, setMjpegStreamKey] = useState(0)
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
   const uiHierarchySupported = currentDevice?.capabilities.uiHierarchy ?? false
   const screenshotSupported = currentDevice?.capabilities.screenshot ?? false
+  const isIosDevice = Boolean(currentDevice && currentDevice.os.toLowerCase() === 'ios')
+  const screenDriver = (currentDevice?.drivers.screen || '').trim().toLowerCase()
+  const isIosDirectMjpegMirror = Boolean(
+    isIosDevice
+    && screenMirrorSupported
+    && IOS_DIRECT_MJPEG_SCREEN_DRIVERS.has(screenDriver)
+  )
+  const isIosLivePreview = isIosDirectMjpegMirror
   const isIosStaticDebug = Boolean(
-    currentDevice
-    && currentDevice.os.toLowerCase() === 'ios'
+    isIosDevice
     && !screenMirrorSupported
     && uiHierarchySupported
     && screenshotSupported
   )
+  const isIosStaticActionSupported = Boolean(isIosDevice && uiHierarchySupported && screenshotSupported)
+  const isIosTextInputAvailable = Boolean(isIosStaticActionSupported && (isIosStaticDebug || isPlaying))
+  const iosModeLabel = isIosDirectMjpegMirror
+    ? 'iOS MJPEG 直连预览'
+    : 'iOS 静态预览'
   
   // LiveKit state
   const [lkSession, setLkSession] = useState<{ url: string; token: string } | null>(null)
@@ -432,6 +470,7 @@ export default function ScreenPage() {
   const autoStartBlockedRef = useRef<string | null>(null)
   const startRequestedAtRef = useRef<number | null>(null)
   const activeSessionDeviceRef = useRef<string | null>(null)
+  const activeSessionKindRef = useRef<'livekit' | 'ios-mjpeg' | null>(null)
 
   useEffect(() => {
     if (deviceIdFromUrl) {
@@ -496,6 +535,15 @@ export default function ScreenPage() {
     fetchDeviceInfo()
   }, [selectedDevice])
 
+  const applyIosLogicalScreen = useCallback((screen?: { width?: number; height?: number } | null) => {
+    const width = Number(screen?.width)
+    const height = Number(screen?.height)
+    if (width > 0 && height > 0) {
+      setUiScreen({ width, height })
+      setDeviceInfo({ width, height })
+    }
+  }, [])
+
   // Start session on backend
   const startSession = useCallback(async () => {
     if (!selectedDevice) return
@@ -503,12 +551,16 @@ export default function ScreenPage() {
       message.error('未找到当前设备，请回到设备列表重新选择')
       return
     }
-    if (currentDevice?.status === 'offline') {
-      message.error('当前设备离线，无法投屏')
+    if (currentDevice && currentDevice.status !== 'online') {
+      message.error('当前设备不可用，无法投屏')
       return
     }
     if (currentDevice && !currentDevice.capabilities.screenMirror) {
       message.error('当前设备连接不支持投屏')
+      return
+    }
+    if (isIosDevice && !isIosLivePreview) {
+      message.error('当前 iOS 投屏 driver 不支持，请使用 mjpeg-direct')
       return
     }
     setLoading(true)
@@ -517,7 +569,32 @@ export default function ScreenPage() {
     setNetworkLatencyMs(null)
     startRequestedAtRef.current = performance.now()
     try {
-      const res = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${selectedDevice}/start`, {
+      if (isIosDirectMjpegMirror) {
+        const prepareRes = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg/prepare`, {
+          method: 'POST',
+          credentials: 'include',
+        })
+        const prepareData = await prepareRes.json().catch(() => ({})) as IOSMJPEGPrepareResponse & { error?: string }
+        if (!prepareRes.ok) {
+          throw new Error(prepareData.error || 'iOS MJPEG 直连预览初始化失败')
+        }
+        applyIosLogicalScreen(prepareData.screen)
+        setHasVideoFrame(false)
+        setFps(0)
+        setLkSession(null)
+        setSessionDiagnostics({
+          active: true,
+          stage: 'streaming',
+          stage_label: 'iOS MJPEG direct',
+        })
+        activeSessionDeviceRef.current = selectedDevice
+        activeSessionKindRef.current = 'ios-mjpeg'
+        setMjpegStreamKey(Date.now())
+        setIsPlaying(true)
+        return
+      }
+
+      const res = await fetch(`${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -532,18 +609,20 @@ export default function ScreenPage() {
         setHasVideoFrame(false)
         setSessionDiagnostics(data as ScreenSessionDiagnostics)
         activeSessionDeviceRef.current = selectedDevice
+        activeSessionKindRef.current = 'livekit'
         setLkSession({ url: data.livekit_url || 'ws://localhost:7880', token: data.token })
         setIsPlaying(true)
       } else {
         message.error(data.error || '无法获取连接 Token')
       }
     } catch (e) {
-      message.error('启动会话失败')
+      const error = e as Error
+      message.error(error.message || '启动会话失败')
       console.error(e)
     } finally {
       setLoading(false)
     }
-  }, [currentDevice, devicesLoaded, selectedDevice])
+  }, [applyIosLogicalScreen, currentDevice, devicesLoaded, isIosDevice, isIosDirectMjpegMirror, isIosLivePreview, selectedDevice])
 
   useEffect(() => {
     if (!selectedDevice || !devicesLoaded || isPlaying || lkSession || autoStartedDeviceRef.current === selectedDevice) return
@@ -557,12 +636,12 @@ export default function ScreenPage() {
       }
       return
     }
-    if (currentDevice.status === 'offline') {
+    if (currentDevice.status !== 'online') {
       setLoading(false)
-      const blockKey = `${selectedDevice}:offline`
+      const blockKey = `${selectedDevice}:unavailable:${currentDevice.status}`
       if (autoStartBlockedRef.current !== blockKey) {
         autoStartBlockedRef.current = blockKey
-        message.error('当前设备离线，无法投屏')
+        message.error('当前设备不可用，无法投屏')
       }
       return
     }
@@ -580,11 +659,20 @@ export default function ScreenPage() {
       }
       return
     }
+    if (isIosDevice && !isIosLivePreview) {
+      setLoading(false)
+      const blockKey = `${selectedDevice}:unsupported-ios-driver`
+      if (autoStartBlockedRef.current !== blockKey) {
+        autoStartBlockedRef.current = blockKey
+        message.error('当前 iOS 投屏 driver 不支持，请使用 mjpeg-direct')
+      }
+      return
+    }
 
     autoStartBlockedRef.current = null
     autoStartedDeviceRef.current = selectedDevice
     void startSession()
-  }, [currentDevice, devicesLoaded, isIosStaticDebug, isPlaying, lkSession, selectedDevice, startSession])
+  }, [currentDevice, devicesLoaded, isIosDevice, isIosLivePreview, isIosStaticDebug, isPlaying, lkSession, selectedDevice, startSession])
 
   const stopSession = async () => {
     if (!selectedDevice) return
@@ -595,7 +683,10 @@ export default function ScreenPage() {
     setBrowserFirstFrameMs(null)
     setNetworkLatencyMs(null)
     startRequestedAtRef.current = null
+    const sessionKind = activeSessionKindRef.current
     activeSessionDeviceRef.current = null
+    activeSessionKindRef.current = null
+    setMjpegStreamKey(0)
     clearUiHierarchy()
     setStaticScreenshot(null)
     setStaticPointerPoint(null)
@@ -603,6 +694,9 @@ export default function ScreenPage() {
     setStaticDebugSessionActive(false)
     flushPendingMove()
     lkRoomRef.current = null
+    if (sessionKind === 'ios-mjpeg') {
+      requestStopIOSMJPEG(selectedDevice)
+    }
     requestStopSession(selectedDevice)
   }
 
@@ -658,23 +752,6 @@ export default function ScreenPage() {
       }, TOUCH_MOVE_INTERVAL_MS)
     },
     [publishControl]
-  )
-
-  // Handle touch input via DataChannel
-  const handleTouchInput = useCallback(
-    (type: string, x: number, y: number, extra?: Record<string, unknown>) => {
-      if (!remoteControlSupported) return
-      if (type !== 'touch') return
-      const action = extra?.action || 'move'
-      if (action === 'move') {
-        scheduleMove(x, y)
-        return
-      }
-
-      flushPendingMove()
-      publishControl({ type: 'touch', action, x, y }, true)
-    },
-    [flushPendingMove, publishControl, remoteControlSupported, scheduleMove]
   )
 
   const handleWebRTCStats = useCallback((stats: { fps: number; bytesReceived: number; latencyMs?: number }) => {
@@ -790,7 +867,7 @@ export default function ScreenPage() {
       setSelectedUiElement(null)
       if (result.screen?.width > 0 && result.screen?.height > 0) {
         setUiScreen({ width: result.screen.width, height: result.screen.height })
-        if (isIosStaticDebug) {
+        if (isIosDevice) {
           setDeviceInfo({ width: result.screen.width, height: result.screen.height })
         }
       }
@@ -809,13 +886,13 @@ export default function ScreenPage() {
       window.clearTimeout(timeoutId)
       setLoadingUiHierarchy(false)
     }
-  }, [currentDevice, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice])
+  }, [currentDevice, isIosDevice, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice])
 
   const postStaticDebugAction = useCallback(async (
     path: 'tap' | 'text' | 'swipe' | 'long-press' | 'clear-text',
     payload: Record<string, unknown>,
   ): Promise<StaticDebugActionResponse> => {
-    if (!selectedDevice || !isIosStaticDebug) {
+    if (!selectedDevice || !isIosStaticActionSupported) {
       throw new Error('当前设备不支持 iOS 静态操作')
     }
 
@@ -823,7 +900,7 @@ export default function ScreenPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ includeScreen: isIosStaticDebug, ...payload }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -831,7 +908,7 @@ export default function ScreenPage() {
     }
     setStaticDebugSessionActive(true)
     return data as StaticDebugActionResponse
-  }, [isIosStaticDebug, selectedDevice])
+  }, [isIosStaticActionSupported, isIosStaticDebug, selectedDevice])
 
   const applyStaticActionScreen = useCallback((data: StaticDebugActionResponse) => {
     if (data.screen?.width && data.screen?.height) {
@@ -840,13 +917,25 @@ export default function ScreenPage() {
     }
   }, [])
 
+  const formatIosControlStatus = useCallback((label: string, data?: StaticDebugActionResponse) => {
+    if (typeof data?.latency_ms === 'number') {
+      return `${Math.round(data.latency_ms)}ms / ${data.control_method || label}`
+    }
+    return label
+  }, [])
+
   const runStaticTap = useCallback(async (x: number, y: number, label = '点按已发送') => {
-    setStaticActionLoading(true)
+    if (isIosStaticDebug) {
+      setStaticActionLoading(true)
+    }
     try {
       const data = await postStaticDebugAction('tap', { x, y })
       applyStaticActionScreen(data)
-      await refreshStaticScreenshot(true)
-      message.success(label)
+      if (isIosStaticDebug) {
+        await refreshStaticScreenshot(true)
+        message.success(label)
+      }
+      setLastIosControlStatus(formatIosControlStatus('tap', data))
       setLastStaticAction(`${label} (${Math.round(x)}, ${Math.round(y)})`)
       return true
     } catch (e) {
@@ -855,12 +944,16 @@ export default function ScreenPage() {
       setLastStaticAction('点按失败')
       return false
     } finally {
-      setStaticActionLoading(false)
+      if (isIosStaticDebug) {
+        setStaticActionLoading(false)
+      }
     }
-  }, [applyStaticActionScreen, postStaticDebugAction, refreshStaticScreenshot])
+  }, [applyStaticActionScreen, formatIosControlStatus, isIosStaticDebug, postStaticDebugAction, refreshStaticScreenshot])
 
   const runStaticSwipe = useCallback(async (start: StaticDebugPoint, end: StaticDebugPoint) => {
-    setStaticActionLoading(true)
+    if (isIosStaticDebug) {
+      setStaticActionLoading(true)
+    }
     try {
       const data = await postStaticDebugAction('swipe', {
         startX: start.x,
@@ -870,8 +963,11 @@ export default function ScreenPage() {
         durationMs: 500,
       })
       applyStaticActionScreen(data)
-      await refreshStaticScreenshot(true)
-      message.success('滑动已发送')
+      if (isIosStaticDebug) {
+        await refreshStaticScreenshot(true)
+        message.success('滑动已发送')
+      }
+      setLastIosControlStatus(formatIosControlStatus('swipe', data))
       setLastStaticAction(`滑动 (${start.x}, ${start.y}) -> (${end.x}, ${end.y})`)
       return true
     } catch (e) {
@@ -880,17 +976,24 @@ export default function ScreenPage() {
       setLastStaticAction('滑动失败')
       return false
     } finally {
-      setStaticActionLoading(false)
+      if (isIosStaticDebug) {
+        setStaticActionLoading(false)
+      }
     }
-  }, [applyStaticActionScreen, postStaticDebugAction, refreshStaticScreenshot])
+  }, [applyStaticActionScreen, formatIosControlStatus, isIosStaticDebug, postStaticDebugAction, refreshStaticScreenshot])
 
   const runStaticLongPress = useCallback(async (x: number, y: number, label = '长按已发送') => {
-    setStaticActionLoading(true)
+    if (isIosStaticDebug) {
+      setStaticActionLoading(true)
+    }
     try {
       const data = await postStaticDebugAction('long-press', { x, y, durationMs: 800 })
       applyStaticActionScreen(data)
-      await refreshStaticScreenshot(true)
-      message.success(label)
+      if (isIosStaticDebug) {
+        await refreshStaticScreenshot(true)
+        message.success(label)
+      }
+      setLastIosControlStatus(formatIosControlStatus('long-press', data))
       setLastStaticAction(`${label} (${Math.round(x)}, ${Math.round(y)})`)
       return true
     } catch (e) {
@@ -899,9 +1002,111 @@ export default function ScreenPage() {
       setLastStaticAction('长按失败')
       return false
     } finally {
-      setStaticActionLoading(false)
+      if (isIosStaticDebug) {
+        setStaticActionLoading(false)
+      }
     }
-  }, [applyStaticActionScreen, postStaticDebugAction, refreshStaticScreenshot])
+  }, [applyStaticActionScreen, formatIosControlStatus, isIosStaticDebug, postStaticDebugAction, refreshStaticScreenshot])
+
+  // Handle touch input from LiveKit overlay. Android/Harmony goes through the
+  // realtime scrcpy channel; iOS live video still uses the static Appium action
+  // endpoints so it does not advertise full remoteControl.
+  const handleTouchInput = useCallback(
+    (type: string, x: number, y: number, extra?: Record<string, unknown>) => {
+      if (isIosLivePreview && isIosStaticActionSupported) {
+        if (type === 'touch') {
+          const action = extra?.action || 'move'
+          setStaticPointerPoint({ x, y })
+          if (action === 'down') {
+            staticDragStartRef.current = { x, y }
+            return
+          }
+          if (action === 'move') {
+            return
+          }
+          if (action === 'up') {
+            if (staticSwipeHandledRef.current) {
+              staticDragStartRef.current = null
+              staticSwipeHandledRef.current = false
+              return
+            }
+            const start = staticDragStartRef.current
+            staticDragStartRef.current = null
+            if (!start) return
+            const distance = Math.hypot(x - start.x, y - start.y)
+            if (distance < 12) {
+              void runStaticTap(x, y)
+            }
+            return
+          }
+          return
+        }
+        if (type === 'swipe') {
+          const endX = Number(extra?.endX)
+          const endY = Number(extra?.endY)
+          if (Number.isFinite(endX) && Number.isFinite(endY)) {
+            staticSwipeHandledRef.current = true
+            window.setTimeout(() => {
+              staticSwipeHandledRef.current = false
+            }, 0)
+            void runStaticSwipe({ x, y }, { x: Math.round(endX), y: Math.round(endY) })
+          }
+          return
+        }
+        if (type === 'long-press') {
+          staticSwipeHandledRef.current = true
+          void runStaticLongPress(x, y)
+          return
+        }
+      }
+      if (isIosStaticDebug && isIosStaticActionSupported) {
+        if (type === 'touch') {
+          const action = extra?.action || 'move'
+          setStaticPointerPoint({ x, y })
+          if (iosTapMode && action === 'up' && !staticActionLoadingRef.current) {
+            void runStaticTap(x, y)
+          }
+          return
+        }
+        if (type === 'swipe' && iosSwipeMode && !staticActionLoadingRef.current) {
+          const endX = Number(extra?.endX)
+          const endY = Number(extra?.endY)
+          if (Number.isFinite(endX) && Number.isFinite(endY)) {
+            staticSwipeHandledRef.current = true
+            window.setTimeout(() => {
+              staticSwipeHandledRef.current = false
+            }, 0)
+            void runStaticSwipe({ x, y }, { x: Math.round(endX), y: Math.round(endY) })
+          }
+          return
+        }
+      }
+      if (!remoteControlSupported) return
+      if (type !== 'touch') return
+      const action = extra?.action || 'move'
+      if (action === 'move') {
+        scheduleMove(x, y)
+        return
+      }
+
+      flushPendingMove()
+      publishControl({ type: 'touch', action, x, y }, true)
+    },
+    [
+      flushPendingMove,
+      iosSwipeMode,
+      iosTapMode,
+      isIosLivePreview,
+      isIosStaticActionSupported,
+      isIosStaticDebug,
+      publishControl,
+      remoteControlSupported,
+      runStaticLongPress,
+      runStaticSwipe,
+      runStaticTap,
+      scheduleMove,
+    ]
+  )
 
   const pointFromStaticPosition = useCallback((clientX: number, clientY: number, target: HTMLDivElement) => {
     if (!renderMetrics || !uiScreen) return null
@@ -1016,7 +1221,7 @@ export default function ScreenPage() {
   }, [])
 
   useEffect(() => {
-    if (!selectedDevice || !isPlaying || hasVideoFrame) return
+    if (!selectedDevice || !isPlaying || hasVideoFrame || isIosDirectMjpegMirror) return
 
     let cancelled = false
     const fetchSessionDiagnostics = async () => {
@@ -1039,7 +1244,7 @@ export default function ScreenPage() {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [hasVideoFrame, isPlaying, selectedDevice])
+  }, [hasVideoFrame, isIosDirectMjpegMirror, isPlaying, selectedDevice])
 
   useEffect(() => {
     return () => {
@@ -1048,6 +1253,9 @@ export default function ScreenPage() {
       }
       const activeDevice = activeSessionDeviceRef.current
       if (activeDevice) {
+        if (activeSessionKindRef.current === 'ios-mjpeg') {
+          requestStopIOSMJPEG(activeDevice)
+        }
         requestStopSession(activeDevice)
       }
     }
@@ -1188,8 +1396,8 @@ export default function ScreenPage() {
     .filter((element) => element.bounds.width > 0 && element.bounds.height > 0)
     .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)
   const locatorSnippets = useMemo(
-    () => buildLocatorSnippets(selectedUiElement, isIosStaticDebug ? 'ios' : 'android'),
-    [isIosStaticDebug, selectedUiElement],
+    () => buildLocatorSnippets(selectedUiElement, isIosDevice ? 'ios' : 'android'),
+    [isIosDevice, selectedUiElement],
   )
   const scriptLineCount = useMemo(() => scriptContent.split(/\r\n|\r|\n/).length, [scriptContent])
   const visibleDebugLogs = useMemo(
@@ -1203,6 +1411,11 @@ export default function ScreenPage() {
   const activeDebugLine = debugScriptSnapshot === scriptContent ? debugCurrentLine : null
   const failedDebugLine = debugTask?.status === 'failed' ? activeDebugLine : null
   const inspectReady = isPlaying || isIosStaticDebug
+  const iosMjpegStreamUrl = useMemo(() => {
+    if (!selectedDevice || !isPlaying || !isIosDirectMjpegMirror || !mjpegStreamKey) return ''
+    const query = new URLSearchParams({ t: String(mjpegStreamKey) })
+    return `${SCREEN_HTTP_URL}/api/v1/sessions/${encodeURIComponent(selectedDevice)}/ios-mjpeg?${query.toString()}`
+  }, [isIosDirectMjpegMirror, isPlaying, mjpegStreamKey, selectedDevice])
 
   const hasStartupError = !isIosStaticDebug && Boolean(sessionDiagnostics?.last_error)
   const isInitializing = !isIosStaticDebug && !hasVideoFrame && !hasStartupError
@@ -1267,22 +1480,29 @@ export default function ScreenPage() {
     const text = quickInputText
     if (!text) return
 
-    if (isIosStaticDebug) {
-      setStaticActionLoading(true)
+    if (isIosStaticActionSupported) {
+      if (isIosStaticDebug) {
+        setStaticActionLoading(true)
+      }
       try {
         const data = await postStaticDebugAction('text', { text })
         applyStaticActionScreen(data)
-        await refreshStaticScreenshot(true)
+        if (isIosStaticDebug) {
+          await refreshStaticScreenshot(true)
+        }
         setQuickInputText('')
         setVirtualKeyboardOpen(false)
         message.success('文本已发送')
+        setLastIosControlStatus(formatIosControlStatus('text', data))
         setLastStaticAction(`输入文本 (${text.length} 字符)`)
       } catch (e) {
         const error = e as Error
         message.error(error.message || 'iOS 文本输入失败，请先点按输入框获取焦点')
         setLastStaticAction('输入失败')
       } finally {
-        setStaticActionLoading(false)
+        if (isIosStaticDebug) {
+          setStaticActionLoading(false)
+        }
       }
       return
     }
@@ -1295,22 +1515,29 @@ export default function ScreenPage() {
   }
 
   const clearStaticText = async () => {
-    if (!isIosStaticDebug) return
+    if (!isIosStaticActionSupported) return
 
-    setStaticActionLoading(true)
+    if (isIosStaticDebug) {
+      setStaticActionLoading(true)
+    }
     try {
       const data = await postStaticDebugAction('clear-text', {})
       applyStaticActionScreen(data)
-      await refreshStaticScreenshot(true)
+      if (isIosStaticDebug) {
+        await refreshStaticScreenshot(true)
+      }
       setQuickInputText('')
       message.success('输入框已清空')
+      setLastIosControlStatus(formatIosControlStatus('clear', data))
       setLastStaticAction('清空输入')
     } catch (e) {
       const error = e as Error
       message.error(error.message || 'iOS 清空输入失败，请先点按输入框获取焦点')
       setLastStaticAction('清空输入失败')
     } finally {
-      setStaticActionLoading(false)
+      if (isIosStaticDebug) {
+        setStaticActionLoading(false)
+      }
     }
   }
 
@@ -1579,18 +1806,18 @@ export default function ScreenPage() {
         onPressEnter={() => { void sendText() }}
         placeholder={isIosStaticDebug ? '先点输入框，再输入文本' : '输入文本或密码'}
         autoComplete="off"
-        disabled={!((isPlaying && remoteControlSupported) || isIosStaticDebug)}
+        disabled={!((isPlaying && remoteControlSupported) || isIosTextInputAvailable)}
       />
       <Button
         type="primary"
         icon={<SendOutlined />}
-        disabled={!quickInputText || !((isPlaying && remoteControlSupported) || isIosStaticDebug)}
-        loading={isIosStaticDebug && staticActionLoading}
+        disabled={!quickInputText || !((isPlaying && remoteControlSupported) || isIosTextInputAvailable)}
+        loading={isIosTextInputAvailable && staticActionLoading}
         onClick={() => { void sendText() }}
       >
         输入
       </Button>
-      {isIosStaticDebug && (
+      {isIosStaticDebug && isIosStaticActionSupported && (
         <Button
           icon={<DeleteOutlined />}
           disabled={staticActionLoading}
@@ -1600,7 +1827,7 @@ export default function ScreenPage() {
           清空
         </Button>
       )}
-      {isIosStaticDebug && (
+      {isIosStaticDebug && isIosStaticActionSupported && (
         <Text type="secondary" className="static-debug-input-tip">输入前先点按目标输入框获取焦点</Text>
       )}
     </div>
@@ -1677,8 +1904,54 @@ export default function ScreenPage() {
                 ref={playerContainerRef}
                 className={`player-container ${isPlaying || isIosStaticDebug ? 'active' : ''}`}
                 style={playerBoxSize ? { width: playerBoxSize.width, height: playerBoxSize.height } : undefined}
-              >
-                {isPlaying && lkSession ? (
+                >
+                  {isPlaying && isIosDirectMjpegMirror && iosMjpegStreamUrl ? (
+                    <TouchOverlay
+                    screenWidth={deviceInfo?.width || 1080}
+                    screenHeight={deviceInfo?.height || 1920}
+                    onInput={handleTouchInput}
+                    disabled={uiElements.length > 0}
+                  >
+                    <img
+                      className="static-debug-screenshot ios-mjpeg-stream"
+                      src={iosMjpegStreamUrl}
+                      alt="iOS MJPEG direct stream"
+                      onLoad={() => {
+                        setHasVideoFrame(true)
+                        setLoading(false)
+                        setSessionDiagnostics((current) => current && { ...current, last_error: undefined })
+                        if (startRequestedAtRef.current !== null) {
+                          setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
+                        }
+                      }}
+                      onError={() => {
+                        if (selectedDevice) {
+                          requestStopIOSMJPEG(selectedDevice)
+                        }
+                        setHasVideoFrame(false)
+                        setLoading(false)
+                        setIsPlaying(false)
+                        setMjpegStreamKey(0)
+                        activeSessionDeviceRef.current = null
+                        activeSessionKindRef.current = null
+                        setSessionDiagnostics({
+                          active: false,
+                          stage: 'error',
+                          stage_label: 'iOS MJPEG direct error',
+                          last_error: 'iOS MJPEG 直连流加载失败',
+                        })
+                      }}
+                    />
+                    {isInitializing && (
+                      <div className="video-waiting-overlay">
+                        <div className="video-waiting-content">
+                          <span>{startupStatusText}</span>
+                        </div>
+                      </div>
+                    )}
+                      {uiElementOverlay}
+                    </TouchOverlay>
+                ) : isPlaying && lkSession ? (
                   <TouchOverlay
                     screenWidth={deviceInfo?.width || 1080}
                     screenHeight={deviceInfo?.height || 1920}
@@ -1767,10 +2040,10 @@ export default function ScreenPage() {
               >
                 <Button
                   shape="circle"
-                  type={virtualKeyboardOpen ? 'primary' : 'default'}
-                  icon={<KeyOutlined />}
-                  disabled={!((isPlaying && remoteControlSupported) || isIosStaticDebug)}
-                  aria-label="电脑键盘输入"
+                    type={virtualKeyboardOpen ? 'primary' : 'default'}
+                    icon={<KeyOutlined />}
+                    disabled={!((isPlaying && remoteControlSupported) || isIosTextInputAvailable)}
+                    aria-label="电脑键盘输入"
                   title="电脑键盘输入"
                 />
               </Popover>
@@ -1778,35 +2051,38 @@ export default function ScreenPage() {
           </div>
 
           <div className="device-stage-footer">
-            {isIosStaticDebug ? (
-              <>
-                <Text type="secondary">模式：iOS 静态预览</Text>
-                <Text type="secondary">控件：{uiElements.length}</Text>
-                <Text type="secondary">实时投屏：未接入</Text>
-                <Text type="secondary">
-                  自动刷新：{staticAutoRefresh ? `${staticAutoRefreshIntervalMs / 1000}s` : '关闭'}
-                </Text>
-                <Text type="secondary">
-                  刷新：{staticRefreshDurationMs !== null ? `${staticRefreshDurationMs}ms` : '--'}
-                </Text>
-                <Text type={staticRefreshFailures > 0 ? 'danger' : 'secondary'}>失败：{staticRefreshFailures}</Text>
-                <Text type={staticDebugSessionActive ? 'warning' : 'secondary'}>
-                  Session：{staticDebugSessionActive ? '占用中' : '未占用'}
-                </Text>
-                <Text type="secondary">
-                  坐标：{staticPointerPoint ? `${staticPointerPoint.x}, ${staticPointerPoint.y}` : '--'}
-                </Text>
+              {isIosStaticDebug ? (
+                <>
+                  <Text type="secondary">模式：{iosModeLabel}</Text>
+                  <Text type="secondary">控件：{uiElements.length}</Text>
+                  <Text type="secondary">连续触控：未开启</Text>
+                  <Text type="secondary">
+                    自动刷新：{staticAutoRefresh ? `${staticAutoRefreshIntervalMs / 1000}s` : '关闭'}
+                  </Text>
+                  <Text type="secondary">
+                    刷新：{staticRefreshDurationMs !== null ? `${staticRefreshDurationMs}ms` : '--'}
+                  </Text>
+                  <Text type={staticRefreshFailures > 0 ? 'danger' : 'secondary'}>失败：{staticRefreshFailures}</Text>
+                  <Text type={staticDebugSessionActive ? 'warning' : 'secondary'}>
+                    Session：{staticDebugSessionActive ? '占用中' : '未占用'}
+                  </Text>
+                  <Text type="secondary">
+                    坐标：{staticPointerPoint ? `${staticPointerPoint.x}, ${staticPointerPoint.y}` : '--'}
+                  </Text>
                 <Text type="secondary">最近：{lastStaticAction}</Text>
-                {staticRefreshLastError && (
+                {isIosStaticDebug && staticRefreshLastError && (
                   <Text type="danger" title={staticRefreshLastError}>错误：{staticRefreshLastError}</Text>
                 )}
               </>
-            ) : (
-              <>
-                <Text type="secondary">FPS：{fps}</Text>
-                <Text type="secondary">网络延迟：{networkLatencyMs !== null ? `${networkLatencyMs}ms` : '--'}</Text>
-                <Text type="secondary">首帧：{browserFirstFrameMs !== null ? `${browserFirstFrameMs}ms` : '--'}</Text>
-              </>
+              ) : (
+                <>
+                  <Text type="secondary">FPS：{isIosDirectMjpegMirror ? '直连' : fps}</Text>
+                  <Text type="secondary">网络延迟：{networkLatencyMs !== null ? `${networkLatencyMs}ms` : '--'}</Text>
+                  <Text type="secondary">首帧：{browserFirstFrameMs !== null ? `${browserFirstFrameMs}ms` : '--'}</Text>
+                  {isIosDirectMjpegMirror && (
+                    <Text type="secondary">触控：{lastIosControlStatus}</Text>
+                  )}
+                </>
             )}
           </div>
         </section>
@@ -1850,29 +2126,31 @@ export default function ScreenPage() {
                       </Button>
                     )}
                     {isIosStaticDebug && (
-                      <>
-                        <Space size={6}>
-                          <Text type="secondary">自动刷新</Text>
-                          <Switch
-                            size="small"
-                            checked={staticAutoRefresh}
-                            disabled={!staticScreenshot || staticActionLoading || loadingUiHierarchy}
-                            onChange={setStaticAutoRefresh}
-                          />
-                          <Segmented
-                            size="small"
-                            value={staticAutoRefreshIntervalMs}
-                            options={STATIC_AUTO_REFRESH_INTERVAL_OPTIONS}
-                            disabled={!staticAutoRefresh}
-                            onChange={(value) => setStaticAutoRefreshIntervalMs(Number(value))}
-                          />
-                        </Space>
+                      <Space size={6}>
+                        <Text type="secondary">自动刷新</Text>
+                        <Switch
+                          size="small"
+                          checked={staticAutoRefresh}
+                          disabled={!staticScreenshot || staticActionLoading || loadingUiHierarchy}
+                          onChange={setStaticAutoRefresh}
+                        />
+                        <Segmented
+                          size="small"
+                          value={staticAutoRefreshIntervalMs}
+                          options={STATIC_AUTO_REFRESH_INTERVAL_OPTIONS}
+                          disabled={!staticAutoRefresh}
+                          onChange={(value) => setStaticAutoRefreshIntervalMs(Number(value))}
+                        />
+                      </Space>
+                    )}
+                      {isIosStaticDebug && isIosStaticActionSupported && (
+                        <>
                         <Space size={6}>
                           <Text type="secondary">点按模式</Text>
                           <Switch
                             size="small"
                             checked={iosTapMode}
-                            disabled={!staticScreenshot || staticActionLoading}
+                            disabled={staticActionLoading || (isIosStaticDebug && !staticScreenshot)}
                             onChange={(checked) => {
                               setIosTapMode(checked)
                               if (checked) setIosSwipeMode(false)
@@ -1884,7 +2162,7 @@ export default function ScreenPage() {
                           <Switch
                             size="small"
                             checked={iosSwipeMode}
-                            disabled={!staticScreenshot || staticActionLoading}
+                            disabled={staticActionLoading || (isIosStaticDebug && !staticScreenshot)}
                             onChange={(checked) => {
                               setIosSwipeMode(checked)
                               if (checked) setIosTapMode(false)

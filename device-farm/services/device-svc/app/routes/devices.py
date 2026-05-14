@@ -26,10 +26,12 @@ router = APIRouter()
 class IOSDebugTapRequest(BaseModel):
     x: float = Field(..., ge=0)
     y: float = Field(..., ge=0)
+    includeScreen: bool = False
 
 
 class IOSDebugTextRequest(BaseModel):
     text: str = Field(..., min_length=1)
+    includeScreen: bool = False
 
 
 class IOSDebugSwipeRequest(BaseModel):
@@ -38,12 +40,18 @@ class IOSDebugSwipeRequest(BaseModel):
     endX: float = Field(..., ge=0)
     endY: float = Field(..., ge=0)
     durationMs: int = Field(500, ge=50, le=5000)
+    includeScreen: bool = False
 
 
 class IOSDebugLongPressRequest(BaseModel):
     x: float = Field(..., ge=0)
     y: float = Field(..., ge=0)
     durationMs: int = Field(800, ge=100, le=5000)
+    includeScreen: bool = False
+
+
+class IOSDebugClearTextRequest(BaseModel):
+    includeScreen: bool = False
 
 
 def is_ios_device(device: Device) -> bool:
@@ -253,7 +261,7 @@ async def tap_ios_static_debug(device_id: str, request: IOSDebugTapRequest):
     ensure_ios_static_operation_available(device)
 
     try:
-        return await device_service.tap_ios_debug(device_id, request.x, request.y)
+        return await device_service.tap_ios_debug(device_id, request.x, request.y, request.includeScreen)
     except IOSAgentRequestError as e:
         raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
@@ -269,7 +277,7 @@ async def input_ios_static_debug_text(device_id: str, request: IOSDebugTextReque
     ensure_ios_static_operation_available(device)
 
     try:
-        return await device_service.input_ios_debug_text(device_id, request.text)
+        return await device_service.input_ios_debug_text(device_id, request.text, request.includeScreen)
     except IOSAgentRequestError as e:
         raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
@@ -292,6 +300,7 @@ async def swipe_ios_static_debug(device_id: str, request: IOSDebugSwipeRequest):
             request.endX,
             request.endY,
             request.durationMs,
+            request.includeScreen,
         )
     except IOSAgentRequestError as e:
         raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
@@ -308,7 +317,13 @@ async def long_press_ios_static_debug(device_id: str, request: IOSDebugLongPress
     ensure_ios_static_operation_available(device)
 
     try:
-        return await device_service.long_press_ios_debug(device_id, request.x, request.y, request.durationMs)
+        return await device_service.long_press_ios_debug(
+            device_id,
+            request.x,
+            request.y,
+            request.durationMs,
+            request.includeScreen,
+        )
     except IOSAgentRequestError as e:
         raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:
@@ -316,7 +331,7 @@ async def long_press_ios_static_debug(device_id: str, request: IOSDebugLongPress
 
 
 @router.post("/{device_id}/debug/clear-text")
-async def clear_ios_static_debug_text(device_id: str):
+async def clear_ios_static_debug_text(device_id: str, request: Optional[IOSDebugClearTextRequest] = None):
     """Clear the currently focused iOS input element using Appium/WDA."""
     device = await device_service.get_device(device_id)
     if not device:
@@ -324,7 +339,8 @@ async def clear_ios_static_debug_text(device_id: str):
     ensure_ios_static_operation_available(device)
 
     try:
-        return await device_service.clear_ios_debug_text(device_id)
+        include_screen = bool(request.includeScreen) if request else False
+        return await device_service.clear_ios_debug_text(device_id, include_screen)
     except IOSAgentRequestError as e:
         raise HTTPException(status_code=ios_agent_error_status(e), detail=str(e))
     except RuntimeError as e:

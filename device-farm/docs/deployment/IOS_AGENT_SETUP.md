@@ -16,8 +16,8 @@ Docker services
 ```
 
 iOS 当前开放脚本自动化、静态控件树调试、静态点按、滑动、长按、
-文本输入、清空输入和默认关闭的自动刷新截图预览能力。实时投屏、
-连续触控流和 LiveKit 实时流暂不通过 iOS Agent 开放。
+文本输入、清空输入和默认关闭的自动刷新截图预览能力。iOS MJPEG 直连预览
+只在实验开关开启后显示；连续触控流和系统键暂不通过 iOS Agent 开放。
 
 ## 本机前置条件
 
@@ -98,6 +98,10 @@ uvicorn app:app --host 0.0.0.0 --port 8015
 IOS_AGENT_DEBUG_SESSION_TTL_SECONDS=300
 ```
 
+首次启动 WDA 可能需要编译、安装和等待设备响应，创建 Appium session 的超时单独由
+`IOS_AGENT_SESSION_CREATE_TIMEOUT` 控制，默认 90 秒。普通 Appium 命令仍使用
+`IOS_AGENT_COMMAND_TIMEOUT`，默认 20 秒。
+
 ## Docker 环境变量
 
 在 `device-farm/infra/docker/.env` 里配置 Docker 服务访问宿主机服务：
@@ -110,6 +114,8 @@ IOS_XCODE_SIGNING_ID=Apple Development
 IOS_WDA_BUNDLE_ID=<unique-wda-bundle-id>
 IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true
 IOS_AGENT_REQUEST_TIMEOUT=90
+IOS_ENABLE_EXPERIMENTAL_SCREEN=false
+IOS_SCREEN_DRIVER=mjpeg-direct
 ```
 
 说明：
@@ -117,6 +123,9 @@ IOS_AGENT_REQUEST_TIMEOUT=90
 - `IOS_XCODE_ORG_ID` 是 Apple Developer Team ID。
 - `IOS_WDA_BUNDLE_ID` 必须全局唯一，例如 `com.company.devicefarm.WebDriverAgentRunner`。
 - `IOS_AGENT_REQUEST_TIMEOUT` 控制 Docker 内服务等待 iOS Agent 的时间；首次启动 WDA 可能较慢，建议不低于 90 秒。
+- `IOS_ENABLE_EXPERIMENTAL_SCREEN=true` 会让已验证的 iOS 设备在投屏页进入
+  MJPEG 直连预览，默认保持 `false`。
+- `IOS_SCREEN_DRIVER=mjpeg-direct` 是当前已验证的 iOS 实验投屏 driver。
 - 这些签名变量由 `test-svc` / `test-worker` 和宿主机 iOS Agent 传给 Appium，不要写进脚本内容。
 
 修改后重建相关容器：
@@ -201,104 +210,50 @@ curl -X POST http://127.0.0.1:8015/devices/<verified-udid>/clear-text
 curl -X DELETE http://127.0.0.1:8015/devices/<verified-udid>/debug-session
 ```
 
-## 静态预览 Benchmark 与投屏方案验证
+`tap`、`swipe`、`long-press`、`text`、`clear-text` 默认 `includeScreen=false`，
+响应会返回 `latency_ms`、`control_method` 和 `session_reused`，用于排查触控延迟。
+静态截图调试需要同步刷新逻辑屏幕时，可在请求体里传 `includeScreen=true`；`mjpeg-direct`
+投屏链路应保持默认值，避免每次触控后额外请求 `window/rect`。
+`tap`、`swipe`、`long-press` 会优先直连 WDA `/actions`，默认 WDA 地址为
+`IOS_WDA_BASE_URL=http://127.0.0.1:8100`；直连不可用时会自动回退到 Appium
+`mobile:` 指令，再回退到 W3C actions。已有 stream/debug session 会直接复用，
+不会每次触控前重复枚举设备或检查 Appium status。
 
-Phase 2.4 仍不把 iOS 标记为实时投屏设备。要评估后续 Phase 3 是否能复用
-Appium/WDA 截图轮询接入 `screen-svc -> LiveKit`，先用本地脚本对真实 iPhone
-连续采样：
+## iOS MJPEG 直连预览
 
-```bash
-IOS_AGENT_URL=http://127.0.0.1:8015 \
-IOS_DEVICE_ID=<verified-udid> \
-python3 device-farm/scripts/ios_preview_benchmark.py --duration 30
+默认情况下 iOS 仍进入静态预览。如果要验证更流畅的 iOS 画面预览，可以显式开启
+实验能力：
+
+```dotenv
+IOS_ENABLE_EXPERIMENTAL_SCREEN=true
+IOS_SCREEN_DRIVER=mjpeg-direct
 ```
 
-脚本会通过 iOS Agent 的 `source`、`screenshot` 和 `debug-session` 接口测量：
+重启 `device-svc`、`screen-svc` 和 `nginx` 后，已验证的 iOS 设备会显示为支持
+投屏，正式 `/screen` 页面会走：
 
-- 平均 FPS、首帧耗时、P50/P95 截图耗时。
-- 成功/失败次数、前几条失败原因。
-- 截图尺寸、逻辑屏幕尺寸。
-- debug session 是否新建或因 WDA 断开而重建。
+```text
+Browser POST prepare
+  -> screen-svc POST /api/v1/sessions/<udid>/ios-mjpeg/prepare
+  -> iOS Agent POST /devices/<udid>/stream-session
+  -> 返回 WDA 逻辑屏幕尺寸，供前端坐标映射
 
-如需仅探测 WDA/MJPEG 或 WDA 直接流是否可达，可以额外传入：
-
-```bash
-IOS_WDA_MJPEG_URL=http://127.0.0.1:<mjpeg-port>/ \
-python3 device-farm/scripts/ios_preview_benchmark.py --duration 30
+Browser <img>
+  -> screen-svc GET /api/v1/sessions/<udid>/ios-mjpeg
+  -> iOS Agent POST /devices/<udid>/stream-session
+  -> WDA/MJPEG multipart stream
 ```
 
-当前决策边界：Appium `/screenshot` 轮询仍作为静态预览的稳定主链路；
-WDA/MJPEG 或 Mac 端采集只作为 Phase 3 实时投屏候选路线，不在本阶段进入前端产品入口。
+这条链路不启动 LiveKit，也不做 ffmpeg/H264 转码；Android/Harmony 投屏仍走原来的
+LiveKit/WebRTC。iOS `remoteControl` 仍为 `false`，点按、滑动、长按、输入和清空
+继续通过 iOS Agent 的低延迟一次性 Appium/WDA 操作接口完成；它不是 Android/scrcpy
+那种连续实时触控流。
 
-当前实测结论：`du-iPhone` 通过 iOS Agent 跑 30 秒采样时，Appium
-`/screenshot` 轮询成功 11/11、失败 0 次、平均约 0.35 FPS、首帧约 3.2 秒、
-P50 约 2.8 秒、P95 约 3.2 秒。结论是：这条链路稳定，适合作为静态预览；
-不适合作为 Phase 3 的实时 LiveKit 投屏主链路。Phase 3 应优先验证
-WDA/MJPEG 或 Mac 端采集方案。
-
-## WDA/MJPEG 视频源 Probe
-
-Phase 3.1 使用独立 Appium probe session 验证 WDA/MJPEG 是否能作为实时投屏
-视频源，不改变 Device Farm 产品入口，也不把 iOS 标记为实时投屏设备：
-
-```bash
-export IOS_XCODE_ORG_ID=<apple-team-id>
-export IOS_XCODE_SIGNING_ID="Apple Development"
-export IOS_WDA_BUNDLE_ID=<unique-wda-bundle-id>
-export IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION=true
-
-IOS_APPIUM_HOST=http://127.0.0.1:4724 \
-IOS_AGENT_URL=http://127.0.0.1:8015 \
-python3 device-farm/scripts/ios_stream_source_probe.py --duration 30
-```
-
-默认情况下，probe 要求当前 shell 已导出 `IOS_XCODE_ORG_ID`、
-`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID`，避免 probe session 与 iOS Agent
-静态预览 session 使用不同 WDA bundle。只有明确需要验证默认 WDA bundle 时，
-才使用 `--allow-default-wda-signing`。
-
-probe 会创建一个临时 XCUITest session，并设置：
-
-- `appium:mjpegServerPort=9100`
-- `mjpegServerFramerate=10`
-- `mjpegScalingFactor=50`
-- `mjpegServerScreenshotQuality=40`
-
-输出会包含：
-
-- WDA/MJPEG 首帧耗时、平均 FPS、P50/P95 帧间隔、帧尺寸和帧大小。
-- Appium `/screenshot` 短基线，便于和 MJPEG 结果对比。
-- `recommendation.next_phase_source`，用于决定 Phase 3.2 走 WDA/MJPEG 还是转向 Mac 端采集。
-- probe session 是否创建和删除成功；报告只展示签名变量是否已配置，不展示具体值。
-- 开始前是否已释放 iOS Agent 静态 debug session；如需跳过可传 `--skip-ios-agent-release`。
-
-如果 WDA 安装后立刻消失，probe 支持预编译 WDA 信任引导：
-
-```bash
-IOS_APPIUM_HOST=http://127.0.0.1:4724 \
-IOS_AGENT_URL=http://127.0.0.1:8015 \
-python3 device-farm/scripts/ios_stream_source_probe.py --trust-preinstall-wda --duration 3
-```
-
-这会使用 Appium 已构建出的
-`Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app` 创建
-`usePreinstalledWDA` session。即使 iOS 因证书未信任而拒绝启动，Appium 也不会走普通
-session 的 WDA 卸载清理路径，WDA Runner 会留在手机上。随后进入 iPhone
-“设置 > 通用 > VPN 与设备管理”信任对应开发者证书，再重新运行普通 probe 或静态截图。
-如果预编译 WDA 路径不同，可传 `--prebuilt-wda-path <path-to-WebDriverAgentRunner-Runner.app>`。
-
-当前实测结论：`du-iPhone` 通过 `ios_stream_source_probe.py --duration 30`
-采样时，WDA/MJPEG 成功输出 285 帧，平均约 9.49 FPS，首帧约 224ms，
-P50 帧间隔约 105ms，P95 帧间隔约 116ms，JPEG 逻辑尺寸 414x896；
-Appium `/screenshot` 同 session 短基线约 3.4 FPS。结论是：
-WDA/MJPEG 达到 Phase 3.2 阈值，可优先作为 `screen-svc -> LiveKit`
-实时投屏视频源候选。
-
-注意：probe session 结束时会删除自己的 Appium session，可能会让 WDA 退出。
-如果运行 probe 时没有使用与 iOS Agent 相同的自定义 WDA 签名配置，后续 iOS
-Agent 重启 WDA 时可能出现 `xcodebuild failed with code 65`。遇到时优先检查
-当前 shell 的签名变量、自定义 WDA bundle、Team、证书信任和 Appium 日志，而
-不是把它当作 Device Farm 投屏链路问题。
+关闭页面或断开投屏时，前端会调用
+`DELETE /api/v1/sessions/<udid>/ios-mjpeg`，`screen-svc` 再调用
+`DELETE /devices/<udid>/stream-session` 释放 iOS Agent 内的 stream session。iOS Agent
+也会按 debug session TTL 清理过期 stream session，避免异常断开后长期占用 WDA。
+同一台 iPhone 同时只应打开一个投屏/调试入口，避免抢占 WDA session。
 
 ## iOS Smoke 示例
 

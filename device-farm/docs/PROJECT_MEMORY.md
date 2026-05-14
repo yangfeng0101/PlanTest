@@ -8,7 +8,7 @@
 
 - 当前远程状态：`main` 已合并并推送 iOS 脚本执行 v1；`dev-reboot` 保留对应功能提交。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
-- 最近一次功能改动：iOS WDA/MJPEG 视频源 Spike，新增本地 probe 验证实时投屏候选源；投屏页仍保持 iOS 静态预览，实时投屏/连续触控仍未开放。
+- 最近一次功能改动：iOS `mjpeg-direct` 直连预览补齐低延迟一次性触控优化。默认仍保持 iOS 静态预览，只有 `IOS_ENABLE_EXPERIMENTAL_SCREEN=true` 且显式配置实验 driver 时才开放 iOS 画面预览，连续实时触控仍未开放。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -23,8 +23,9 @@
   - iOS 静态调试真机验证：iPhone 通过 WDA/Appium 完成截图、控件树、静态点按、聚焦后文本输入；LaunchAgent 以 `0.0.0.0:8015` 暴露 iOS Agent，Docker 可通过 `IOS_AGENT_URL` 访问。
   - iOS Phase 2.3 真机验证：`du-iPhone` 通过 iOS Agent 和 Docker `device-svc` 代理完成 screenshot/source/ui-hierarchy、tap、text、clear-text、swipe、long-press；并发截图/控件树/手势请求经 Agent UDID 命令锁串行后均返回 200。
   - iOS Phase 2.4 投屏方案 benchmark：`du-iPhone` 通过 iOS Agent 30 秒采样，Appium `/screenshot` 轮询成功 11/11、失败 0、平均约 0.35 FPS、首帧约 3.2 秒、P50 约 2.8 秒、P95 约 3.2 秒；结论是稳定但太慢，只适合静态预览，Phase 3 实时投屏应优先验证 WDA/MJPEG 或 Mac 端采集。
-  - iOS Phase 3.1 WDA/MJPEG probe：`du-iPhone` 通过独立 Appium probe session 30 秒采样，WDA/MJPEG 输出 285 帧、平均约 9.49 FPS、首帧约 224ms、P50 帧间隔约 105ms、P95 约 116ms、JPEG 逻辑尺寸 414x896；同 session Appium `/screenshot` 短基线约 3.4 FPS。结论是 WDA/MJPEG 达到 Phase 3.2 阈值，可优先作为 `screen-svc -> LiveKit` 视频源候选。
+  - iOS MJPEG 直连验证：`du-iPhone` 通过 `screen-svc` 直连代理 WDA/MJPEG 到浏览器，真机体感明显比此前 `MJPEG -> ffmpeg/H264 -> LiveKit/WebRTC` 链路流畅；因此保留 `mjpeg-direct` 作为实验预览 driver，暂不再推进 iOS MJPEG 转 H264/LiveKit 方案。
   - iOS WDA 信任问题已通过 `ios_stream_source_probe.py --trust-preinstall-wda` 验证修复路径：预编译 WDA Runner 能留在手机安装列表中；用户在 iPhone 信任开发者证书后，普通 probe 成功创建 WDA session，5 秒 MJPEG 短测 47 帧、平均约 9.37 FPS、首帧约 190ms，Appium `/screenshot` 短基线成功 7/7、约 3.47 FPS；iOS Agent 静态截图接口也可正常返回并复用 debug session。
+  - iOS 低延迟触控真机验证：`du-iPhone` 在 `mjpeg-direct` stream session 复用状态下，iOS Agent 热路径已绕开重复设备枚举/Appium status；10 次 tap 约 586-818ms，顺序 swipe 约 1.3s，long-press 约 1.3s，device-svc 代理 tap 约 745ms。此前 Appium `mobile: tap` 约 1.7-2.6s，主要慢点已确认在热路径重复设备校验和 Appium 动作代理；当前 WDA 8100 直连端口不稳定可用，因此 Agent 保留 WDA direct 优先、Appium `mobile:` fallback。
 
 ## 最近完成的改动
 
@@ -76,12 +77,14 @@
   - `test-svc` 会在合并任务 `device_capabilities` 后强制覆盖平台、UDID、automationName、ADB host 和 iOS WDA 签名等服务端所有 caps，避免脚本任务绕过设备占用。
   - `test-svc` 会把 `_device_snapshot` 和 `_appium_diagnostics` 写入任务 `device_capabilities` 供详情页排查；这些内部字段不会传给 Appium。
   - iOS Appium/WDA session 创建失败时会在任务错误和日志中保留原始错误，并追加中文 hint，例如 Appium host 不可达、Team 签名异常、bundle id 冲突、设备未信任或 WDA 超时。
-  - 设备能力新增 `automation`；iOS 设备在 `automation_ready=true` 后开放脚本执行、静态截图、控件树调试、静态点按、滑动、长按、文本输入和清空输入，仍不开放实时投屏和连续触控。
+  - 设备能力新增 `automation`；iOS 设备在 `automation_ready=true` 后开放脚本执行、静态截图、控件树调试、静态点按、滑动、长按、文本输入和清空输入，默认不开放投屏和连续触控。
+  - iOS 投屏页支持实验 `mjpeg-direct` 直连预览：`device-svc` 设置 `IOS_ENABLE_EXPERIMENTAL_SCREEN=true`、`IOS_SCREEN_DRIVER=mjpeg-direct` 后，正式 `/screen` 页面先通过 `screen-svc POST /api/v1/sessions/<udid>/ios-mjpeg/prepare` 获取 WDA 逻辑屏幕尺寸，再通过 `GET /api/v1/sessions/<udid>/ios-mjpeg` 直接代理 iOS Agent WDA/MJPEG multipart 到浏览器，不启动 LiveKit、不做 ffmpeg/H264 转码；前端直连模式已收敛成接近 Android 投屏的界面，不再展示静态截图刷新/点按模式/滑动模式等额外控件，点击/拖动画面会走低延迟一次性 WDA direct actions，默认不再随动作刷新 screen，并会在页脚展示最近一次触控耗时和 control method。Android/Harmony 不受影响。旧的 Go 侧 iOS MJPEG/PNG 转 H264 实验代码已移除，避免误导后续维护。
   - 投屏页对 iOS 使用静态预览模式：不启动 LiveKit，可刷新截图、默认关闭自动刷新预览并支持 1s/2s/5s 间隔、拉取控件树、点按截图或控件中心点、拖动截图执行一次性滑动、长按控件中心点、向当前焦点输入或清空文本，并展示最近刷新耗时、连续失败次数、最近错误、iOS debug session 占用状态和 iOS selector 片段；设备列表/详情页会以“调试”入口打开该页面，切换设备或离开页面会释放 iOS Agent debug session。
-  - iOS Agent 新增 `GET /devices/{udid}/screenshot`、`GET /devices/{udid}/source`、`POST /devices/{udid}/tap`、`POST /devices/{udid}/swipe`、`POST /devices/{udid}/long-press`、`POST /devices/{udid}/text`、`POST /devices/{udid}/clear-text`、`DELETE /devices/{udid}/debug-session`，内部按 UDID 缓存 Appium XCUITest debug session，并按 UDID 串行化 Appium 命令，避免并发请求打坏 WDA session。
+  - iOS Agent 新增 `GET /devices/{udid}/screenshot`、`GET /devices/{udid}/source`、`POST /devices/{udid}/tap`、`POST /devices/{udid}/swipe`、`POST /devices/{udid}/long-press`、`POST /devices/{udid}/text`、`POST /devices/{udid}/clear-text`、`POST /devices/{udid}/stream-session`、`DELETE /devices/{udid}/stream-session`、`DELETE /devices/{udid}/debug-session`，内部按 UDID 缓存 Appium XCUITest debug/stream session，debug/stream session 均按 TTL 过期清理，并按 UDID 串行化 Appium 命令，避免并发请求打坏 WDA session；动作接口默认 `includeScreen=false` 并返回 `latency_ms`、`control_method`、`session_reused`，tap/long-press/swipe 优先直连 `IOS_WDA_BASE_URL` 的 WDA `/actions`，不可用时 fallback 到 Appium `mobile:` 指令和 W3C actions。
+  - iOS Agent 创建 Appium session 使用独立 `IOS_AGENT_SESSION_CREATE_TIMEOUT`，默认 90 秒；普通命令仍使用 `IOS_AGENT_COMMAND_TIMEOUT` 默认 20 秒，避免首次 WDA 启动超过 20 秒时 Agent 过早返回 503。
   - iOS Agent 截图路径遇到典型 WDA 代理断开/连接拒绝会自动清理并重建 debug session 一次；前端截图刷新失败也会释放 debug session 后重试一次。
   - 新增 `scripts/ios_preview_benchmark.py`，通过 iOS Agent 的 source/screenshot/debug-session 接口连续采样输出平均 FPS、P50/P95 截图耗时、首帧耗时、失败次数、截图尺寸和 session 重建情况，用于 Phase 3 是否接入 `screen-svc -> LiveKit` 的方案决策。
-  - 新增 `scripts/ios_stream_source_probe.py`，通过独立 Appium XCUITest session 设置 `mjpegServerPort` 和 MJPEG settings，采样 WDA/MJPEG 流与 Appium `/screenshot` 短基线，并输出 Phase 3.2 视频源推荐；脚本默认要求导出与 iOS Agent 一致的 WDA 签名变量，并会在开始前释放 iOS Agent 静态 debug session；遇到 WDA 安装后被普通 Appium session 清理、手机上来不及信任开发者证书时，可用 `--trust-preinstall-wda` 走 `usePreinstalledWDA + prebuiltWDAPath` 信任引导，让 WDA Runner 留在手机上。
+  - 保留 `scripts/ios_stream_source_probe.py` 作为 WDA 信任引导和 MJPEG 源诊断工具；遇到 WDA 安装后被普通 Appium session 清理、手机上来不及信任开发者证书时，可用 `--trust-preinstall-wda` 走 `usePreinstalledWDA + prebuiltWDAPath` 信任引导，让 WDA Runner 留在手机上。
   - 脚本 SDK 版本升级为 `1.3.0`，`app.click_text()` 在 iOS 上按 `label/name/value` 查询，并保留非 ASCII 文本用于中文 label 定位。
 - 旧 Python `services/ai-svc/`、前端 AI 工具菜单/页面、Vite/Nginx 的旧 `/ocr`、`/locate`、`/generate` 代理已移除；历史 `docs/project/*` 中的旧记录仍作为归档保留。
 - 控件树获取增强：
@@ -114,7 +117,7 @@
 - `MIDSCENE_MODEL_FAMILY` 需要填写 Midscene 支持的模型系列，例如 `qwen3-vl`，不要填具体模型名 `qwen3-vl-plus`；具体模型名应放在 `MIDSCENE_MODEL_NAME`。
 - `@midscene/android` 当前最新版本为 `1.7.9`；`npm audit --omit=dev --registry=https://registry.npmjs.org` 会报告其传递依赖中的漏洞，自动修复建议降级到旧版 `0.13.1`，当前不采用。`midscene-runner` 保持 Docker 内网服务、不映射宿主机端口，后续跟踪上游版本修复。
 - Midscene 第一版未接入 HTML 报告、断点/单步调试、pinch、数据提取方法，也未复用 screen-svc 的截图/触控链路。
-- iOS 当前支持脚本执行闭环、静态截图/控件树调试、静态点按、滑动、长按、文本输入、清空输入和准实时静态截图预览；WDA/MJPEG 已通过 Phase 3.1 视频源验证，实时投屏待 Phase 3.2 接入 `screen-svc -> LiveKit`。
+- iOS 当前支持脚本执行闭环、静态截图/控件树调试、静态点按、滑动、长按、文本输入、清空输入和准实时静态截图预览；`mjpeg-direct` 直连预览是实验能力，默认不开放，并已做低延迟一次性触控优化。连续实时触控、Home/Back/App Switch 等系统键仍未接入。
 - iOS WDA/MJPEG probe session 结束会删除自己的 Appium session，可能导致 WDA 退出；如果 probe 与 iOS Agent 使用不同 WDA bundle，后续 iOS Agent 重启 WDA 可能出现 `xcodebuild failed with code 65`，优先检查当前 shell 的 WDA 签名环境变量、自定义 bundle、Team、证书信任和 Appium 日志。若 Appium 日志显示 WDA 已安装但 launch 因 `invalid code signature` / `not explicitly trusted` 失败，普通 session 会卸载 WDA，需先用 `ios_stream_source_probe.py --trust-preinstall-wda` 安装并保留预编译 WDA Runner，完成手机端开发者证书信任后再运行普通会话；`iosInstallPause` 只暂停被测 App 安装，不解决 WDA 信任。
 - 前端生产构建有 chunk 体积 warning，当前不阻塞功能，后续可通过动态 import 或 manualChunks 优化。
 - WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。

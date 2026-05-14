@@ -47,12 +47,12 @@ class FakeDeviceService:
     async def get_device(self, device_id: str):
         return self.device if self.device.id == device_id else None
 
-    async def tap_ios_debug(self, device_id: str, x: float, y: float):
-        self.tap_calls.append((device_id, x, y))
+    async def tap_ios_debug(self, device_id: str, x: float, y: float, include_screen: bool = False):
+        self.tap_calls.append((device_id, x, y, include_screen))
         return {"device_id": device_id, "success": True, "x": round(x), "y": round(y)}
 
-    async def input_ios_debug_text(self, device_id: str, text: str):
-        self.text_calls.append((device_id, text))
+    async def input_ios_debug_text(self, device_id: str, text: str, include_screen: bool = False):
+        self.text_calls.append((device_id, text, include_screen))
         return {"device_id": device_id, "success": True, "text_length": len(text)}
 
     async def swipe_ios_debug(
@@ -63,8 +63,9 @@ class FakeDeviceService:
         end_x: float,
         end_y: float,
         duration_ms: int,
+        include_screen: bool = False,
     ):
-        self.swipe_calls.append((device_id, start_x, start_y, end_x, end_y, duration_ms))
+        self.swipe_calls.append((device_id, start_x, start_y, end_x, end_y, duration_ms, include_screen))
         return {
             "device_id": device_id,
             "success": True,
@@ -75,14 +76,14 @@ class FakeDeviceService:
             "durationMs": duration_ms,
         }
 
-    async def long_press_ios_debug(self, device_id: str, x: float, y: float, duration_ms: int):
-        self.long_press_calls.append((device_id, x, y, duration_ms))
+    async def long_press_ios_debug(self, device_id: str, x: float, y: float, duration_ms: int, include_screen: bool = False):
+        self.long_press_calls.append((device_id, x, y, duration_ms, include_screen))
         return {"device_id": device_id, "success": True, "x": round(x), "y": round(y), "durationMs": duration_ms}
 
-    async def clear_ios_debug_text(self, device_id: str):
+    async def clear_ios_debug_text(self, device_id: str, include_screen: bool = False):
         if self.clear_text_error:
             raise self.clear_text_error
-        self.clear_text_calls.append(device_id)
+        self.clear_text_calls.append((device_id, include_screen))
         return {"device_id": device_id, "success": True}
 
 
@@ -103,7 +104,18 @@ class IOSDebugRoutesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["success"], True)
-        self.assertEqual(fake.tap_calls, [("ios-1", 10.2, 20.8)])
+        self.assertEqual(fake.tap_calls, [("ios-1", 10.2, 20.8, False)])
+
+    async def test_ios_tap_include_screen_is_proxied_to_ios_agent(self):
+        fake = FakeDeviceService(make_device("ios-1"))
+        device_routes.device_service = fake
+
+        await device_routes.tap_ios_static_debug(
+            "ios-1",
+            device_routes.IOSDebugTapRequest(x=10.2, y=20.8, includeScreen=True),
+        )
+
+        self.assertEqual(fake.tap_calls, [("ios-1", 10.2, 20.8, True)])
 
     async def test_ios_text_is_proxied_without_echoing_text(self):
         fake = FakeDeviceService(make_device("ios-1"))
@@ -115,7 +127,7 @@ class IOSDebugRoutesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response, {"device_id": "ios-1", "success": True, "text_length": 6})
-        self.assertEqual(fake.text_calls, [("ios-1", "secret")])
+        self.assertEqual(fake.text_calls, [("ios-1", "secret", False)])
 
     async def test_ios_debug_operation_rejects_busy_device(self):
         fake = FakeDeviceService(make_device("ios-1", status=DeviceStatus.BUSY))
@@ -140,7 +152,7 @@ class IOSDebugRoutesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["success"], True)
-        self.assertEqual(fake.swipe_calls, [("ios-1", 10, 20, 30, 40, 600)])
+        self.assertEqual(fake.swipe_calls, [("ios-1", 10, 20, 30, 40, 600, False)])
 
     async def test_ios_long_press_is_proxied_to_ios_agent(self):
         fake = FakeDeviceService(make_device("ios-1"))
@@ -152,7 +164,7 @@ class IOSDebugRoutesTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(response["success"], True)
-        self.assertEqual(fake.long_press_calls, [("ios-1", 10.2, 20.8, 900)])
+        self.assertEqual(fake.long_press_calls, [("ios-1", 10.2, 20.8, 900, False)])
 
     async def test_ios_clear_text_is_proxied_to_ios_agent(self):
         fake = FakeDeviceService(make_device("ios-1"))
@@ -161,7 +173,19 @@ class IOSDebugRoutesTest(unittest.IsolatedAsyncioTestCase):
         response = await device_routes.clear_ios_static_debug_text("ios-1")
 
         self.assertEqual(response, {"device_id": "ios-1", "success": True})
-        self.assertEqual(fake.clear_text_calls, ["ios-1"])
+        self.assertEqual(fake.clear_text_calls, [("ios-1", False)])
+
+    async def test_ios_clear_text_include_screen_is_proxied_to_ios_agent(self):
+        fake = FakeDeviceService(make_device("ios-1"))
+        device_routes.device_service = fake
+
+        response = await device_routes.clear_ios_static_debug_text(
+            "ios-1",
+            device_routes.IOSDebugClearTextRequest(includeScreen=True),
+        )
+
+        self.assertEqual(response, {"device_id": "ios-1", "success": True})
+        self.assertEqual(fake.clear_text_calls, [("ios-1", True)])
 
     async def test_ios_clear_text_preserves_agent_focus_error_status(self):
         fake = FakeDeviceService(make_device("ios-1"))

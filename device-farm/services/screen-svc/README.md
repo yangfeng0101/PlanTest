@@ -30,6 +30,9 @@ go run ./cmd/main.go
 - `GET /api/v1/sessions/:device_id` - Get session details
 - `POST /api/v1/sessions/:device_id/start` - Start screen session
 - `POST /api/v1/sessions/:device_id/stop` - Stop screen session
+- `POST /api/v1/sessions/:device_id/ios-mjpeg/prepare` - Prepare experimental iOS direct MJPEG stream and return WDA logical screen metadata
+- `DELETE /api/v1/sessions/:device_id/ios-mjpeg` - Stop experimental iOS direct MJPEG stream
+- `GET /api/v1/sessions/:device_id/ios-mjpeg` - Experimental iOS direct MJPEG stream via iOS Agent
 
 ### Control Channel
 
@@ -38,6 +41,10 @@ After `start`, clients join the returned LiveKit room with the returned token. R
 ```json
 { "type": "touch", "action": "move", "x": 120, "y": 360 }
 ```
+
+The iOS MJPEG endpoint is separate from the LiveKit session manager. It proxies
+the iOS Agent `stream-session` WDA/MJPEG multipart response directly to the
+browser and keeps one active stream per device.
 
 ## Configuration
 

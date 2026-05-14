@@ -120,6 +120,8 @@ services:
       - REPORT_SVC_URL=http://report-svc:8002
       - IOS_AGENT_URL=${IOS_AGENT_URL:-}
       - IOS_AGENT_REQUEST_TIMEOUT=${IOS_AGENT_REQUEST_TIMEOUT:-90}
+      - IOS_ENABLE_EXPERIMENTAL_SCREEN=${IOS_ENABLE_EXPERIMENTAL_SCREEN:-false}
+      - IOS_SCREEN_DRIVER=${IOS_SCREEN_DRIVER:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -142,6 +144,7 @@ services:
       - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
       - ANDROID_ADB_SERVER_PORT=5037
       - SCRCPY_SERVER_PATH=/usr/share/scrcpy/scrcpy-server
+      - IOS_AGENT_URL=${IOS_AGENT_URL:-}
       - AUTH_ENABLED=true
       - TEST_SVC_URL=http://test-svc:8001
       - LIVEKIT_URL=ws://livekit:7880

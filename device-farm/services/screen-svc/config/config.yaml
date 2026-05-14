@@ -9,6 +9,9 @@ scrcpy:
   codec: "h264"
   server_path: "/usr/share/scrcpy/scrcpy-server"
 
+ios_agent:
+  url: ""
+
 livekit:
   url: "ws://livekit:7880"
   api_key: "devkey"

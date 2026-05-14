@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Scrcpy   ScrcpyConfig
+	IOSAgent IOSAgentConfig
 	WebRTC   WebRTCConfig
 	LiveKit  LiveKitConfig
 	Device   DeviceConfig
@@ -35,6 +36,10 @@ type ScrcpyConfig struct {
 	BitRate       int
 	Codec         string
 	ServerPath    string
+}
+
+type IOSAgentConfig struct {
+	URL string
 }
 
 type WebRTCConfig struct {
@@ -72,6 +77,7 @@ func Load() *Config {
 	viper.SetDefault("scrcpy.bit_rate", 2000000)
 	viper.SetDefault("scrcpy.codec", "h264")
 	viper.SetDefault("scrcpy.server_path", "/usr/share/scrcpy/scrcpy-server")
+	viper.SetDefault("ios_agent.url", "")
 	viper.SetDefault("webrtc.min_port", 40000)
 	viper.SetDefault("webrtc.max_port", 50000)
 	// Default ICE servers (can be overridden via config file or env)
@@ -93,6 +99,7 @@ func Load() *Config {
 	// Environment variable overrides
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.BindEnv("auth.test_service_url", "TEST_SVC_URL", "AUTH_TEST_SERVICE_URL")
+	viper.BindEnv("device.service_url", "DEVICE_SVC_URL", "DEVICE_SERVICE_URL")
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -123,6 +130,9 @@ func Load() *Config {
 			BitRate:       viper.GetInt("scrcpy.bit_rate"),
 			Codec:         viper.GetString("scrcpy.codec"),
 			ServerPath:    viper.GetString("scrcpy.server_path"),
+		},
+		IOSAgent: IOSAgentConfig{
+			URL: strings.TrimRight(viper.GetString("ios_agent.url"), "/"),
 		},
 		WebRTC: WebRTCConfig{
 			ICEServers: iceServers,

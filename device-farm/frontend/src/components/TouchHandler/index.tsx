@@ -57,6 +57,8 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
   const touchStateRef = useRef<TouchState | null>(null)
   const longPressTimerRef = useRef<number | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const activePointerIdRef = useRef<number | null>(null)
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null)
 
   // Set container ref callback
   const setContainerRef = useCallback((node: HTMLDivElement | null) => {
@@ -114,11 +116,81 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
     [swipeThreshold]
   )
 
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  const releasePointerCapture = useCallback((pointerId: number | null) => {
+    if (pointerId === null) return
+    try {
+      if (containerRef.current?.hasPointerCapture?.(pointerId)) {
+        containerRef.current.releasePointerCapture(pointerId)
+      }
+    } catch {
+      // The browser may already have released capture after a cancel/up.
+    }
+  }, [])
+
+  const resetInteraction = useCallback((pointerId: number | null) => {
+    clearLongPressTimer()
+    releasePointerCapture(pointerId)
+    activePointerIdRef.current = null
+    touchStateRef.current = null
+    lastPointRef.current = null
+    setIsPressed(false)
+    setTimeout(() => setGestureType(null), 300)
+  }, [clearLongPressTimer, releasePointerCapture])
+
+  const finishPointer = useCallback(
+    (e?: Pick<PointerEvent, 'clientX' | 'clientY' | 'pointerId'>, cancelled = false) => {
+      const state = touchStateRef.current
+      if (!state) return
+
+      const pointerId = e?.pointerId ?? activePointerIdRef.current
+      clearLongPressTimer()
+
+      const rect = containerRef.current?.getBoundingClientRect()
+      const mappedPoint = e && rect ? mapCoordinates(e.clientX, e.clientY, rect) : null
+      const point = mappedPoint
+        ? { x: mappedPoint.x, y: mappedPoint.y }
+        : lastPointRef.current
+
+      if (point) {
+        lastPointRef.current = point
+
+        if (!cancelled && !state.isLongPress && e) {
+          const gesture = detectGesture(state.startX, state.startY, e.clientX, e.clientY)
+          setGestureType(gesture)
+
+          if (gesture === 'swipe' && rect) {
+            const startCoords = mapCoordinates(state.startX, state.startY, rect)
+            if (startCoords) {
+              onInput?.('swipe', startCoords.x, startCoords.y, {
+                endX: point.x,
+                endY: point.y,
+              })
+            }
+          }
+        }
+
+        onInput?.('touch', point.x, point.y, { action: 'up' })
+      }
+
+      resetInteraction(pointerId)
+    },
+    [clearLongPressTimer, detectGesture, mapCoordinates, onInput, resetInteraction]
+  )
+
   // Handle pointer down
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      if (activePointerIdRef.current !== null) return
+      if (e.pointerType === 'mouse' && e.button !== 0) return
 
       // Use container ref instead of e.target to avoid incorrect bounds from child elements
       if (!containerRef.current) return
@@ -126,6 +198,14 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
       const point = mapCoordinates(e.clientX, e.clientY, rect)
       if (!point?.inside) return
       const { x, y } = point
+      activePointerIdRef.current = e.pointerId
+      lastPointRef.current = { x, y }
+      try {
+        containerRef.current.setPointerCapture?.(e.pointerId)
+      } catch {
+        // Some embedded video elements may reject pointer capture; window-level
+        // fallback cleanup below still prevents stuck drags.
+      }
 
       touchStateRef.current = {
         startX: e.clientX,
@@ -158,7 +238,14 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
   // Handle pointer move
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!touchStateRef.current || !isPressed) return
+      if (!touchStateRef.current) return
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return
+      if (e.pointerType !== 'touch' && e.buttons === 0) {
+        finishPointer(e.nativeEvent)
+        return
+      }
+      e.preventDefault()
+      e.stopPropagation()
 
       // Use container ref instead of e.target to avoid incorrect bounds from child elements
       if (!containerRef.current) return
@@ -166,6 +253,7 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
       const point = mapCoordinates(e.clientX, e.clientY, rect)
       if (!point) return
       const { x, y } = point
+      lastPointRef.current = { x, y }
 
       setTouchPoint({ x, y })
 
@@ -176,82 +264,48 @@ export function useTouchHandler(options: TouchHandlerOptions): UseTouchHandlerRe
 
       if (distance > tapThreshold) {
         // Cancel long press timer
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current)
-          longPressTimerRef.current = null
-        }
+        clearLongPressTimer()
         touchStateRef.current.isSwipe = true
       }
 
       // Send touch move
       onInput?.('touch', x, y, { action: 'move' })
     },
-    [isPressed, mapCoordinates, onInput, tapThreshold]
+    [clearLongPressTimer, finishPointer, mapCoordinates, onInput, tapThreshold]
   )
 
   // Handle pointer up
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
-      if (!touchStateRef.current) return
-
-      // Cancel long press timer
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current)
-        longPressTimerRef.current = null
-      }
-
-      // Use container ref instead of e.target to avoid incorrect bounds from child elements
-      if (!containerRef.current) return
-      const rect = containerRef.current.getBoundingClientRect()
-      const point = mapCoordinates(e.clientX, e.clientY, rect)
-      if (!point) return
-      const { x, y } = point
-
-      // Detect gesture
-      if (!touchStateRef.current.isLongPress) {
-        const gesture = detectGesture(
-          touchStateRef.current.startX,
-          touchStateRef.current.startY,
-          e.clientX,
-          e.clientY
-        )
-        setGestureType(gesture)
-
-        if (gesture === 'swipe') {
-          // Calculate swipe direction and distance
-          const startX = touchStateRef.current.startX
-          const startY = touchStateRef.current.startY
-          const startCoords = mapCoordinates(startX, startY, rect)
-          if (!startCoords) return
-
-          // Send swipe event
-          onInput?.('swipe', startCoords.x, startCoords.y, {
-            endX: x,
-            endY: y,
-          })
-        }
-      }
-
-      // Send touch up
-      onInput?.('touch', x, y, { action: 'up' })
-
-      setIsPressed(false)
-      touchStateRef.current = null
-
-      // Clear gesture type after animation
-      setTimeout(() => setGestureType(null), 300)
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return
+      e.preventDefault()
+      e.stopPropagation()
+      finishPointer(e.nativeEvent)
     },
-    [mapCoordinates, onInput, detectGesture]
+    [finishPointer]
   )
 
-  // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current)
+    const handleWindowPointerEnd = (event: PointerEvent) => {
+      if (activePointerIdRef.current === event.pointerId) {
+        finishPointer(event, event.type === 'pointercancel')
       }
     }
-  }, [])
+    const handleWindowBlur = () => {
+      finishPointer(undefined, true)
+    }
+
+    window.addEventListener('pointerup', handleWindowPointerEnd)
+    window.addEventListener('pointercancel', handleWindowPointerEnd)
+    window.addEventListener('blur', handleWindowBlur)
+
+    return () => {
+      window.removeEventListener('pointerup', handleWindowPointerEnd)
+      window.removeEventListener('pointercancel', handleWindowPointerEnd)
+      window.removeEventListener('blur', handleWindowBlur)
+      resetInteraction(activePointerIdRef.current)
+    }
+  }, [finishPointer, resetInteraction])
 
   return {
     handlePointerDown,

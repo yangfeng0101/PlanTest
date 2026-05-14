@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import Device
+from app.config import settings
 from app.services.device_service import DeviceService
 
 
@@ -91,7 +92,7 @@ class DeviceCapabilitiesTest(unittest.TestCase):
         self.assertIsNone(device.appium_ready)
         self.assertIsNone(device.automation_status)
 
-    def test_ios_agent_verified_device_enables_static_debug_without_screen_control(self):
+    def test_ios_agent_verified_device_enables_static_debug_without_screen_by_default(self):
         service = DeviceService()
         device = Device(
             id="ios-2",
@@ -118,6 +119,36 @@ class DeviceCapabilitiesTest(unittest.TestCase):
         self.assertTrue(device.capabilities.ui_hierarchy)
         self.assertTrue(device.capabilities.automation)
         self.assertFalse(device.capabilities.screen_mirror)
+        self.assertFalse(device.capabilities.remote_control)
+
+    def test_ios_agent_verified_device_can_enable_direct_mjpeg_screen_as_lab_switch(self):
+        service = DeviceService()
+        device = Device(
+            id="ios-3",
+            name="iPhone",
+            model="iPhone16,1",
+            brand="Apple",
+            os="ios",
+            os_version="17.5",
+            screen_resolution="1179x2556",
+            screen_size=6.1,
+            cpu="arm64",
+            memory="Unknown",
+            storage="Unknown",
+        )
+
+        original_enabled = settings.IOS_ENABLE_EXPERIMENTAL_SCREEN
+        original_driver = settings.IOS_SCREEN_DRIVER
+        settings.IOS_ENABLE_EXPERIMENTAL_SCREEN = True
+        settings.IOS_SCREEN_DRIVER = ""
+        try:
+            service._apply_ios_automation_capability(device, automation_ready=True)
+        finally:
+            settings.IOS_ENABLE_EXPERIMENTAL_SCREEN = original_enabled
+            settings.IOS_SCREEN_DRIVER = original_driver
+
+        self.assertEqual(device.drivers.screen, "mjpeg-direct")
+        self.assertTrue(device.capabilities.screen_mirror)
         self.assertFalse(device.capabilities.remote_control)
 
 

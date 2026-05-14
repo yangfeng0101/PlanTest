@@ -146,13 +146,23 @@ class DeviceService:
         return [device for device in devices if isinstance(device, dict)]
 
     def _apply_ios_automation_capability(self, device: Device, automation_ready: bool) -> None:
-        """iOS uses Appium/WDA for automation and static debug; screen/control remain disabled."""
+        """iOS uses Appium/WDA for automation and static debug.
+
+        Direct WDA/MJPEG preview is kept behind an explicit lab switch because
+        it is not the same capability as the Android/Harmony realtime control
+        channel.
+        """
+        screen_enabled = automation_ready and settings.IOS_ENABLE_EXPERIMENTAL_SCREEN
+        screen_driver = (settings.IOS_SCREEN_DRIVER or "mjpeg-direct").strip()
         device.drivers = DeviceDrivers(
             metrics="pymobiledevice3",
+            screen=screen_driver if screen_enabled else "",
             ui_hierarchy="appium-xcuitest" if automation_ready else "",
             automation="appium-xcuitest" if automation_ready else "",
         )
         device.capabilities = DeviceCapabilities(
+            screen_mirror=screen_enabled,
+            remote_control=False,
             ui_hierarchy=automation_ready,
             metrics=True,
             screenshot=automation_ready,
@@ -497,18 +507,18 @@ class DeviceService:
         payload = await self._request_ios_agent(f"/devices/{device_id}/debug-session", method="DELETE")
         return bool(payload.get("released"))
 
-    async def tap_ios_debug(self, device_id: str, x: float, y: float) -> Dict[str, Any]:
+    async def tap_ios_debug(self, device_id: str, x: float, y: float, include_screen: bool = False) -> Dict[str, Any]:
         return await self._request_ios_agent(
             f"/devices/{device_id}/tap",
             method="POST",
-            payload={"x": x, "y": y},
+            payload={"x": x, "y": y, "includeScreen": include_screen},
         )
 
-    async def input_ios_debug_text(self, device_id: str, text: str) -> Dict[str, Any]:
+    async def input_ios_debug_text(self, device_id: str, text: str, include_screen: bool = False) -> Dict[str, Any]:
         return await self._request_ios_agent(
             f"/devices/{device_id}/text",
             method="POST",
-            payload={"text": text},
+            payload={"text": text, "includeScreen": include_screen},
         )
 
     async def swipe_ios_debug(
@@ -519,6 +529,7 @@ class DeviceService:
         end_x: float,
         end_y: float,
         duration_ms: int = 500,
+        include_screen: bool = False,
     ) -> Dict[str, Any]:
         return await self._request_ios_agent(
             f"/devices/{device_id}/swipe",
@@ -529,6 +540,7 @@ class DeviceService:
                 "endX": end_x,
                 "endY": end_y,
                 "durationMs": duration_ms,
+                "includeScreen": include_screen,
             },
         )
 
@@ -538,18 +550,19 @@ class DeviceService:
         x: float,
         y: float,
         duration_ms: int = 800,
+        include_screen: bool = False,
     ) -> Dict[str, Any]:
         return await self._request_ios_agent(
             f"/devices/{device_id}/long-press",
             method="POST",
-            payload={"x": x, "y": y, "durationMs": duration_ms},
+            payload={"x": x, "y": y, "durationMs": duration_ms, "includeScreen": include_screen},
         )
 
-    async def clear_ios_debug_text(self, device_id: str) -> Dict[str, Any]:
+    async def clear_ios_debug_text(self, device_id: str, include_screen: bool = False) -> Dict[str, Any]:
         return await self._request_ios_agent(
             f"/devices/{device_id}/clear-text",
             method="POST",
-            payload={},
+            payload={"includeScreen": include_screen},
         )
 
     async def execute_command(self, device_id: str, command: str) -> str:

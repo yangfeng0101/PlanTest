@@ -157,7 +157,6 @@ func (s *Session) streamingLoop(ctx context.Context) {
 
 	parser := scrcpy.NewH264Parser(s.scrcpyServer.VideoSocket)
 	s.h264Track.SetParser(parser)
-
 	for {
 		select {
 		case <-ctx.Done():

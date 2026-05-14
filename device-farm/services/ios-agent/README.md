@@ -47,6 +47,8 @@ page:
 
 - `GET /devices/{udid}/screenshot`
 - `GET /devices/{udid}/source`
+- `POST /devices/{udid}/stream-session`
+- `DELETE /devices/{udid}/stream-session`
 - `POST /devices/{udid}/tap`
 - `POST /devices/{udid}/swipe`
 - `POST /devices/{udid}/long-press`
@@ -54,20 +56,43 @@ page:
 - `POST /devices/{udid}/clear-text`
 - `DELETE /devices/{udid}/debug-session`
 
-These endpoints create a cached Appium XCUITest debug session per UDID. They do
-not provide realtime screen streaming or continuous remote touch control. The
-Device Farm UI uses them for static preview, optional 1s/2s/5s screenshot
-refresh, UI hierarchy inspection, and one-shot static actions. Screenshot
-refresh can rebuild a broken WDA debug session once before surfacing an error.
-Tap, swipe, and long-press coordinates use Appium/WDA logical points. Text input
-and clear-text are sent to the currently focused element after the user taps an
-input field.
+These endpoints create cached Appium XCUITest sessions per UDID. `stream-session`
+starts WDA/MJPEG for the experimental direct preview path in `screen-svc`; the
+browser receives the MJPEG multipart stream directly, without LiveKit or H264
+transcoding. Device Farm only exposes this preview when `device-svc` is started
+with `IOS_ENABLE_EXPERIMENTAL_SCREEN=true` and `IOS_SCREEN_DRIVER=mjpeg-direct`.
+Static screenshot/source/action endpoints remain the default iOS debugging path.
+Continuous remote touch control is still not exposed; Device Farm keeps iOS
+`remoteControl=false`.
 
-For local Phase 3 streaming research, benchmark the current screenshot polling
-path before trying WDA/MJPEG or Mac-side capture:
+The Device Farm UI uses static endpoints for optional 1s/2s/5s screenshot
+refresh, UI hierarchy inspection, point tap, one-shot swipe, long press, text
+input, and clear-text. Screenshot refresh can rebuild a broken WDA session once
+before surfacing an error. Tap, swipe, and long-press coordinates use Appium/WDA
+logical points. Text input and clear-text are sent to the currently focused
+element after the user taps an input field.
 
-```bash
-IOS_AGENT_URL=http://127.0.0.1:8015 \
-IOS_DEVICE_ID=00000000-0000000000000000 \
-python3 ../../scripts/ios_preview_benchmark.py --duration 30
-```
+Action endpoints accept `includeScreen` and default it to `false`. The
+`mjpeg-direct` preview path keeps it disabled for lower latency because the
+screen size is already known from stream preparation. Static screenshot
+debugging can request `includeScreen=true` when it needs a fresh logical screen
+snapshot. Action responses include `latency_ms`, `control_method`, and
+`session_reused` for troubleshooting touch latency. Tap, swipe, and long-press
+prefer direct WDA `/actions` for lower latency; if WDA direct control is not
+available, the Agent falls back to Appium `mobile:` commands and then W3C
+actions. Existing stream/debug sessions are reused without repeating device
+enumeration or Appium status checks on every action.
+
+WDA/MJPEG stream sessions use these optional environment variables:
+
+- `IOS_AGENT_SESSION_CREATE_TIMEOUT`: Appium session creation timeout, default
+  `90` seconds. First WDA startup can be slower than normal commands.
+- `IOS_WDA_BASE_URL`: WDA HTTP endpoint for direct low-latency actions, default
+  `http://127.0.0.1:8100`.
+- `IOS_WDA_MJPEG_PORT_START` / `IOS_WDA_MJPEG_PORT_END`: port pool, default
+  `9100-9199`
+- `IOS_WDA_MJPEG_PUBLIC_HOST`: host seen by Docker `screen-svc`, default
+  `host.docker.internal`
+- `IOS_WDA_MJPEG_FRAMERATE`: default `20`
+- `IOS_WDA_MJPEG_SCALING_FACTOR`: default `35`
+- `IOS_WDA_MJPEG_QUALITY`: default `25`
