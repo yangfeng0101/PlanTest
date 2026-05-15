@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { message } from 'antd'
-import type { Device, Script, Task, TaskLogEntry } from '@/types'
-import { scriptApi, taskApi } from '@/services/api'
+import type { Device } from '@/types'
 import { formatDeviceOs, mapDevice } from '@/utils/device'
 import type {
-  LocatorSnippet,
   RenderMetrics,
   UIElementNode,
   WorkspaceTab,
@@ -17,21 +15,13 @@ import {
   fetchDeviceScreenInfo,
   fetchDevicesPayload,
   fetchUIHierarchy,
-  releaseDebugSession,
 } from './api'
-import {
-  buildDebugTags,
-  countScriptLines,
-  createDefaultScreenScript,
-  findLatestScriptLine,
-  isActiveTask,
-  visibleDebugLogs as filterVisibleDebugLogs,
-} from './scriptWorkspace'
 import DeviceStagePanel from './DeviceStagePanel'
 import WorkspacePanel from './WorkspacePanel'
 import ScriptModals from './ScriptModals'
 import useIosDebugActions from './useIosDebugActions'
 import useScreenSession from './useScreenSession'
+import useScreenScriptWorkspace from './useScreenScriptWorkspace'
 import './ScreenPage.css'
 
 function isEditableTarget(target: EventTarget | null) {
@@ -61,23 +51,6 @@ export default function ScreenPage() {
   const [quickInputText, setQuickInputText] = useState('')
   const [virtualKeyboardOpen, setVirtualKeyboardOpen] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>('inspect')
-  const [scriptSaving, setScriptSaving] = useState(false)
-  const [scriptSaveModalOpen, setScriptSaveModalOpen] = useState(false)
-  const [scriptPickerOpen, setScriptPickerOpen] = useState(false)
-  const [scriptPickerLoading, setScriptPickerLoading] = useState(false)
-  const [savedScripts, setSavedScripts] = useState<Script[]>([])
-  const [scriptName, setScriptName] = useState('')
-  const [scriptDescription, setScriptDescription] = useState('')
-  const [scriptTags, setScriptTags] = useState<string[]>(['screen-debug'])
-  const [scriptContent, setScriptContent] = useState('')
-  const [loadedScript, setLoadedScript] = useState<Script | null>(null)
-  const [debugScriptId, setDebugScriptId] = useState<string | null>(null)
-  const [debugTask, setDebugTask] = useState<Task | null>(null)
-  const [debugTaskLogs, setDebugTaskLogs] = useState<TaskLogEntry[]>([])
-  const [debugSubmitting, setDebugSubmitting] = useState(false)
-  const [debugCanceling, setDebugCanceling] = useState(false)
-  const [debugCurrentLine, setDebugCurrentLine] = useState<number | null>(null)
-  const [debugScriptSnapshot, setDebugScriptSnapshot] = useState('')
   const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -411,51 +384,54 @@ export default function ScreenPage() {
     () => buildLocatorSnippets(selectedUiElement, isIosDevice ? 'ios' : 'android'),
     [isIosDevice, selectedUiElement],
   )
-  const scriptLineCount = useMemo(() => countScriptLines(scriptContent), [scriptContent])
-  const visibleDebugLogs = useMemo(
-    () => filterVisibleDebugLogs(debugTaskLogs),
-    [debugTaskLogs],
-  )
-  const debugScreenshots = debugTask?.result?.screenshots || []
-  const debugTaskActive = isActiveTask(debugTask)
-  const debugTaskId = debugTask?.id
-  const debugTaskPollingActive = Boolean(debugTask && isActiveTask(debugTask))
-  const activeDebugLine = debugScriptSnapshot === scriptContent ? debugCurrentLine : null
-  const failedDebugLine = debugTask?.status === 'failed' ? activeDebugLine : null
+  const openScriptWorkspace = useCallback(() => {
+    setActiveWorkspaceTab('script')
+  }, [])
+  const {
+    scriptSaving,
+    scriptSaveModalOpen,
+    scriptPickerOpen,
+    scriptPickerLoading,
+    savedScripts,
+    scriptName,
+    setScriptName,
+    scriptDescription,
+    setScriptDescription,
+    scriptTags,
+    setScriptTags,
+    scriptContent,
+    debugTask,
+    debugSubmitting,
+    debugCanceling,
+    scriptLineCount,
+    visibleDebugLogs,
+    debugScreenshots,
+    debugTaskActive,
+    activeDebugLine,
+    failedDebugLine,
+    updateScriptContent,
+    openScriptPicker,
+    closeScriptPicker,
+    selectSavedScript,
+    createExampleScript,
+    activateScriptWriter,
+    appendScriptSnippet,
+    openSaveScriptModal,
+    closeSaveScriptModal,
+    saveScript,
+    runDebugScript,
+    cancelDebugTask,
+  } = useScreenScriptWorkspace({
+    selectedDevice,
+    currentDevice,
+    selectedUiElement,
+    uiElements,
+    onOpenScriptWorkspace: openScriptWorkspace,
+    onIosDebugSessionReleased: () => setStaticDebugSessionActive(false),
+  })
   const inspectReady = isPlaying || isIosStaticDebug
   const isIosTextInputAvailable = Boolean(isIosStaticActionSupported && (isIosStaticDebug || isPlaying))
   const startupStatusText = '正在初始化设备，请稍后...'
-
-  const applyDebugLogs = (logs: TaskLogEntry[]) => {
-    setDebugTaskLogs(logs)
-    setDebugCurrentLine(findLatestScriptLine(logs))
-  }
-
-  useEffect(() => {
-    if (!debugTaskId || !debugTaskPollingActive) return
-
-    let cancelled = false
-    const pollTask = async () => {
-      try {
-        const [taskResponse, logsResponse] = await Promise.all([
-          taskApi.getDetail(debugTaskId),
-          taskApi.getLogs(debugTaskId, { limit: 1000 }),
-        ])
-        if (cancelled) return
-        setDebugTask(taskResponse.data)
-        applyDebugLogs(logsResponse.data)
-      } catch (error) {
-        console.error('Failed to poll debug task:', error)
-      }
-    }
-
-    const timer = window.setInterval(pollTask, 2000)
-    void pollTask()
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [debugTaskId, debugTaskPollingActive])
 
   // Send key event via DataChannel
   const sendKey = (keycode: string) => {
@@ -489,256 +465,6 @@ export default function ScreenPage() {
     publishControl({ type: 'text', text }, true)
     setQuickInputText('')
     setVirtualKeyboardOpen(false)
-  }
-
-  const getCurrentPackageName = () => (
-    selectedUiElement?.package || uiElements.find((element) => element.package)?.package || 'com.example.app'
-  )
-
-  const getDefaultScriptName = () => `${currentDevice?.name || selectedDevice || '投屏'} 自动化脚本`
-
-  const ensureScriptDraft = () => {
-    const packageName = getCurrentPackageName()
-    if (!scriptContent.trim()) {
-      setScriptContent(createDefaultScreenScript(packageName))
-    }
-  }
-
-  const updateScriptContent = (value: string) => {
-    setScriptContent(value)
-  }
-
-  const openScriptPicker = async () => {
-    if (debugTaskActive) {
-      message.warning('调试任务正在运行，请先停止调试')
-      return
-    }
-
-    setScriptPickerOpen(true)
-    setScriptPickerLoading(true)
-    try {
-      const response = await scriptApi.getList()
-      setSavedScripts(response.data.items || [])
-    } catch (error) {
-      console.error('Failed to fetch saved scripts:', error)
-      message.error('获取已保存脚本失败')
-    } finally {
-      setScriptPickerLoading(false)
-    }
-  }
-
-  const selectSavedScript = (script: Script) => {
-    setScriptContent(script.content)
-    setScriptName(script.name)
-    setScriptDescription(script.description || '')
-    setScriptTags(script.tags || [])
-    setLoadedScript(script)
-    setDebugCurrentLine(null)
-    setDebugScriptSnapshot('')
-    setScriptPickerOpen(false)
-    setActiveWorkspaceTab('script')
-    message.success('已载入脚本')
-  }
-
-  const createExampleScript = () => {
-    setScriptContent(createDefaultScreenScript(getCurrentPackageName()))
-    setScriptName('')
-    setScriptDescription('')
-    setScriptTags(['screen-debug'])
-    setLoadedScript(null)
-    setDebugCurrentLine(null)
-    setDebugScriptSnapshot('')
-    setDebugScriptId(null)
-    setScriptPickerOpen(false)
-    setActiveWorkspaceTab('script')
-    message.success('已新建脚本')
-  }
-
-  const activateScriptWriter = () => {
-    ensureScriptDraft()
-    setActiveWorkspaceTab('script')
-  }
-
-  const appendScriptSnippet = (snippet: LocatorSnippet) => {
-    ensureScriptDraft()
-    const packageName = getCurrentPackageName()
-    setScriptContent((current) => {
-      const base = (current.trim() ? current : createDefaultScreenScript(packageName)).trimEnd()
-      return `${base}${base ? '\n\n' : ''}${snippet.code}\n`
-    })
-    setActiveWorkspaceTab('script')
-    message.success('已插入脚本')
-  }
-
-  const openSaveScriptModal = () => {
-    if (!scriptContent.trim()) {
-      message.warning('请填写脚本内容')
-      return
-    }
-    if (!scriptName.trim()) {
-      setScriptName(getDefaultScriptName())
-    }
-    if (!scriptDescription.trim()) {
-      setScriptDescription('从投屏页编写并保存的自动化脚本')
-    }
-    setScriptSaveModalOpen(true)
-  }
-
-  const saveScript = async () => {
-    if (!scriptName.trim()) {
-      message.warning('请填写脚本名称')
-      return
-    }
-    if (!scriptContent.trim()) {
-      message.warning('请填写脚本内容')
-      return
-    }
-
-    setScriptSaving(true)
-    try {
-      const validation = await scriptApi.validate(scriptContent)
-      if (!validation.data.valid) {
-        message.error(validation.data.errors[0] || '脚本校验失败')
-        return
-      }
-      if (validation.data.warnings.length > 0) {
-        message.warning(validation.data.warnings[0])
-      }
-
-      const scriptData = {
-        name: scriptName.trim(),
-        description: scriptDescription.trim(),
-        script_type: 'python',
-        content: scriptContent,
-        status: loadedScript?.status || 'draft',
-        tags: scriptTags,
-      } as const
-
-      const response = loadedScript
-        ? await scriptApi.update(loadedScript.id, scriptData)
-        : await scriptApi.create(scriptData)
-
-      setLoadedScript(response.data)
-      message.success(loadedScript ? '脚本已更新' : '脚本已保存到脚本管理')
-      setScriptSaveModalOpen(false)
-    } catch (error) {
-      console.error('Failed to save script from screen page:', error)
-      message.error('保存脚本失败')
-    } finally {
-      setScriptSaving(false)
-    }
-  }
-
-  const saveDebugDraft = async (): Promise<Script> => {
-    const debugTags = buildDebugTags(scriptTags)
-    const data = {
-      name: `${currentDevice?.name || selectedDevice || '投屏'} 调试脚本`,
-      description: '投屏页自动保存的调试脚本草稿',
-      script_type: 'python' as const,
-      content: scriptContent,
-      status: 'draft' as const,
-      tags: debugTags,
-    }
-
-    if (debugScriptId) {
-      try {
-        const response = await scriptApi.update(debugScriptId, data)
-        return response.data
-      } catch (error) {
-        console.warn('Failed to update debug draft, creating a new one:', error)
-        setDebugScriptId(null)
-      }
-    }
-
-    const response = await scriptApi.create(data)
-    setDebugScriptId(response.data.id)
-    return response.data
-  }
-
-  const runDebugScript = async () => {
-    if (debugTaskActive) {
-      message.warning('调试任务正在运行，请先停止调试')
-      return
-    }
-    if (!scriptContent.trim()) {
-      message.warning('请填写脚本内容')
-      return
-    }
-    if (!selectedDevice) {
-      message.warning('请先选择设备')
-      return
-    }
-    if (!currentDevice || currentDevice.status !== 'online') {
-      message.warning('当前设备不在线或已被占用，无法运行调试')
-      return
-    }
-
-    setDebugSubmitting(true)
-    try {
-      const validation = await scriptApi.validate(scriptContent)
-      if (!validation.data.valid) {
-        message.error(validation.data.errors[0] || '脚本校验失败')
-        return
-      }
-      if (validation.data.warnings.length > 0) {
-        message.warning(validation.data.warnings[0])
-      }
-
-      const debugScript = await saveDebugDraft()
-      const debugPlatform = currentDevice.os.toLowerCase() === 'ios' ? 'ios' : 'android'
-      if (debugPlatform === 'ios') {
-        const released = await releaseDebugSession(selectedDevice)
-        if (!released) {
-          throw new Error('释放 iOS 静态调试 session 失败，请稍后重试')
-        }
-        setStaticDebugSessionActive(false)
-      }
-      const response = await taskApi.create({
-        script_id: debugScript.id,
-        device_id: selectedDevice,
-        device_platform: debugPlatform,
-        device_capabilities: {
-          automationName: debugPlatform === 'ios' ? 'XCUITest' : 'UiAutomator2',
-          noReset: true,
-        },
-        parameters: {
-          debug_trace_lines: true,
-        },
-      })
-
-      setDebugTask(response.data)
-      setDebugTaskLogs([])
-      setDebugCurrentLine(null)
-      setDebugScriptSnapshot(scriptContent)
-      message.success('调试任务已创建')
-    } catch (error) {
-      console.error('Failed to run debug script:', error)
-      const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
-      message.error(detail || '调试任务创建失败，请确认设备在线且未被占用')
-    } finally {
-      setDebugSubmitting(false)
-    }
-  }
-
-  const cancelDebugTask = async () => {
-    if (!debugTask) return
-
-    setDebugCanceling(true)
-    try {
-      await taskApi.cancel(debugTask.id)
-      const [taskResponse, logsResponse] = await Promise.all([
-        taskApi.getDetail(debugTask.id).catch(() => ({ data: { ...debugTask, status: 'cancelled' as const } })),
-        taskApi.getLogs(debugTask.id, { limit: 1000 }),
-      ])
-      setDebugTask(taskResponse.data)
-      applyDebugLogs(logsResponse.data)
-      message.success('调试任务已取消')
-    } catch (error) {
-      console.error('Failed to cancel debug task:', error)
-      message.error('调试任务取消失败')
-    } finally {
-      setDebugCanceling(false)
-    }
   }
 
   // Fullscreen
@@ -882,7 +608,7 @@ export default function ScreenPage() {
         pickerOpen={scriptPickerOpen}
         pickerLoading={scriptPickerLoading}
         savedScripts={savedScripts}
-        onClosePicker={() => setScriptPickerOpen(false)}
+        onClosePicker={closeScriptPicker}
         onCreateExampleScript={createExampleScript}
         onSelectSavedScript={selectSavedScript}
         saveOpen={scriptSaveModalOpen}
@@ -894,7 +620,7 @@ export default function ScreenPage() {
         onScriptTagsChange={setScriptTags}
         onScriptDescriptionChange={setScriptDescription}
         onSaveScript={saveScript}
-        onCloseSave={() => setScriptSaveModalOpen(false)}
+        onCloseSave={closeSaveScriptModal}
       />
     </div>
   )
