@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, type MouseEvent, type PointerEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Typography, message } from 'antd'
+import { message } from 'antd'
 import type { Room } from 'livekit-client'
 import type { Device, Script, Task, TaskLogEntry } from '@/types'
 import { scriptApi, taskApi } from '@/services/api'
@@ -42,12 +42,9 @@ import {
   visibleDebugLogs as filterVisibleDebugLogs,
 } from './scriptWorkspace'
 import DeviceStagePanel from './DeviceStagePanel'
-import InspectorPanel from './InspectorPanel'
-import ScriptWorkspacePanel from './ScriptWorkspacePanel'
+import WorkspacePanel from './WorkspacePanel'
 import ScriptModals from './ScriptModals'
 import './ScreenPage.css'
-
-const { Text } = Typography
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
@@ -1503,102 +1500,61 @@ export default function ScreenPage() {
           lastIosControlStatus={lastIosControlStatus}
         />
 
-        <section className="screen-workspace">
-          <div className="workspace-tabs">
-            <button
-              type="button"
-              className={`workspace-tab ${activeWorkspaceTab === 'inspect' ? 'active' : ''}`}
-              onClick={() => setActiveWorkspaceTab('inspect')}
-            >
-              控件检查
-            </button>
-            <button
-              type="button"
-              className={`workspace-tab ${activeWorkspaceTab === 'script' ? 'active' : ''}`}
-              onClick={activateScriptWriter}
-            >
-              编写脚本
-            </button>
-            <button
-              type="button"
-              className={`workspace-tab ${activeWorkspaceTab === 'logcat' ? 'active' : ''}`}
-              onClick={() => setActiveWorkspaceTab('logcat')}
-            >
-              Logcat
-            </button>
-          </div>
-
-          {activeWorkspaceTab === 'inspect' && (
-            <InspectorPanel
-              selectedDevice={selectedDevice}
-              inspectReady={inspectReady}
-              uiHierarchySupported={uiHierarchySupported}
-              loadingUiHierarchy={loadingUiHierarchy}
-              onFetchUiHierarchy={fetchUiHierarchy}
-              isIosStaticDebug={isIosStaticDebug}
-              screenshotSupported={screenshotSupported}
-              staticScreenshotLoading={staticScreenshotLoading}
-              onRefreshScreenshot={() => refreshStaticScreenshot(false)}
-              staticAutoRefresh={staticAutoRefresh}
-              staticAutoRefreshIntervalMs={staticAutoRefreshIntervalMs}
-              staticScreenshot={staticScreenshot}
-              staticActionLoading={staticActionLoading}
-              onStaticAutoRefreshChange={setStaticAutoRefresh}
-              onStaticAutoRefreshIntervalChange={setStaticAutoRefreshIntervalMs}
-              isIosStaticActionSupported={isIosStaticActionSupported}
-              iosTapMode={iosTapMode}
-              iosSwipeMode={iosSwipeMode}
-              onIosTapModeChange={(checked) => {
-                setIosTapMode(checked)
-                if (checked) setIosSwipeMode(false)
-              }}
-              onIosSwipeModeChange={(checked) => {
-                setIosSwipeMode(checked)
-                if (checked) setIosTapMode(false)
-              }}
-              selectedUiElement={selectedUiElement}
-              uiElements={uiElements}
-              onTapSelectedUiElement={tapSelectedUiElement}
-              onLongPressSelectedUiElement={longPressSelectedUiElement}
-              onClearUiHierarchy={clearUiHierarchy}
-              currentDeviceLabel={currentDevice?.name || selectedDevice || '-'}
-            />
-          )}
-
-          {activeWorkspaceTab === 'script' && (
-            <ScriptWorkspacePanel
-              debugTaskActive={debugTaskActive}
-              debugCanceling={debugCanceling}
-              debugSubmitting={debugSubmitting}
-              onOpenScriptPicker={openScriptPicker}
-              onCancelDebugTask={cancelDebugTask}
-              onRunDebugScript={runDebugScript}
-              onOpenSaveScriptModal={openSaveScriptModal}
-              scriptContent={scriptContent}
-              onScriptContentChange={updateScriptContent}
-              activeDebugLine={activeDebugLine}
-              failedDebugLine={failedDebugLine}
-              scriptLineCount={scriptLineCount}
-              debugTask={debugTask}
-              visibleDebugLogs={visibleDebugLogs}
-              debugScreenshots={debugScreenshots}
-              selectedUiElement={selectedUiElement}
-              locatorSnippets={locatorSnippets}
-              onAppendScriptSnippet={appendScriptSnippet}
-            />
-          )}
-
-          {activeWorkspaceTab === 'logcat' && (
-            <div className="workspace-panel logcat-panel">
-              <div className="workspace-toolbar compact">
-                <Text strong>Logcat</Text>
-              </div>
-              <div className="logcat-placeholder">
-                <Text type="secondary">Logcat 能力待接入。</Text>
-              </div>
-            </div>
-          )}
-        </section>
+        <WorkspacePanel
+          activeWorkspaceTab={activeWorkspaceTab}
+          onOpenInspect={() => setActiveWorkspaceTab('inspect')}
+          onOpenScript={activateScriptWriter}
+          onOpenLogcat={() => setActiveWorkspaceTab('logcat')}
+          selectedDevice={selectedDevice}
+          inspectReady={inspectReady}
+          uiHierarchySupported={uiHierarchySupported}
+          loadingUiHierarchy={loadingUiHierarchy}
+          onFetchUiHierarchy={fetchUiHierarchy}
+          isIosStaticDebug={isIosStaticDebug}
+          screenshotSupported={screenshotSupported}
+          staticScreenshotLoading={staticScreenshotLoading}
+          onRefreshScreenshot={() => { void refreshStaticScreenshot(false) }}
+          staticAutoRefresh={staticAutoRefresh}
+          staticAutoRefreshIntervalMs={staticAutoRefreshIntervalMs}
+          staticScreenshot={staticScreenshot}
+          staticActionLoading={staticActionLoading}
+          onStaticAutoRefreshChange={setStaticAutoRefresh}
+          onStaticAutoRefreshIntervalChange={setStaticAutoRefreshIntervalMs}
+          isIosStaticActionSupported={isIosStaticActionSupported}
+          iosTapMode={iosTapMode}
+          iosSwipeMode={iosSwipeMode}
+          onIosTapModeChange={(checked) => {
+            setIosTapMode(checked)
+            if (checked) setIosSwipeMode(false)
+          }}
+          onIosSwipeModeChange={(checked) => {
+            setIosSwipeMode(checked)
+            if (checked) setIosTapMode(false)
+          }}
+          selectedUiElement={selectedUiElement}
+          uiElements={uiElements}
+          onTapSelectedUiElement={tapSelectedUiElement}
+          onLongPressSelectedUiElement={longPressSelectedUiElement}
+          onClearUiHierarchy={clearUiHierarchy}
+          currentDeviceLabel={currentDevice?.name || selectedDevice || '-'}
+          debugTaskActive={debugTaskActive}
+          debugCanceling={debugCanceling}
+          debugSubmitting={debugSubmitting}
+          onOpenScriptPicker={openScriptPicker}
+          onCancelDebugTask={cancelDebugTask}
+          onRunDebugScript={runDebugScript}
+          onOpenSaveScriptModal={openSaveScriptModal}
+          scriptContent={scriptContent}
+          onScriptContentChange={updateScriptContent}
+          activeDebugLine={activeDebugLine}
+          failedDebugLine={failedDebugLine}
+          scriptLineCount={scriptLineCount}
+          debugTask={debugTask}
+          visibleDebugLogs={visibleDebugLogs}
+          debugScreenshots={debugScreenshots}
+          locatorSnippets={locatorSnippets}
+          onAppendScriptSnippet={appendScriptSnippet}
+        />
       </div>
 
       <ScriptModals
