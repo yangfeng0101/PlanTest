@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
 import { message } from 'antd'
-import type { Device } from '@/types'
-import { formatDeviceOs, mapDevice } from '@/utils/device'
+import { formatDeviceOs } from '@/utils/device'
 import type {
   RenderMetrics,
   UIElementNode,
@@ -12,13 +10,12 @@ import { buildLocatorSnippets, buildVisibleUiElements } from './uiHierarchy'
 import {
   IOS_DIRECT_MJPEG_SCREEN_DRIVERS,
   KEYBOARD_KEY_CODE_MAP,
-  fetchDeviceScreenInfo,
-  fetchDevicesPayload,
   fetchUIHierarchy,
 } from './api'
 import DeviceStagePanel from './DeviceStagePanel'
 import WorkspacePanel from './WorkspacePanel'
 import ScriptModals from './ScriptModals'
+import useScreenDevices from './useScreenDevices'
 import useIosDebugActions from './useIosDebugActions'
 import useScreenSession from './useScreenSession'
 import useScreenScriptWorkspace from './useScreenScriptWorkspace'
@@ -31,17 +28,16 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 export default function ScreenPage() {
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const deviceIdFromUrl = searchParams.get('deviceId')
-  const missingDeviceMessageShownRef = useRef(false)
   const playerViewportRef = useRef<HTMLDivElement>(null)
   const playerContainerRef = useRef<HTMLDivElement>(null)
 
-  const [devices, setDevices] = useState<Device[]>([])
-  const [devicesLoaded, setDevicesLoaded] = useState(false)
-  const [selectedDevice, setSelectedDevice] = useState<string>(deviceIdFromUrl || '')
-  const [deviceInfo, setDeviceInfo] = useState<{ width: number; height: number } | null>(null)
+  const {
+    devicesLoaded,
+    selectedDevice,
+    currentDevice,
+    deviceInfo,
+    setDeviceInfo,
+  } = useScreenDevices()
   const [uiElements, setUiElements] = useState<UIElementNode[]>([])
   const [selectedUiElement, setSelectedUiElement] = useState<UIElementNode | null>(null)
   const [loadingUiHierarchy, setLoadingUiHierarchy] = useState(false)
@@ -51,7 +47,6 @@ export default function ScreenPage() {
   const [quickInputText, setQuickInputText] = useState('')
   const [virtualKeyboardOpen, setVirtualKeyboardOpen] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>('inspect')
-  const currentDevice = devices.find((d) => d.id === selectedDevice)
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
   const uiHierarchySupported = currentDevice?.capabilities.uiHierarchy ?? false
@@ -74,56 +69,6 @@ export default function ScreenPage() {
   const iosModeLabel = isIosDirectMjpegMirror
     ? 'iOS MJPEG 直连预览'
     : 'iOS 静态预览'
-  
-  useEffect(() => {
-    if (deviceIdFromUrl) {
-      setSelectedDevice(deviceIdFromUrl)
-      return
-    }
-
-    if (!missingDeviceMessageShownRef.current) {
-      missingDeviceMessageShownRef.current = true
-      message.warning('请先选择设备')
-    }
-    navigate('/devices', { replace: true })
-  }, [deviceIdFromUrl, navigate])
-
-  // Fetch devices
-  useEffect(() => {
-    const fetchDevices = async () => {
-      try {
-        const data = await fetchDevicesPayload()
-        setDevices((data.devices || []).map((d: Record<string, unknown>) => mapDevice(d)))
-      } catch (e) {
-        console.error('Failed to fetch devices:', e)
-      } finally {
-        setDevicesLoaded(true)
-      }
-    }
-    fetchDevices()
-    const interval = setInterval(fetchDevices, 5000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Fetch device screen info
-  useEffect(() => {
-    const fetchDeviceInfo = async () => {
-      if (!selectedDevice) {
-        setDeviceInfo(null)
-        return
-      }
-      try {
-        const data = await fetchDeviceScreenInfo(selectedDevice)
-        const resolution = data.screen_resolution || data.screenResolution || '1080x1920'
-        const [width, height] = resolution.split('x').map(Number)
-        setDeviceInfo({ width: width || 1080, height: height || 1920 })
-      } catch {
-        setDeviceInfo({ width: 1080, height: 1920 })
-      }
-    }
-    fetchDeviceInfo()
-  }, [selectedDevice])
-
   const applyIosLogicalScreen = useCallback((screen?: { width?: number; height?: number } | null) => {
     const width = Number(screen?.width)
     const height = Number(screen?.height)
@@ -131,7 +76,7 @@ export default function ScreenPage() {
       setUiScreen({ width, height })
       setDeviceInfo({ width, height })
     }
-  }, [])
+  }, [setDeviceInfo])
 
   const clearUiHierarchy = useCallback(() => {
     setUiElements([])
@@ -287,7 +232,7 @@ export default function ScreenPage() {
       window.clearTimeout(timeoutId)
       setLoadingUiHierarchy(false)
     }
-  }, [currentDevice, isIosDevice, isIosDirectMjpegMirror, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice, setStaticDebugSessionActive])
+  }, [currentDevice, isIosDevice, isIosDirectMjpegMirror, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice, setDeviceInfo, setStaticDebugSessionActive])
 
   useEffect(() => {
     if (!virtualKeyboardOpen || !isPlaying || !remoteControlSupported) return
