@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, type MouseEvent, type PointerEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Form, Input, List, Modal, Popover, Select, Space, Tag, Typography, message } from 'antd'
+import { Button, Input, Popover, Typography, message } from 'antd'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
 import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined'
 import FullscreenOutlined from '@ant-design/icons/FullscreenOutlined'
@@ -11,7 +11,6 @@ import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined'
 import KeyOutlined from '@ant-design/icons/KeyOutlined'
 import SendOutlined from '@ant-design/icons/SendOutlined'
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
-import PlusOutlined from '@ant-design/icons/PlusOutlined'
 import type { Room } from 'livekit-client'
 import type { Device, Script, Task, TaskLogEntry } from '@/types'
 import { scriptApi, taskApi } from '@/services/api'
@@ -49,13 +48,13 @@ import {
   countScriptLines,
   createDefaultScreenScript,
   findLatestScriptLine,
-  formatDateTime,
   isActiveTask,
   visibleDebugLogs as filterVisibleDebugLogs,
 } from './scriptWorkspace'
 import ScreenStage from './ScreenStage'
 import InspectorPanel from './InspectorPanel'
 import ScriptWorkspacePanel from './ScriptWorkspacePanel'
+import ScriptModals from './ScriptModals'
 import './ScreenPage.css'
 
 const { Text } = Typography
@@ -1700,89 +1699,24 @@ export default function ScreenPage() {
         </section>
       </div>
 
-      <Modal
-        title="选择已保存脚本"
-        open={scriptPickerOpen}
-        footer={null}
-        width={760}
-        onCancel={() => setScriptPickerOpen(false)}
-      >
-        <div className="script-picker-toolbar">
-          <Space direction="vertical" size={2}>
-            <Text strong>脚本来源</Text>
-            <Text type="secondary">载入已有脚本，或新建脚本开始编写。</Text>
-          </Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={createExampleScript}>
-            新建脚本
-          </Button>
-        </div>
-        <List
-          className="script-picker-list"
-          loading={scriptPickerLoading}
-          dataSource={savedScripts}
-          locale={{ emptyText: '暂无已保存脚本' }}
-          renderItem={(script) => (
-            <List.Item
-              actions={[
-                <Button key="load" size="small" type="primary" onClick={() => selectSavedScript(script)}>
-                  载入
-                </Button>,
-              ]}
-            >
-              <List.Item.Meta
-                title={
-                  <Space size="small" wrap>
-                    <Text strong>{script.name}</Text>
-                    <Tag>{script.script_type}</Tag>
-                    {script.status ? <Tag color={script.status === 'active' ? 'success' : 'default'}>{script.status}</Tag> : null}
-                  </Space>
-                }
-                description={
-                  <Space direction="vertical" size={2}>
-                    <Text type="secondary">{script.description || '无描述'}</Text>
-                    <Text type="secondary">
-                      更新：{formatDateTime(script.updated_at)} · {countScriptLines(script.content)} 行
-                    </Text>
-                  </Space>
-                }
-              />
-            </List.Item>
-          )}
-        />
-      </Modal>
-
-      <Modal
-        title="保存脚本"
-        open={scriptSaveModalOpen}
-        confirmLoading={scriptSaving}
-        okText="保存"
-        cancelText="取消"
-        onOk={saveScript}
-        onCancel={() => setScriptSaveModalOpen(false)}
-      >
-        <Form layout="vertical">
-          <Form.Item label="脚本名称" required>
-            <Input value={scriptName} onChange={(event) => setScriptName(event.target.value)} placeholder="请输入脚本名称" />
-          </Form.Item>
-          <Form.Item label="标签">
-            <Select
-              mode="tags"
-              value={scriptTags}
-              onChange={setScriptTags}
-              tokenSeparators={[',']}
-              placeholder="输入标签后回车"
-            />
-          </Form.Item>
-          <Form.Item label="描述">
-            <Input.TextArea
-              value={scriptDescription}
-              rows={3}
-              onChange={(event) => setScriptDescription(event.target.value)}
-              placeholder="简单描述脚本用途"
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <ScriptModals
+        pickerOpen={scriptPickerOpen}
+        pickerLoading={scriptPickerLoading}
+        savedScripts={savedScripts}
+        onClosePicker={() => setScriptPickerOpen(false)}
+        onCreateExampleScript={createExampleScript}
+        onSelectSavedScript={selectSavedScript}
+        saveOpen={scriptSaveModalOpen}
+        saving={scriptSaving}
+        scriptName={scriptName}
+        scriptTags={scriptTags}
+        scriptDescription={scriptDescription}
+        onScriptNameChange={setScriptName}
+        onScriptTagsChange={setScriptTags}
+        onScriptDescriptionChange={setScriptDescription}
+        onSaveScript={saveScript}
+        onCloseSave={() => setScriptSaveModalOpen(false)}
+      />
     </div>
   )
 }

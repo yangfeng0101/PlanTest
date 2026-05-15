@@ -146,6 +146,7 @@
   - `device-farm/frontend/src/pages/screen/ScreenStage.tsx`
   - `device-farm/frontend/src/pages/screen/InspectorPanel.tsx`
   - `device-farm/frontend/src/pages/screen/ScriptWorkspacePanel.tsx`
+  - `device-farm/frontend/src/pages/screen/ScriptModals.tsx`
   - `device-farm/frontend/src/pages/screen/api.ts`
   - `device-farm/frontend/src/pages/screen/scriptWorkspace.ts`
   - `device-farm/frontend/src/pages/screen/types.ts`
