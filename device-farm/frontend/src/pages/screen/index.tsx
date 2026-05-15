@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, type MouseEvent, type PointerEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Input, Popover, Typography, message } from 'antd'
-import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
-import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined'
-import FullscreenOutlined from '@ant-design/icons/FullscreenOutlined'
-import VideoCameraOutlined from '@ant-design/icons/VideoCameraOutlined'
-import HomeOutlined from '@ant-design/icons/HomeOutlined'
-import RollbackOutlined from '@ant-design/icons/RollbackOutlined'
-import AppstoreOutlined from '@ant-design/icons/AppstoreOutlined'
-import KeyOutlined from '@ant-design/icons/KeyOutlined'
-import SendOutlined from '@ant-design/icons/SendOutlined'
-import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
+import { Typography, message } from 'antd'
 import type { Room } from 'livekit-client'
 import type { Device, Script, Task, TaskLogEntry } from '@/types'
 import { scriptApi, taskApi } from '@/services/api'
@@ -51,7 +41,7 @@ import {
   isActiveTask,
   visibleDebugLogs as filterVisibleDebugLogs,
 } from './scriptWorkspace'
-import ScreenStage from './ScreenStage'
+import DeviceStagePanel from './DeviceStagePanel'
 import InspectorPanel from './InspectorPanel'
 import ScriptWorkspacePanel from './ScriptWorkspacePanel'
 import ScriptModals from './ScriptModals'
@@ -1411,195 +1401,107 @@ export default function ScreenPage() {
     }
   }
 
-  const virtualKeyboardContent = (
-    <div className="virtual-keyboard-panel">
-      <Input.Password
-        value={quickInputText}
-        onChange={(event) => setQuickInputText(event.target.value)}
-        onPressEnter={() => { void sendText() }}
-        placeholder={isIosStaticDebug ? '先点输入框，再输入文本' : '输入文本或密码'}
-        autoComplete="off"
-        disabled={!((isPlaying && remoteControlSupported) || isIosTextInputAvailable)}
-      />
-      <Button
-        type="primary"
-        icon={<SendOutlined />}
-        disabled={!quickInputText || !((isPlaying && remoteControlSupported) || isIosTextInputAvailable)}
-        loading={isIosTextInputAvailable && staticActionLoading}
-        onClick={() => { void sendText() }}
-      >
-        输入
-      </Button>
-      {isIosStaticDebug && isIosStaticActionSupported && (
-        <Button
-          icon={<DeleteOutlined />}
-          disabled={staticActionLoading}
-          loading={staticActionLoading && !quickInputText}
-          onClick={() => { void clearStaticText() }}
-        >
-          清空
-        </Button>
-      )}
-      {isIosStaticDebug && isIosStaticActionSupported && (
-        <Text type="secondary" className="static-debug-input-tip">输入前先点按目标输入框获取焦点</Text>
-      )}
-    </div>
-  )
-
   return (
     <div className="screen-page">
       <div className="screen-workbench">
-        <section className="device-stage">
-          <div className="device-stage-header">
-            <div className="device-context">
-              <VideoCameraOutlined />
-              <span>{currentDevice?.name || selectedDevice || '未选择设备'}</span>
-              {currentDevice && <Text type="secondary">{formatDeviceOs(currentDevice)}</Text>}
-              <span
-                className={`connection-status-dot ${statusDotClassName}`}
-                aria-label={isIosStaticDebug ? '静态预览' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
-                title={isIosStaticDebug ? '静态预览' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
-              />
-            </div>
-            <Button
-              type={isPlaying ? 'default' : 'primary'}
-              icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-              onClick={() => isPlaying ? stopSession() : startSession()}
-              disabled={!selectedDevice || !screenMirrorSupported}
-              loading={loading}
-            >
-              {loading ? '连接中' : isPlaying ? '断开' : '重新连接'}
-            </Button>
-          </div>
-
-          <div className="device-frame-wrap">
-            <ScreenStage
-              playerViewportRef={playerViewportRef}
-              playerContainerRef={playerContainerRef}
-              playerBoxSize={playerBoxSize}
-              isPlaying={isPlaying}
-              isIosStaticDebug={isIosStaticDebug}
-              isIosDirectMjpegMirror={isIosDirectMjpegMirror}
-              iosMjpegStreamUrl={iosMjpegStreamUrl}
-              deviceInfo={deviceInfo}
-              handleTouchInput={handleTouchInput}
-              uiElements={uiElements}
-              visibleUiElements={visibleUiElements}
-              selectedUiElement={selectedUiElement}
-              onSelectUiElement={setSelectedUiElement}
-              renderMetrics={renderMetrics}
-              uiScreen={uiScreen}
-              lkSession={lkSession}
-              selectedDevice={selectedDevice}
-              isInitializing={isInitializing}
-              startupStatusText={startupStatusText}
-              onIOSMJPEGLoad={() => {
-                setHasVideoFrame(true)
-                setLoading(false)
-                setSessionDiagnostics((current) => current && { ...current, last_error: undefined })
-                if (startRequestedAtRef.current !== null) {
-                  setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
-                }
-              }}
-              onIOSMJPEGError={() => {
-                if (selectedDevice) {
-                  requestStopIOSMJPEG(selectedDevice)
-                }
-                setHasVideoFrame(false)
-                setLoading(false)
-                setIsPlaying(false)
-                setMjpegStreamKey(0)
-                activeSessionDeviceRef.current = null
-                activeSessionKindRef.current = null
-                setSessionDiagnostics({
-                  active: false,
-                  stage: 'error',
-                  stage_label: 'iOS MJPEG direct error',
-                  last_error: 'iOS MJPEG 直连流加载失败',
-                })
-              }}
-              onConnectionStateChange={handleConnectionStateChange}
-              onWebRTCStats={handleWebRTCStats}
-              onWebRTCFirstFrame={() => {
-                setHasVideoFrame(true)
-                setLoading(false)
-                if (startRequestedAtRef.current !== null) {
-                  setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
-                }
-              }}
-              onRoomCreated={(room) => { lkRoomRef.current = room; }}
-              iosTapMode={iosTapMode}
-              iosSwipeMode={iosSwipeMode}
-              onStaticStageClick={handleStaticStageClick}
-              onStaticStagePointerDown={handleStaticStagePointerDown}
-              onStaticStagePointerMove={handleStaticStagePointerMove}
-              onStaticStagePointerUp={handleStaticStagePointerUp}
-              onStaticStagePointerCancel={handleStaticStagePointerCancel}
-              staticScreenshot={staticScreenshot}
-              staticScreenshotLoading={staticScreenshotLoading}
-              staticActionLoading={staticActionLoading}
-            />
-
-            <div className="device-rail">
-              <Button shape="circle" icon={<HomeOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_HOME')} />
-              <Button shape="circle" icon={<RollbackOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_BACK')} />
-              <Button shape="circle" icon={<AppstoreOutlined />} disabled={!remoteControlSupported} onClick={() => sendKey('KEYCODE_APP_SWITCH')} />
-              <Button shape="circle" icon={<FullscreenOutlined />} onClick={handleFullscreen} />
-              <Popover
-                content={virtualKeyboardContent}
-                trigger="click"
-                placement="left"
-                open={virtualKeyboardOpen}
-                onOpenChange={setVirtualKeyboardOpen}
-              >
-                <Button
-                  shape="circle"
-                    type={virtualKeyboardOpen ? 'primary' : 'default'}
-                    icon={<KeyOutlined />}
-                    disabled={!((isPlaying && remoteControlSupported) || isIosTextInputAvailable)}
-                    aria-label="电脑键盘输入"
-                  title="电脑键盘输入"
-                />
-              </Popover>
-            </div>
-          </div>
-
-          <div className="device-stage-footer">
-              {isIosStaticDebug ? (
-                <>
-                  <Text type="secondary">模式：{iosModeLabel}</Text>
-                  <Text type="secondary">控件：{uiElements.length}</Text>
-                  <Text type="secondary">连续触控：未开启</Text>
-                  <Text type="secondary">
-                    自动刷新：{staticAutoRefresh ? `${staticAutoRefreshIntervalMs / 1000}s` : '关闭'}
-                  </Text>
-                  <Text type="secondary">
-                    刷新：{staticRefreshDurationMs !== null ? `${staticRefreshDurationMs}ms` : '--'}
-                  </Text>
-                  <Text type={staticRefreshFailures > 0 ? 'danger' : 'secondary'}>失败：{staticRefreshFailures}</Text>
-                  <Text type={staticDebugSessionActive ? 'warning' : 'secondary'}>
-                    Session：{staticDebugSessionActive ? '占用中' : '未占用'}
-                  </Text>
-                  <Text type="secondary">
-                    坐标：{staticPointerPoint ? `${staticPointerPoint.x}, ${staticPointerPoint.y}` : '--'}
-                  </Text>
-                <Text type="secondary">最近：{lastStaticAction}</Text>
-                {isIosStaticDebug && staticRefreshLastError && (
-                  <Text type="danger" title={staticRefreshLastError}>错误：{staticRefreshLastError}</Text>
-                )}
-              </>
-              ) : (
-                <>
-                  <Text type="secondary">FPS：{isIosDirectMjpegMirror ? '直连' : fps}</Text>
-                  <Text type="secondary">网络延迟：{networkLatencyMs !== null ? `${networkLatencyMs}ms` : '--'}</Text>
-                  <Text type="secondary">首帧：{browserFirstFrameMs !== null ? `${browserFirstFrameMs}ms` : '--'}</Text>
-                  {isIosDirectMjpegMirror && (
-                    <Text type="secondary">触控：{lastIosControlStatus}</Text>
-                  )}
-                </>
-            )}
-          </div>
-        </section>
+        <DeviceStagePanel
+          deviceTitle={currentDevice?.name || selectedDevice || '未选择设备'}
+          deviceOsLabel={currentDevice ? formatDeviceOs(currentDevice) : ''}
+          hasCurrentDevice={Boolean(currentDevice)}
+          statusDotClassName={statusDotClassName}
+          statusLabel={isIosStaticDebug ? '静态预览' : hasStartupError ? '连接失败' : hasVideoFrame ? '连接成功' : '连接中'}
+          isPlaying={isPlaying}
+          loading={loading}
+          selectedDevice={selectedDevice}
+          screenMirrorSupported={screenMirrorSupported}
+          onToggleSession={() => isPlaying ? stopSession() : startSession()}
+          playerViewportRef={playerViewportRef}
+          playerContainerRef={playerContainerRef}
+          playerBoxSize={playerBoxSize}
+          isIosStaticDebug={isIosStaticDebug}
+          isIosDirectMjpegMirror={isIosDirectMjpegMirror}
+          iosMjpegStreamUrl={iosMjpegStreamUrl}
+          deviceInfo={deviceInfo}
+          handleTouchInput={handleTouchInput}
+          uiElements={uiElements}
+          visibleUiElements={visibleUiElements}
+          selectedUiElement={selectedUiElement}
+          onSelectUiElement={setSelectedUiElement}
+          renderMetrics={renderMetrics}
+          uiScreen={uiScreen}
+          lkSession={lkSession}
+          isInitializing={isInitializing}
+          startupStatusText={startupStatusText}
+          onIOSMJPEGLoad={() => {
+            setHasVideoFrame(true)
+            setLoading(false)
+            setSessionDiagnostics((current) => current && { ...current, last_error: undefined })
+            if (startRequestedAtRef.current !== null) {
+              setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
+            }
+          }}
+          onIOSMJPEGError={() => {
+            if (selectedDevice) {
+              void requestStopIOSMJPEG(selectedDevice)
+            }
+            setHasVideoFrame(false)
+            setLoading(false)
+            setIsPlaying(false)
+            setMjpegStreamKey(0)
+            activeSessionDeviceRef.current = null
+            activeSessionKindRef.current = null
+            setSessionDiagnostics({
+              active: false,
+              stage: 'error',
+              stage_label: 'iOS MJPEG direct error',
+              last_error: 'iOS MJPEG 直连流加载失败',
+            })
+          }}
+          onConnectionStateChange={handleConnectionStateChange}
+          onWebRTCStats={handleWebRTCStats}
+          onWebRTCFirstFrame={() => {
+            setHasVideoFrame(true)
+            setLoading(false)
+            if (startRequestedAtRef.current !== null) {
+              setBrowserFirstFrameMs(Math.round(performance.now() - startRequestedAtRef.current))
+            }
+          }}
+          onRoomCreated={(room) => { lkRoomRef.current = room }}
+          iosTapMode={iosTapMode}
+          iosSwipeMode={iosSwipeMode}
+          onStaticStageClick={handleStaticStageClick}
+          onStaticStagePointerDown={handleStaticStagePointerDown}
+          onStaticStagePointerMove={handleStaticStagePointerMove}
+          onStaticStagePointerUp={handleStaticStagePointerUp}
+          onStaticStagePointerCancel={handleStaticStagePointerCancel}
+          staticScreenshot={staticScreenshot}
+          staticScreenshotLoading={staticScreenshotLoading}
+          staticActionLoading={staticActionLoading}
+          remoteControlSupported={remoteControlSupported}
+          onSendKey={sendKey}
+          onFullscreen={handleFullscreen}
+          virtualKeyboardOpen={virtualKeyboardOpen}
+          onVirtualKeyboardOpenChange={setVirtualKeyboardOpen}
+          quickInputText={quickInputText}
+          onQuickInputTextChange={setQuickInputText}
+          onSendText={() => { void sendText() }}
+          onClearStaticText={() => { void clearStaticText() }}
+          isIosTextInputAvailable={isIosTextInputAvailable}
+          isIosStaticActionSupported={isIosStaticActionSupported}
+          iosModeLabel={iosModeLabel}
+          staticAutoRefresh={staticAutoRefresh}
+          staticAutoRefreshIntervalMs={staticAutoRefreshIntervalMs}
+          staticRefreshDurationMs={staticRefreshDurationMs}
+          staticRefreshFailures={staticRefreshFailures}
+          staticDebugSessionActive={staticDebugSessionActive}
+          staticPointerPoint={staticPointerPoint}
+          lastStaticAction={lastStaticAction}
+          staticRefreshLastError={staticRefreshLastError}
+          fps={fps}
+          networkLatencyMs={networkLatencyMs}
+          browserFirstFrameMs={browserFirstFrameMs}
+          lastIosControlStatus={lastIosControlStatus}
+        />
 
         <section className="screen-workspace">
           <div className="workspace-tabs">
