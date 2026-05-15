@@ -1,16 +1,12 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { message } from 'antd'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { formatDeviceOs } from '@/utils/device'
 import type {
   RenderMetrics,
-  UIElementNode,
   WorkspaceTab,
 } from './types'
-import { buildLocatorSnippets, buildVisibleUiElements } from './uiHierarchy'
 import {
   IOS_DIRECT_MJPEG_SCREEN_DRIVERS,
   KEYBOARD_KEY_CODE_MAP,
-  fetchUIHierarchy,
 } from './api'
 import DeviceStagePanel from './DeviceStagePanel'
 import WorkspacePanel from './WorkspacePanel'
@@ -19,6 +15,7 @@ import useScreenDevices from './useScreenDevices'
 import useIosDebugActions from './useIosDebugActions'
 import useScreenSession from './useScreenSession'
 import useScreenScriptWorkspace from './useScreenScriptWorkspace'
+import useScreenUiHierarchy from './useScreenUiHierarchy'
 import './ScreenPage.css'
 
 function isEditableTarget(target: EventTarget | null) {
@@ -38,12 +35,8 @@ export default function ScreenPage() {
     deviceInfo,
     setDeviceInfo,
   } = useScreenDevices()
-  const [uiElements, setUiElements] = useState<UIElementNode[]>([])
-  const [selectedUiElement, setSelectedUiElement] = useState<UIElementNode | null>(null)
-  const [loadingUiHierarchy, setLoadingUiHierarchy] = useState(false)
   const [playerBoxSize, setPlayerBoxSize] = useState<{ width: number; height: number } | null>(null)
   const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null)
-  const [uiScreen, setUiScreen] = useState<{ width: number; height: number } | null>(null)
   const [quickInputText, setQuickInputText] = useState('')
   const [virtualKeyboardOpen, setVirtualKeyboardOpen] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>('inspect')
@@ -69,20 +62,27 @@ export default function ScreenPage() {
   const iosModeLabel = isIosDirectMjpegMirror
     ? 'iOS MJPEG 直连预览'
     : 'iOS 静态预览'
-  const applyIosLogicalScreen = useCallback((screen?: { width?: number; height?: number } | null) => {
-    const width = Number(screen?.width)
-    const height = Number(screen?.height)
-    if (width > 0 && height > 0) {
-      setUiScreen({ width, height })
-      setDeviceInfo({ width, height })
-    }
-  }, [setDeviceInfo])
 
-  const clearUiHierarchy = useCallback(() => {
-    setUiElements([])
-    setSelectedUiElement(null)
-    setUiScreen(null)
-  }, [])
+  const {
+    uiElements,
+    selectedUiElement,
+    setSelectedUiElement,
+    loadingUiHierarchy,
+    uiScreen,
+    setUiScreen,
+    clearUiHierarchy,
+    applyUiScreen,
+    fetchUiHierarchy,
+    visibleUiElements,
+    locatorSnippets,
+  } = useScreenUiHierarchy({
+    selectedDevice,
+    currentDevice,
+    isIosDevice,
+    isIosStaticDebug,
+    isIosDirectMjpegMirror,
+    setDeviceInfo,
+  })
 
   const {
     staticScreenshot,
@@ -168,7 +168,7 @@ export default function ScreenPage() {
     isIosStaticDebug,
     isIosDirectMjpegMirror,
     remoteControlSupported,
-    onIosLogicalScreen: applyIosLogicalScreen,
+    onIosLogicalScreen: applyUiScreen,
     onVideoScreen: setDeviceInfo,
     onStopCleanup: handleStopSessionCleanup,
   })
@@ -187,52 +187,13 @@ export default function ScreenPage() {
     publishControl({ type: 'touch', action, x, y }, true)
   }, [flushPendingMove, handleIosTouchInput, publishControl, remoteControlSupported, scheduleMove])
 
-  const fetchUiHierarchy = useCallback(async () => {
-    if (!selectedDevice) return
-    if (!isPlaying && !isIosStaticDebug) {
-      message.warning('请先连接投屏后再获取控件')
-      return
-    }
-    if (currentDevice && !currentDevice.capabilities.uiHierarchy) {
-      message.warning('当前设备连接不支持获取控件')
-      return
-    }
-
-    setLoadingUiHierarchy(true)
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), isIosStaticDebug ? 90000 : 18000)
-    try {
-      if (isIosStaticDebug) {
-        const screenshotOk = await refreshStaticScreenshot(true)
-        if (!screenshotOk) {
-          message.warning('截图刷新失败，但会继续尝试获取控件树')
-        }
-      }
-      const result = await fetchUIHierarchy(selectedDevice, isIosDirectMjpegMirror, controller.signal)
-      setUiElements(result.elements || [])
-      setSelectedUiElement(null)
-      if (result.screen?.width > 0 && result.screen?.height > 0) {
-        setUiScreen({ width: result.screen.width, height: result.screen.height })
-        if (isIosDevice) {
-          setDeviceInfo({ width: result.screen.width, height: result.screen.height })
-        }
-      }
-      if (isIosStaticDebug) {
-        setStaticDebugSessionActive(true)
-      }
-      message.success(`获取到 ${result.elements?.length || 0} 个控件，点击控件框查看属性`)
-    } catch (e) {
-      const error = e as Error
-      if (error.name === 'AbortError') {
-        message.error('获取控件超时，请确认设备页面已稳定后重试')
-      } else {
-        message.error(error.message || '获取控件失败')
-      }
-    } finally {
-      window.clearTimeout(timeoutId)
-      setLoadingUiHierarchy(false)
-    }
-  }, [currentDevice, isIosDevice, isIosDirectMjpegMirror, isIosStaticDebug, isPlaying, refreshStaticScreenshot, selectedDevice, setDeviceInfo, setStaticDebugSessionActive])
+  const handleFetchUiHierarchy = useCallback(() => {
+    void fetchUiHierarchy({
+      isPlaying,
+      refreshStaticScreenshot,
+      setStaticDebugSessionActive,
+    })
+  }, [fetchUiHierarchy, isPlaying, refreshStaticScreenshot, setStaticDebugSessionActive])
 
   useEffect(() => {
     if (!virtualKeyboardOpen || !isPlaying || !remoteControlSupported) return
@@ -321,14 +282,6 @@ export default function ScreenPage() {
     }
   }, [deviceInfo])
 
-  const visibleUiElements = useMemo(
-    () => buildVisibleUiElements(uiElements, uiScreen, isIosDevice),
-    [isIosDevice, uiElements, uiScreen],
-  )
-  const locatorSnippets = useMemo(
-    () => buildLocatorSnippets(selectedUiElement, isIosDevice ? 'ios' : 'android'),
-    [isIosDevice, selectedUiElement],
-  )
   const openScriptWorkspace = useCallback(() => {
     setActiveWorkspaceTab('script')
   }, [])
@@ -502,7 +455,7 @@ export default function ScreenPage() {
           inspectReady={inspectReady}
           uiHierarchySupported={uiHierarchySupported}
           loadingUiHierarchy={loadingUiHierarchy}
-          onFetchUiHierarchy={fetchUiHierarchy}
+          onFetchUiHierarchy={handleFetchUiHierarchy}
           isIosStaticDebug={isIosStaticDebug}
           screenshotSupported={screenshotSupported}
           staticScreenshotLoading={staticScreenshotLoading}
