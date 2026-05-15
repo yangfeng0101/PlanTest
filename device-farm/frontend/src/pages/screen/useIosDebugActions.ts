@@ -18,16 +18,12 @@ interface UseIosDebugActionsOptions {
   isIosDirectMjpegMirror: boolean
   isIosLivePreview: boolean
   isIosStaticActionSupported: boolean
-  remoteControlSupported: boolean
   renderMetrics: RenderMetrics | null
   uiScreen: { width: number; height: number } | null
   loadingUiHierarchy: boolean
   selectedUiElement: UIElementNode | null
   setUiScreen: (screen: { width: number; height: number }) => void
   setDeviceInfo: (info: { width: number; height: number }) => void
-  publishControl: (payload: Record<string, unknown>, reliable?: boolean) => void
-  scheduleMove: (x: number, y: number) => void
-  flushPendingMove: () => void
 }
 
 export default function useIosDebugActions({
@@ -36,16 +32,12 @@ export default function useIosDebugActions({
   isIosDirectMjpegMirror,
   isIosLivePreview,
   isIosStaticActionSupported,
-  remoteControlSupported,
   renderMetrics,
   uiScreen,
   loadingUiHierarchy,
   selectedUiElement,
   setUiScreen,
   setDeviceInfo,
-  publishControl,
-  scheduleMove,
-  flushPendingMove,
 }: UseIosDebugActionsOptions) {
   const [staticScreenshot, setStaticScreenshot] = useState<string | null>(null)
   const [staticScreenshotLoading, setStaticScreenshotLoading] = useState(false)
@@ -331,27 +323,27 @@ export default function useIosDebugActions({
           setStaticPointerPoint({ x, y })
           if (action === 'down') {
             staticDragStartRef.current = { x, y }
-            return
+            return true
           }
           if (action === 'move') {
-            return
+            return true
           }
           if (action === 'up') {
             if (staticSwipeHandledRef.current) {
               staticDragStartRef.current = null
               staticSwipeHandledRef.current = false
-              return
+              return true
             }
             const start = staticDragStartRef.current
             staticDragStartRef.current = null
-            if (!start) return
+            if (!start) return true
             const distance = Math.hypot(x - start.x, y - start.y)
             if (distance < 12) {
               void runStaticTap(x, y)
             }
-            return
+            return true
           }
-          return
+          return true
         }
         if (type === 'swipe') {
           const endX = Number(extra?.endX)
@@ -363,12 +355,12 @@ export default function useIosDebugActions({
             }, 0)
             void runStaticSwipe({ x, y }, { x: Math.round(endX), y: Math.round(endY) })
           }
-          return
+          return true
         }
         if (type === 'long-press') {
           staticSwipeHandledRef.current = true
           void runStaticLongPress(x, y)
-          return
+          return true
         }
       }
       if (isIosStaticDebug && isIosStaticActionSupported) {
@@ -378,7 +370,7 @@ export default function useIosDebugActions({
           if (iosTapMode && action === 'up' && !staticActionLoadingRef.current) {
             void runStaticTap(x, y)
           }
-          return
+          return true
         }
         if (type === 'swipe' && iosSwipeMode && !staticActionLoadingRef.current) {
           const endX = Number(extra?.endX)
@@ -390,33 +382,20 @@ export default function useIosDebugActions({
             }, 0)
             void runStaticSwipe({ x, y }, { x: Math.round(endX), y: Math.round(endY) })
           }
-          return
+          return true
         }
       }
-      if (!remoteControlSupported) return
-      if (type !== 'touch') return
-      const action = extra?.action || 'move'
-      if (action === 'move') {
-        scheduleMove(x, y)
-        return
-      }
-
-      flushPendingMove()
-      publishControl({ type: 'touch', action, x, y }, true)
+      return false
     },
     [
-      flushPendingMove,
       iosSwipeMode,
       iosTapMode,
       isIosLivePreview,
       isIosStaticActionSupported,
       isIosStaticDebug,
-      publishControl,
-      remoteControlSupported,
       runStaticLongPress,
       runStaticSwipe,
       runStaticTap,
-      scheduleMove,
     ]
   )
 
