@@ -463,7 +463,11 @@ export default function ScriptsPage() {
       setTaskLogs([])
       setIsRunModalOpen(false)
       setRunningScript(null)
-      message.success('任务已创建')
+      if (selectedRunDevice.status === 'busy') {
+        message.success('任务已创建，设备正忙，已进入排队')
+      } else {
+        message.success('任务已创建')
+      }
     } catch (error) {
       console.error('Failed to create task:', error)
       message.error(getErrorDetail(error))
@@ -746,8 +750,8 @@ export default function ScriptsPage() {
     (script.description || '').toLowerCase().includes(keyword.toLowerCase())
   )
 
-  const onlineDevices = devices.filter(
-    (device) => device.status === 'online' && device.capabilities.automation
+  const runnableDevices = devices.filter(
+    (device) => ['online', 'busy'].includes(device.status) && device.capabilities.automation
   )
   const screenshots = currentTask?.result?.screenshots || []
   const taskDiagnostics = getTaskDiagnostics(currentTask)
@@ -921,12 +925,12 @@ export default function ScriptsPage() {
             >
               <Select
                 loading={devicesLoading}
-                placeholder="请选择在线自动化设备"
-                notFoundContent={devicesLoading ? '加载中' : '暂无在线自动化设备'}
+                placeholder="请选择自动化设备"
+                notFoundContent={devicesLoading ? '加载中' : '暂无可运行自动化设备'}
               >
-                {onlineDevices.map((device) => (
+                {runnableDevices.map((device) => (
                   <Option key={device.id} value={device.id}>
-                    {device.name || device.id} ({formatDeviceOs(device)} / {device.id})
+                    {device.name || device.id} ({formatDeviceOs(device)} / {device.id}{device.status === 'busy' ? ' / 排队' : ''})
                   </Option>
                 ))}
               </Select>

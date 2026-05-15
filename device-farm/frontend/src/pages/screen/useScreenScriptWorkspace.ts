@@ -18,6 +18,7 @@ interface UseScreenScriptWorkspaceOptions {
   currentDevice: Device | undefined
   selectedUiElement: UIElementNode | null
   uiElements: UIElementNode[]
+  screenSessionActive: boolean
   onOpenScriptWorkspace: () => void
   onIosDebugSessionReleased: () => void
 }
@@ -27,6 +28,7 @@ export default function useScreenScriptWorkspace({
   currentDevice,
   selectedUiElement,
   uiElements,
+  screenSessionActive,
   onOpenScriptWorkspace,
   onIosDebugSessionReleased,
 }: UseScreenScriptWorkspaceOptions) {
@@ -236,7 +238,7 @@ export default function useScreenScriptWorkspace({
       message.warning('请先选择设备')
       return
     }
-    if (!currentDevice || currentDevice.status !== 'online') {
+    if (!currentDevice || (currentDevice.status !== 'online' && !screenSessionActive)) {
       message.warning('当前设备不在线或已被占用，无法运行调试')
       return
     }
@@ -271,6 +273,7 @@ export default function useScreenScriptWorkspace({
         },
         parameters: {
           debug_trace_lines: true,
+          screen_debug: screenSessionActive,
         },
       })
 
@@ -286,7 +289,7 @@ export default function useScreenScriptWorkspace({
     } finally {
       setDebugSubmitting(false)
     }
-  }, [currentDevice, debugTask, onIosDebugSessionReleased, saveDebugDraft, scriptContent, selectedDevice])
+  }, [currentDevice, debugTask, onIosDebugSessionReleased, saveDebugDraft, screenSessionActive, scriptContent, selectedDevice])
 
   const applyDebugLogs = useCallback((logs: TaskLogEntry[]) => {
     setDebugTaskLogs(logs)

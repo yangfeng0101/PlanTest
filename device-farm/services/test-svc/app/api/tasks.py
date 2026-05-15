@@ -78,6 +78,22 @@ async def _occupy_device(device_id: str, user_id: str):
         )
 
 
+async def _release_device_if_owned(device_id: str, owner: str) -> bool:
+    device = await _get_device(device_id)
+    occupied_by = str(device.get("occupied_by") or device.get("occupiedBy") or "")
+    if occupied_by and occupied_by != owner:
+        logger.info(
+            "Skip releasing device %s for owner %s because it is occupied by %s",
+            device_id,
+            owner,
+            occupied_by,
+        )
+        return False
+
+    await _release_device(device_id)
+    return True
+
+
 def _normalize_device_platform(device: dict) -> str:
     os_name = str(device.get("os") or "").lower()
     if os_name in {"android", "harmony", "harmonyos"}:
@@ -96,10 +112,11 @@ def _device_supports_automation(device: dict) -> bool:
 
 async def _validate_task_device(device_id: str, requested_platform: str) -> dict:
     device = await _get_device(device_id)
-    if device.get("status") != "online":
+    device_status = str(device.get("status") or "").lower()
+    if device_status not in {"online", "busy"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Device is occupied or unavailable",
+            detail="Device is offline or unavailable",
         )
 
     actual_platform = _normalize_device_platform(device)
@@ -135,11 +152,12 @@ async def _release_device(device_id: str):
         )
 
 
-async def _release_device_best_effort(device_id: str):
+async def _release_task_device_best_effort(device_id: str, task_id: str):
+    owner = f"test-svc:{task_id}"
     try:
-        await _release_device(device_id)
+        await _release_device_if_owned(device_id, owner)
     except Exception as exc:
-        logger.warning("Failed to release device %s during cancellation: %s", device_id, exc)
+        logger.warning("Failed to release device %s for task %s during cancellation: %s", device_id, task_id, exc)
 
 
 # Convert between enum types
@@ -323,7 +341,6 @@ async def create_task(
         )
 
     device = await _validate_task_device(task.device_id, task.device_platform.value)
-    await _occupy_device(task.device_id, user_id or "test-svc")
     device_capabilities = merge_task_diagnostics(
         task.device_capabilities,
         device=device,
@@ -332,22 +349,18 @@ async def create_task(
     )
 
     # Create database model
-    try:
-        task_db = TaskDB(
-            script_id=task.script_id,
-            device_id=task.device_id,
-            device_platform=task.device_platform.value,
-            device_capabilities=device_capabilities,
-            parameters=task.parameters,
-            status=TaskStatusDB.PENDING,
-        )
+    task_db = TaskDB(
+        script_id=task.script_id,
+        device_id=task.device_id,
+        device_platform=task.device_platform.value,
+        device_capabilities=device_capabilities,
+        parameters=task.parameters,
+        status=TaskStatusDB.PENDING,
+    )
 
-        db.add(task_db)
-        await db.flush()
-        await db.refresh(task_db)
-    except Exception:
-        await _release_device(task.device_id)
-        raise
+    db.add(task_db)
+    await db.flush()
+    await db.refresh(task_db)
 
     # Commit before queueing so workers cannot consume a task that is not visible yet.
     await db.commit()
@@ -360,7 +373,6 @@ async def create_task(
         task_db.finished_at = datetime.utcnow()
         task_db.error = f"Failed to enqueue task: {exc}"
         await db.commit()
-        await _release_device(task.device_id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to enqueue task",
@@ -409,15 +421,16 @@ async def cancel_task(
     if task_db.status in {TaskStatusDB.RUNNING, TaskStatusDB.PENDING}:
         from app.tasks.executor import celery_app
 
+        was_running = task_db.status == TaskStatusDB.RUNNING
         await save_task_log(db, task_id, "WARN", "User requested cancellation")
-        celery_app.control.revoke(task_id, terminate=task_db.status == TaskStatusDB.RUNNING)
+        celery_app.control.revoke(task_id, terminate=was_running)
         task_db.status = TaskStatusDB.CANCELLED
         task_db.finished_at = datetime.utcnow()
         await save_task_log(db, task_id, "WARN", "Task cancellation acknowledged")
         await db.flush()
         await db.commit()
-        if task_db.device_id:
-            await _release_device_best_effort(task_db.device_id)
+        if task_db.device_id and was_running:
+            await _release_task_device_best_effort(task_db.device_id, task_id)
             async with get_db_session() as release_log_db:
                 await save_task_log(release_log_db, task_id, "INFO", "Device released")
 

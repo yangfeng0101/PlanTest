@@ -9,7 +9,7 @@
 - 当前分支状态：本轮投屏页前端结构拆分已完成；`main` 与 `dev-reboot` 应保持在包含该结构拆分的最新提交。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
 - 最近一次结构改动：投屏页 `frontend/src/pages/screen/index.tsx` 已拆出 `DeviceStagePanel.tsx`、`WorkspacePanel.tsx`、`ScreenStage.tsx`、`InspectorPanel.tsx`、`ScriptWorkspacePanel.tsx`、`ScriptModals.tsx`、`useScreenDevices.ts`、`useScreenSession.ts`、`useIosDebugActions.ts`、`useScreenScriptWorkspace.ts`、`api.ts`、`scriptWorkspace.ts`、`types.ts`、`uiHierarchy.ts`；本次仅做 UI/API/hook/helper 分层，不改变 Android/iOS 投屏、触控、控件树和脚本调试链路。
-- 最近一次功能改动：投屏生命周期收敛到 device-svc 现有设备占用语义。Android/LiveKit 投屏和 iOS `mjpeg-direct` 预览启动前都会占用设备，启动失败、停止、断连或本地 session 结束时只释放 screen-svc 本次成功占用的设备；iOS MJPEG prepare 后如果 30 秒内没有真正接入 MJPEG GET，会自动释放占用；device-svc 扫描会保留已占用设备的 `busy` 状态，不再刷回 `online + occupied_by` 的半占用状态；iOS `mjpeg-direct` 投屏态的点按、滑动、长按、输入、清空和控件树获取会走 screen-svc 当前 session 代理，不再走 device-svc 静态调试接口；设备管理页投屏入口按 `online` 状态和 screen-svc session 状态禁用；iOS Agent 增加 debug/stream session TTL 后台清理。iOS 连续实时触控仍未开放。
+- 最近一次功能改动：投屏生命周期收敛到 device-svc 现有设备占用语义。Android/LiveKit 投屏和 iOS `mjpeg-direct` 预览启动前都会占用设备，启动失败、停止、断连或本地 session 结束时只释放 screen-svc 本次成功占用的设备；iOS MJPEG prepare 后如果 30 秒内没有真正接入 MJPEG GET，会自动释放占用；device-svc 扫描会保留已占用设备的 `busy` 状态，不再刷回 `online + occupied_by` 的半占用状态；iOS `mjpeg-direct` 投屏态的点按、滑动、长按、输入、清空和控件树获取会走 screen-svc 当前 session 代理，不再走 device-svc 静态调试接口；设备管理页投屏入口按 `online` 状态和 screen-svc session 状态禁用；脚本任务创建时不再立即占用设备，worker 真正执行前才用 `test-svc:<task_id>` 占用设备，普通任务遇到 `busy` 会保持 `pending` 并重试，投屏页调试任务会带 `screen_debug` 参数以共享当前投屏占用且结束时不释放投屏 lease；iOS Agent 增加 debug/stream session TTL 后台清理。iOS 连续实时触控仍未开放。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -50,6 +50,7 @@
   - 控件属性区域取消固定表格高度，自动化选择器区域压缩高度，尽量展示更多属性。
   - “编写脚本”页使用深色 Monaco 代码工作台，支持 `vs-dark` 主题且保留脚本行数状态栏。
 - 投屏页支持脚本运行调试：
+  - 投屏页连接投屏后也可以运行调试脚本；调试任务通过 `screen_debug` 标记共享当前投屏占用，任务结束不会释放投屏 session 的设备占用。
   - “编写脚本”页可自动保存调试草稿并在当前设备上创建任务。
   - 脚本工具栏支持打开脚本选择弹窗，弹窗顶部可新建脚本并填入与脚本管理页一致的 App 冒烟示例，也可选择已保存脚本载入编辑器；运行中“运行调试”切换为“停止调试”。
   - 调试任务会通过结构化任务日志返回 `script_line` 行号事件，前端实时高亮当前执行行。
@@ -61,6 +62,7 @@
   - 操作列新增“运行记录”入口。
   - 前端通过现有 `GET /tasks?script_id=...` 拉取最近任务，无需新增后端表或 API。
   - 运行记录中的任务可继续打开原任务详情弹窗查看状态、日志、截图和耗时。
+  - 脚本管理页运行脚本时可选择 `online` 或 `busy` 且支持 automation 的设备；如果设备正忙，任务会创建为 `pending` 排队，待 worker 发现设备释放后再占用并运行。
 - Python 脚本 SDK 接入 Midscene AI 操作能力：
   - SDK 版本升级为 `1.2.0`。
   - 新增 `app.ai()`、`app.ai_act()`、`app.ai_locate()`、`app.ai_tap()`、`app.ai_input()`、`app.ai_clear()`、`app.ai_key()`、`app.ai_scroll()`、`app.ai_long_press()`、`app.ai_double_tap()`、`app.ai_wait()`、`app.ai_assert()`。

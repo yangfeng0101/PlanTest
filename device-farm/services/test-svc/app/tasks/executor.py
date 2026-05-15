@@ -402,7 +402,53 @@ def run_async(coro):
     return tasks_api._run_async(coro)
 
 
-@celery_app.task(bind=True, name="execute_test_task")
+class DeviceBusyRetry(Exception):
+    """Raised when a task should stay pending until the device is free."""
+
+
+def _task_device_owner(task_id: str) -> str:
+    return f"test-svc:{task_id}"
+
+
+def _is_screen_debug_task(task: Task) -> bool:
+    parameters = task.parameters or {}
+    return bool(parameters.get("screen_debug"))
+
+
+async def acquire_task_device(task: Task) -> bool:
+    """Acquire the device for task execution.
+
+    Returns True when this worker acquired a device-svc lease and must release it.
+    Returns False for screen-page debug tasks that intentionally share an active
+    screen session lease.
+    """
+    if not task.device_id:
+        return False
+
+    device = await tasks_api._get_device(task.device_id)
+    device_status = str(device.get("status") or "").lower()
+
+    if device_status == "online":
+        await tasks_api._occupy_device(task.device_id, _task_device_owner(task.id))
+        return True
+
+    if device_status == "busy" and _is_screen_debug_task(task):
+        occupied_by = device.get("occupied_by") or device.get("occupiedBy") or "unknown"
+        logger.info(
+            "Task %s is sharing active screen session for device %s occupied by %s",
+            task.id,
+            task.device_id,
+            occupied_by,
+        )
+        return False
+
+    if device_status == "busy":
+        raise DeviceBusyRetry(f"Device {task.device_id} is busy; task remains queued")
+
+    raise RuntimeError(f"Device {task.device_id} is offline or unavailable (status: {device_status or 'unknown'})")
+
+
+@celery_app.task(bind=True, name="execute_test_task", max_retries=None)
 def execute_test_task(self, task_id: str):
     """Execute a test task
 
@@ -419,9 +465,49 @@ def execute_test_task(self, task_id: str):
 
     if task.status == TaskStatus.CANCELLED:
         logger.info(f"Task {task_id} was cancelled before execution")
-        if task.device_id:
+        return {"success": False, "error": "Task cancelled"}
+
+    device_lease_acquired = False
+    try:
+        device_lease_acquired = run_async(acquire_task_device(task))
+    except DeviceBusyRetry as exc:
+        if self.request.retries == 0 or self.request.retries % 12 == 0:
+            run_async(send_log(task_id, "INFO", f"{exc}; retrying shortly"))
+        raise self.retry(exc=exc, countdown=5)
+    except Exception as exc:
+        if getattr(exc, "status_code", None) == 409:
+            retry_error = DeviceBusyRetry(f"Device {task.device_id} is busy; task remains queued")
+            if self.request.retries == 0 or self.request.retries % 12 == 0:
+                run_async(send_log(task_id, "INFO", f"{retry_error}; retrying shortly"))
+            raise self.retry(exc=retry_error, countdown=5)
+
+        error_msg = str(exc)
+        logger.error(f"Task {task_id} failed before execution: {error_msg}")
+        update_task_status(
+            task_id,
+            TaskStatus.FAILED,
+            finished_at=datetime.utcnow(),
+            error=error_msg,
+        )
+        run_async(send_log(task_id, "ERROR", f"Task failed before execution: {error_msg}"))
+        return {"success": False, "error": error_msg}
+
+    device_id_for_release = task.device_id
+    task = tasks_api.get_task_by_id(task_id)
+    if not task:
+        logger.error(f"Task {task_id} not found after acquiring device")
+        if device_lease_acquired and device_id_for_release:
             try:
-                run_async(release_task_device(task.device_id))
+                run_async(release_task_device(device_id_for_release, task_id))
+            except Exception as release_error:
+                logger.warning(f"Failed to release device lease for missing task {task_id}: {release_error}")
+        return {"success": False, "error": "Task not found"}
+
+    if task.status == TaskStatus.CANCELLED:
+        logger.info(f"Task {task_id} was cancelled before execution after acquiring device")
+        if device_lease_acquired:
+            try:
+                run_async(release_task_device(task.device_id, task_id))
             except Exception as release_error:
                 logger.warning(f"Failed to release device {task.device_id}: {release_error}")
         return {"success": False, "error": "Task cancelled"}
@@ -519,9 +605,9 @@ def execute_test_task(self, task_id: str):
             "traceback": error_trace
         }
     finally:
-        if task.device_id:
+        if task.device_id and device_lease_acquired:
             try:
-                run_async(release_task_device(task.device_id))
+                run_async(release_task_device(task.device_id, task_id))
                 if not task_finished:
                     run_async(send_log(task_id, "INFO", "Device released"))
             except Exception as release_error:
@@ -904,12 +990,8 @@ async def send_log(
         await save_task_log(db, task_id, level, message, event_type=event_type, line_number=line_number)
 
 
-async def release_task_device(device_id: str):
-    import httpx
-
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(f"{settings.DEVICE_SERVICE_URL}/api/v1/devices/{device_id}/release")
-    response.raise_for_status()
+async def release_task_device(device_id: str, task_id: str):
+    await tasks_api._release_device_if_owned(device_id, _task_device_owner(task_id))
 
 
 def _raw_driver(driver):

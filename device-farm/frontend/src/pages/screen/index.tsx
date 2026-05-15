@@ -371,6 +371,7 @@ export default function ScreenPage() {
     currentDevice,
     selectedUiElement,
     uiElements,
+    screenSessionActive: isPlaying,
     onOpenScriptWorkspace: openScriptWorkspace,
     onIosDebugSessionReleased: () => setStaticDebugSessionActive(false),
   })
