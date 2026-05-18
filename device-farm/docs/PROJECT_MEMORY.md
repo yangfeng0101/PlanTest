@@ -8,6 +8,7 @@
 
 - 当前分支状态：本轮投屏页前端结构拆分已完成；`main` 与 `dev-reboot` 应保持在包含该结构拆分的最新提交。
 - 前端当前展示品牌名为“云测”，登录页副标题为“移动设备云测试平台”。
+- 前端构建已启用页面级懒加载和 Vite `manualChunks`：Screen/Scripts/Monitoring/Reports 等页面按路由加载，Monaco、LiveKit、ECharts、Ant Design 拆为独立 vendor chunk，以降低首屏主业务包体积并改善缓存复用。
 - 最近一次结构改动：投屏页 `frontend/src/pages/screen/index.tsx` 已拆出 `DeviceStagePanel.tsx`、`WorkspacePanel.tsx`、`ScreenStage.tsx`、`InspectorPanel.tsx`、`ScriptWorkspacePanel.tsx`、`ScriptModals.tsx`、`useScreenDevices.ts`、`useScreenSession.ts`、`useIosDebugActions.ts`、`useScreenScriptWorkspace.ts`、`useScreenUiHierarchy.ts`、`useScreenLayoutMetrics.ts`、`useScreenControls.ts`、`useScreenMode.ts`、`api.ts`、`scriptWorkspace.ts`、`types.ts`、`uiHierarchy.ts`；本次仅做 UI/API/hook/helper 分层，不改变 Android/iOS 投屏、触控、控件树和脚本调试链路。
 - 最近一次功能改动：投屏生命周期收敛到 device-svc 现有设备占用语义。Android/LiveKit 投屏和 iOS `mjpeg-direct` 预览启动前都会占用设备，启动失败、停止、断连或本地 session 结束时只释放 screen-svc 本次成功占用的设备；iOS MJPEG prepare 后如果 30 秒内没有真正接入 MJPEG GET，会自动释放占用；device-svc 扫描会保留已占用设备的 `busy` 状态，不再刷回 `online + occupied_by` 的半占用状态；iOS `mjpeg-direct` 投屏态的点按、滑动、长按、输入、清空和控件树获取会走 screen-svc 当前 session 代理，不再走 device-svc 静态调试接口；设备管理页投屏入口按 `online` 状态和 screen-svc session 状态禁用；脚本任务创建时不再立即占用设备，worker 真正执行前才用 `test-svc:<task_id>` 占用设备，普通任务遇到 `busy` 会保持 `pending` 并重试，投屏页调试任务会带 `screen_debug` 参数以共享当前投屏占用且结束时不释放投屏 lease；iOS Agent 增加 debug/stream session TTL 后台清理。iOS 连续实时触控仍未开放。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
@@ -125,7 +126,7 @@
 - iOS 当前支持脚本执行闭环、静态截图/控件树调试、静态点按、滑动、长按、文本输入、清空输入和准实时静态截图预览；`mjpeg-direct` 直连预览是实验能力，默认不开放，并已做低延迟一次性触控优化。连续实时触控、Home/Back/App Switch 等系统键仍未接入。
 - iOS 控件树来自 Appium/WDA accessibility source；投屏页控件框会过滤不可见节点、超大无语义容器和重复同 bounds 节点，只在画面上展示更接近真实可点/可定位元素的框。右侧属性/selector 仍来自原始控件树。若 App 内存在自绘、透明覆盖层或无 accessibility 标识的元素，WDA source 本身仍可能与视觉元素不完全一致。
 - iOS WDA/MJPEG probe session 结束会删除自己的 Appium session，可能导致 WDA 退出；如果 probe 与 iOS Agent 使用不同 WDA bundle，后续 iOS Agent 重启 WDA 可能出现 `xcodebuild failed with code 65`，优先检查当前 shell 的 WDA 签名环境变量、自定义 bundle、Team、证书信任和 Appium 日志。若 Appium 日志显示 WDA 已安装但 launch 因 `invalid code signature` / `not explicitly trusted` 失败，普通 session 会卸载 WDA，需先用 `ios_stream_source_probe.py --trust-preinstall-wda` 安装并保留预编译 WDA Runner，完成手机端开发者证书信任后再运行普通会话；`iosInstallPause` 只暂停被测 App 安装，不解决 WDA 信任。
-- 前端生产构建有 chunk 体积 warning，当前不阻塞功能，后续可通过动态 import 或 manualChunks 优化。
+- 前端生产构建仍可能提示 chunk 体积 warning，但当前主要来自稳定的大 vendor chunk（Ant Design、ECharts、LiveKit），页面级业务代码已拆分；后续如需继续压低可按需拆 AntD 按需加载、图表延迟加载或更细 manualChunks。
 - WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。
 
 ## 下次接手建议

@@ -61,4 +61,18 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@monaco-editor') || id.includes('monaco-editor')) return 'vendor-monaco'
+          if (id.includes('livekit-client') || id.includes('@livekit')) return 'vendor-livekit'
+          if (id.includes('echarts') || id.includes('zrender')) return 'vendor-charts'
+          if (id.includes('antd') || id.includes('@ant-design')) return 'vendor-antd'
+          return undefined
+        },
+      },
+    },
+  },
 })

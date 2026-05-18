@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Layout, Menu, Dropdown, Avatar, Space } from 'antd'
 import MobileOutlined from '@ant-design/icons/MobileOutlined'
@@ -11,22 +12,27 @@ import SettingOutlined from '@ant-design/icons/SettingOutlined'
 import UsergroupAddOutlined from '@ant-design/icons/UsergroupAddOutlined'
 import AlertOutlined from '@ant-design/icons/AlertOutlined'
 import DashboardOutlined from '@ant-design/icons/DashboardOutlined'
-import DevicesPage from './pages/devices'
-import DeviceDetailPage from './pages/devices/Detail'
-import ScreenPage from './pages/screen'
-import ScriptsPage from './pages/scripts'
-import ReportsPage from './pages/reports'
-import TrendPage from './pages/reports/Trend'
-import ParallelExecutionPage from './pages/parallel'
-import LoginPage from './pages/auth/Login'
-import UsersPage from './pages/admin/Users'
-import AlertsPage from './pages/alerts'
-import MonitoringPage from './pages/monitoring'
 import AuthGuard from './components/AuthGuard'
 import { useAuthStore, hasPermission } from './stores/authStore'
 import './App.css'
 
 const { Sider, Content, Header } = Layout
+
+const DevicesPage = lazy(() => import('./pages/devices'))
+const DeviceDetailPage = lazy(() => import('./pages/devices/Detail'))
+const ScreenPage = lazy(() => import('./pages/screen'))
+const ScriptsPage = lazy(() => import('./pages/scripts'))
+const ReportsPage = lazy(() => import('./pages/reports'))
+const TrendPage = lazy(() => import('./pages/reports/Trend'))
+const ParallelExecutionPage = lazy(() => import('./pages/parallel'))
+const LoginPage = lazy(() => import('./pages/auth/Login'))
+const UsersPage = lazy(() => import('./pages/admin/Users'))
+const AlertsPage = lazy(() => import('./pages/alerts'))
+const MonitoringPage = lazy(() => import('./pages/monitoring'))
+
+function PageFallback() {
+  return <div className="page-loading">加载中...</div>
+}
 
 const baseMenuItems = [
   {
@@ -159,20 +165,22 @@ function MainLayout() {
             overflow: 'auto',
           }}
         >
-          <Routes>
-            <Route path="/devices" element={<DevicesPage />} />
-            <Route path="/devices/:id" element={<DeviceDetailPage />} />
-            <Route path="/monitoring" element={<MonitoringPage />} />
-            <Route path="/screen" element={<ScreenPage />} />
-            <Route path="/scripts" element={<ScriptsPage />} />
-            <Route path="/parallel" element={<ParallelExecutionPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/reports/trend" element={<TrendPage />} />
-            <Route path="/admin/users" element={<UsersPage />} />
-            <Route path="/alerts" element={<AlertsPage />} />
-            <Route path="/" element={<Navigate to="/devices" replace />} />
-            <Route path="*" element={<Navigate to="/devices" replace />} />
-          </Routes>
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route path="/devices" element={<DevicesPage />} />
+              <Route path="/devices/:id" element={<DeviceDetailPage />} />
+              <Route path="/monitoring" element={<MonitoringPage />} />
+              <Route path="/screen" element={<ScreenPage />} />
+              <Route path="/scripts" element={<ScriptsPage />} />
+              <Route path="/parallel" element={<ParallelExecutionPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/reports/trend" element={<TrendPage />} />
+              <Route path="/admin/users" element={<UsersPage />} />
+              <Route path="/alerts" element={<AlertsPage />} />
+              <Route path="/" element={<Navigate to="/devices" replace />} />
+              <Route path="*" element={<Navigate to="/devices" replace />} />
+            </Routes>
+          </Suspense>
         </Content>
       </Layout>
     </Layout>
@@ -184,7 +192,14 @@ function App() {
     <BrowserRouter>
       <Routes>
         {/* Login route - no auth required */}
-        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/login"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <LoginPage />
+            </Suspense>
+          }
+        />
 
         {/* Protected routes - require authentication */}
         <Route

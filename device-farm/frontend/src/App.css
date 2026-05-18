@@ -36,3 +36,12 @@
 .user-info:hover {
   background-color: #f5f5f5;
 }
+
+.page-loading {
+  min-height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
+  font-size: 14px;
+}
