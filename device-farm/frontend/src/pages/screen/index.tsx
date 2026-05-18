@@ -1,9 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { formatDeviceOs } from '@/utils/device'
-import type {
-  RenderMetrics,
-  WorkspaceTab,
-} from './types'
+import type { WorkspaceTab } from './types'
 import {
   IOS_DIRECT_MJPEG_SCREEN_DRIVERS,
   KEYBOARD_KEY_CODE_MAP,
@@ -16,6 +13,7 @@ import useIosDebugActions from './useIosDebugActions'
 import useScreenSession from './useScreenSession'
 import useScreenScriptWorkspace from './useScreenScriptWorkspace'
 import useScreenUiHierarchy from './useScreenUiHierarchy'
+import useScreenLayoutMetrics from './useScreenLayoutMetrics'
 import './ScreenPage.css'
 
 function isEditableTarget(target: EventTarget | null) {
@@ -25,9 +23,6 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 export default function ScreenPage() {
-  const playerViewportRef = useRef<HTMLDivElement>(null)
-  const playerContainerRef = useRef<HTMLDivElement>(null)
-
   const {
     devicesLoaded,
     selectedDevice,
@@ -35,8 +30,6 @@ export default function ScreenPage() {
     deviceInfo,
     setDeviceInfo,
   } = useScreenDevices()
-  const [playerBoxSize, setPlayerBoxSize] = useState<{ width: number; height: number } | null>(null)
-  const [renderMetrics, setRenderMetrics] = useState<RenderMetrics | null>(null)
   const [quickInputText, setQuickInputText] = useState('')
   const [virtualKeyboardOpen, setVirtualKeyboardOpen] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>('inspect')
@@ -83,6 +76,13 @@ export default function ScreenPage() {
     isIosDirectMjpegMirror,
     setDeviceInfo,
   })
+
+  const {
+    playerViewportRef,
+    playerContainerRef,
+    playerBoxSize,
+    renderMetrics,
+  } = useScreenLayoutMetrics(deviceInfo)
 
   const {
     staticScreenshot,
@@ -218,69 +218,6 @@ export default function ScreenPage() {
     window.addEventListener('keydown', handleKeyboardInput)
     return () => window.removeEventListener('keydown', handleKeyboardInput)
   }, [isPlaying, publishControl, remoteControlSupported, sendAndroidKey, virtualKeyboardOpen])
-
-  useEffect(() => {
-    const container = playerContainerRef.current
-    if (!container || !deviceInfo) {
-      setRenderMetrics(null)
-      return
-    }
-
-    const updateMetrics = () => {
-      const rect = container.getBoundingClientRect()
-      const screenRatio = deviceInfo.width / deviceInfo.height
-      const containerRatio = rect.width / rect.height
-      const width = containerRatio > screenRatio ? rect.height * screenRatio : rect.width
-      const height = containerRatio > screenRatio ? rect.height : rect.width / screenRatio
-      setRenderMetrics({
-        left: (rect.width - width) / 2,
-        top: (rect.height - height) / 2,
-        width,
-        height,
-      })
-    }
-
-    updateMetrics()
-    const observer = new ResizeObserver(updateMetrics)
-    observer.observe(container)
-    window.addEventListener('resize', updateMetrics)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', updateMetrics)
-    }
-  }, [deviceInfo, isPlaying])
-
-  useEffect(() => {
-    const viewport = playerViewportRef.current
-    if (!viewport || !deviceInfo) {
-      setPlayerBoxSize(null)
-      return
-    }
-
-    const updateBoxSize = () => {
-      const rect = viewport.getBoundingClientRect()
-      if (rect.width <= 0 || rect.height <= 0) {
-        setPlayerBoxSize(null)
-        return
-      }
-
-      const screenRatio = deviceInfo.width / deviceInfo.height
-      const viewportRatio = rect.width / rect.height
-      const height = viewportRatio > screenRatio ? rect.height : rect.width / screenRatio
-      const width = viewportRatio > screenRatio ? rect.height * screenRatio : rect.width
-
-      setPlayerBoxSize({ width, height })
-    }
-
-    updateBoxSize()
-    const observer = new ResizeObserver(updateBoxSize)
-    observer.observe(viewport)
-    window.addEventListener('resize', updateBoxSize)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', updateBoxSize)
-    }
-  }, [deviceInfo])
 
   const openScriptWorkspace = useCallback(() => {
     setActiveWorkspaceTab('script')
