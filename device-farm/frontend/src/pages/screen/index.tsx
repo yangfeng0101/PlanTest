@@ -1,10 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { formatDeviceOs } from '@/utils/device'
 import type { WorkspaceTab } from './types'
-import {
-  IOS_DIRECT_MJPEG_SCREEN_DRIVERS,
-  KEYBOARD_KEY_CODE_MAP,
-} from './api'
+import { IOS_DIRECT_MJPEG_SCREEN_DRIVERS } from './api'
 import DeviceStagePanel from './DeviceStagePanel'
 import WorkspacePanel from './WorkspacePanel'
 import ScriptModals from './ScriptModals'
@@ -14,13 +11,8 @@ import useScreenSession from './useScreenSession'
 import useScreenScriptWorkspace from './useScreenScriptWorkspace'
 import useScreenUiHierarchy from './useScreenUiHierarchy'
 import useScreenLayoutMetrics from './useScreenLayoutMetrics'
+import useScreenControls from './useScreenControls'
 import './ScreenPage.css'
-
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false
-  const tagName = target.tagName.toLowerCase()
-  return tagName === 'input' || tagName === 'textarea' || target.isContentEditable
-}
 
 export default function ScreenPage() {
   const {
@@ -30,8 +22,6 @@ export default function ScreenPage() {
     deviceInfo,
     setDeviceInfo,
   } = useScreenDevices()
-  const [quickInputText, setQuickInputText] = useState('')
-  const [virtualKeyboardOpen, setVirtualKeyboardOpen] = useState(false)
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>('inspect')
   const screenMirrorSupported = currentDevice?.capabilities.screenMirror ?? false
   const remoteControlSupported = currentDevice?.capabilities.remoteControl ?? false
@@ -173,19 +163,27 @@ export default function ScreenPage() {
     onStopCleanup: handleStopSessionCleanup,
   })
 
-  const handleTouchInput = useCallback((type: string, x: number, y: number, extra?: Record<string, unknown>) => {
-    if (handleIosTouchInput(type, x, y, extra)) return
-    if (!remoteControlSupported) return
-    if (type !== 'touch') return
-    const action = extra?.action || 'move'
-    if (action === 'move') {
-      scheduleMove(x, y)
-      return
-    }
-
-    flushPendingMove()
-    publishControl({ type: 'touch', action, x, y }, true)
-  }, [flushPendingMove, handleIosTouchInput, publishControl, remoteControlSupported, scheduleMove])
+  const {
+    quickInputText,
+    setQuickInputText,
+    virtualKeyboardOpen,
+    setVirtualKeyboardOpen,
+    handleTouchInput,
+    sendKey,
+    sendText,
+    handleFullscreen,
+  } = useScreenControls({
+    isPlaying,
+    remoteControlSupported,
+    isIosStaticActionSupported,
+    playerContainerRef,
+    handleIosTouchInput,
+    publishControl,
+    sendAndroidKey,
+    flushPendingMove,
+    scheduleMove,
+    sendIosText,
+  })
 
   const handleFetchUiHierarchy = useCallback(() => {
     void fetchUiHierarchy({
@@ -194,30 +192,6 @@ export default function ScreenPage() {
       setStaticDebugSessionActive,
     })
   }, [fetchUiHierarchy, isPlaying, refreshStaticScreenshot, setStaticDebugSessionActive])
-
-  useEffect(() => {
-    if (!virtualKeyboardOpen || !isPlaying || !remoteControlSupported) return
-
-    const handleKeyboardInput = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return
-      if (isEditableTarget(event.target)) return
-
-      const keyCode = KEYBOARD_KEY_CODE_MAP[event.key]
-      if (keyCode) {
-        event.preventDefault()
-        sendAndroidKey(keyCode)
-        return
-      }
-
-      if (event.key.length === 1) {
-        event.preventDefault()
-        publishControl({ type: 'text', text: event.key }, true)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyboardInput)
-    return () => window.removeEventListener('keydown', handleKeyboardInput)
-  }, [isPlaying, publishControl, remoteControlSupported, sendAndroidKey, virtualKeyboardOpen])
 
   const openScriptWorkspace = useCallback(() => {
     setActiveWorkspaceTab('script')
@@ -268,47 +242,6 @@ export default function ScreenPage() {
   const inspectReady = isPlaying || isIosStaticDebug
   const isIosTextInputAvailable = Boolean(isIosStaticActionSupported && (isIosStaticDebug || isPlaying))
   const startupStatusText = '正在初始化设备，请稍后...'
-
-  // Send key event via DataChannel
-  const sendKey = (keycode: string) => {
-    const keyMap: Record<string, number> = {
-      'KEYCODE_HOME': 3,
-      'KEYCODE_BACK': 4,
-      'KEYCODE_APP_SWITCH': 187,
-      'KEYCODE_POWER': 26,
-    }
-
-    const keyCode = keyMap[keycode]
-    if (!keyCode) return
-    sendAndroidKey(keyCode)
-  }
-
-  const sendText = async () => {
-    const text = quickInputText
-    if (!text) return
-
-    if (isIosStaticActionSupported) {
-      const success = await sendIosText(text)
-      if (success) {
-        setQuickInputText('')
-        setVirtualKeyboardOpen(false)
-      }
-      return
-    }
-
-    if (!remoteControlSupported) return
-
-    publishControl({ type: 'text', text }, true)
-    setQuickInputText('')
-    setVirtualKeyboardOpen(false)
-  }
-
-  // Fullscreen
-  const handleFullscreen = () => {
-    if (playerContainerRef.current) {
-      playerContainerRef.current.requestFullscreen()
-    }
-  }
 
   return (
     <div className="screen-page">
