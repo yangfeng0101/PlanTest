@@ -11,7 +11,8 @@
     "build": "tsc && vite build",
     "lint": "node scripts/run-lint.cjs",
     "lint:local": "eslint src vite.config.ts --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:routes": "python3 ../scripts/frontend_route_smoke.py"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
