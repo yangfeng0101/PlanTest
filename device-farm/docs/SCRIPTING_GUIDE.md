@@ -7,7 +7,7 @@
 ## 平台支持
 
 - Android/HarmonyOS：支持脚本执行、投屏页调试、控件树辅助和 Midscene AI 兜底。
-- iOS v1：支持通过 Mac 宿主机 iOS Agent + Appium XCUITest 执行 Python 脚本；不支持投屏页调试、控件树辅助和 Midscene AI。
+- iOS v1：支持通过 Mac 宿主机 iOS Agent + Appium XCUITest 执行 Python 脚本，并支持投屏页静态/`mjpeg-direct` 调试和 Midscene AI v1。
 - iOS 脚本内 `app.screenshot()` 走 Appium 截图并上传到任务详情，不代表设备详情页截图能力可用。
 - iOS 设备只有在 Agent 返回 `automation_ready=true` 时才会出现在脚本运行设备列表中；默认需要先完成 WDA 真机验证，并把已验证 UDID 加入 `IOS_AGENT_AUTOMATION_READY_UDIDS`。
 - 真机 WDA 签名可通过 `IOS_XCODE_ORG_ID`、`IOS_XCODE_SIGNING_ID`、`IOS_WDA_BUNDLE_ID` 和 `IOS_ALLOW_PROVISIONING_DEVICE_REGISTRATION` 配置传入 `test-svc` / `test-worker`。
@@ -300,9 +300,9 @@ button.click()
 
 ## AI 操作
 
-AI 操作由后端 `midscene-runner` 调用 Midscene Android 能力完成，适合控件树不稳定、页面动画导致 UIAutomator 难以稳定定位，或临时需要用自然语言兜底的场景。它需要管理员在容器环境中配置 Midscene 模型环境变量；脚本中不要写模型密钥。
+AI 操作由后端 `midscene-runner` 调用 Midscene 能力完成，适合控件树不稳定、页面动画导致 UIAutomator/WDA source 难以稳定定位，或临时需要用自然语言兜底的场景。它需要管理员在容器环境中配置 Midscene 模型环境变量；脚本中不要写模型密钥。
 
-> iOS v1 暂不支持 `app.ai_xxx()`。iOS 请优先使用 `AppiumBy.ACCESSIBILITY_ID`、`AppiumBy.IOS_PREDICATE`、`AppiumBy.IOS_CLASS_CHAIN` 或 XPath。
+Android/Harmony 走 `@midscene/android` + ADB/scrcpy。iOS 走 iOS Agent + Appium/WDA：runner 通过 iOS Agent 截图、交给 Midscene 定位，再用 WDA 执行点按、输入、滚动、长按等动作。iOS `ai_key()` 暂未支持；需要按键时请优先使用 Appium 直接能力或聚焦输入框后 `app.input_text()`。
 
 | 方法 | 作用 | 返回/失败行为 |
 | --- | --- | --- |
@@ -330,11 +330,18 @@ app.log(f"搜索框中心点: {search_box.get('center')}")
 
 app.ai_tap("搜索框")
 app.ai_input("搜索框", "跑鞋")
-app.ai_key("Enter")
 app.ai_wait("页面展示搜索结果", timeout=20)
 app.ai_scroll("商品列表", direction="down")
 app.ai_assert("页面仍然展示商品列表", "搜索结果列表未展示")
 ```
+
+Android/Harmony 需要发送键盘按键时可以额外使用：
+
+```python
+app.ai_key("Enter")
+```
+
+iOS 暂不支持 `ai_key()`，需要按键时请优先使用 Appium 直接能力，或先聚焦输入框后用 `app.input_text()`。
 
 `deep_locate=True` 会让 Midscene 使用更深度的定位策略，通常更慢，建议只在普通定位不稳定时使用。
 

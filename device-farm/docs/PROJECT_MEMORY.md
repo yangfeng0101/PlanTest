@@ -108,7 +108,7 @@
 
 - 用户编写脚本时只关心“有哪些方法可用”，不要暴露不必要的平台内部概念。
 - 脚本示例以 `app.xxx` 为主，旧全局函数仅兼容历史脚本。
-- AI 兜底推荐走 `app.ai_xxx()`。第一版只支持 Android/Harmony 这类可通过 ADB 控制的设备，不提供前端 AI 面板，也不暴露数据提取类 `ai_query/ai_string/ai_number/ai_boolean/ai_ask`；iOS v1 暂不支持 Midscene AI。
+- AI 兜底推荐走 `app.ai_xxx()`。Android/Harmony 走 `@midscene/android` + ADB/scrcpy；iOS Midscene AI v1 走 iOS Agent + Appium/WDA 截图和动作接口，脚本侧方法名保持一致。不提供前端 AI 面板，也不暴露数据提取类 `ai_query/ai_string/ai_number/ai_boolean/ai_ask`；iOS `ai_key()` 暂未支持。`midscene-runner` 会尽量把模型侧认证、额度、模型不支持等错误透传到任务日志，并在 iOS AI agent 销毁时释放 iOS Agent debug session。
 - 定位推荐：
   - 首选稳定 `resource-id`，如 `app.click(AppiumBy.ID, "...", timeout=10)`。
   - 其次用 `accessibility-id`、精确文本、XPath。
@@ -123,7 +123,7 @@
 - Midscene AI 脚本能力依赖模型环境变量和宿主机全局 ADB；未配置模型时，`app.ai_xxx()` 会在任务日志中返回明确错误。
 - `MIDSCENE_MODEL_FAMILY` 需要填写 Midscene 支持的模型系列，例如 `qwen3-vl`，不要填具体模型名 `qwen3-vl-plus`；具体模型名应放在 `MIDSCENE_MODEL_NAME`。
 - `@midscene/android` 当前最新版本为 `1.7.9`；`npm audit --omit=dev --registry=https://registry.npmjs.org` 会报告其传递依赖中的漏洞，自动修复建议降级到旧版 `0.13.1`，当前不采用。`midscene-runner` 保持 Docker 内网服务、不映射宿主机端口，后续跟踪上游版本修复。
-- Midscene 第一版未接入 HTML 报告、断点/单步调试、pinch、数据提取方法，也未复用 screen-svc 的截图/触控链路。
+- Midscene 第一版未接入 HTML 报告、断点/单步调试、pinch、数据提取方法，也未复用 screen-svc 的截图/触控链路；iOS AI v1 复用 iOS Agent 的 debug/stream Appium session，性能取决于 WDA 截图与模型响应。若模型 provider 返回 401/403/额度耗尽等错误，runner 应优先透传模型错误摘要，而不是泛化成定位失败。
 - iOS 当前支持脚本执行闭环、静态截图/控件树调试、静态点按、滑动、长按、文本输入、清空输入和准实时静态截图预览；`mjpeg-direct` 直连预览是实验能力，默认不开放，并已做低延迟一次性触控优化。连续实时触控、Home/Back/App Switch 等系统键仍未接入。
 - iOS 控件树来自 Appium/WDA accessibility source；投屏页控件框会过滤不可见节点、超大无语义容器和重复同 bounds 节点，只在画面上展示更接近真实可点/可定位元素的框。右侧属性/selector 仍来自原始控件树。若 App 内存在自绘、透明覆盖层或无 accessibility 标识的元素，WDA source 本身仍可能与视觉元素不完全一致。
 - iOS WDA/MJPEG probe session 结束会删除自己的 Appium session，可能导致 WDA 退出；如果 probe 与 iOS Agent 使用不同 WDA bundle，后续 iOS Agent 重启 WDA 可能出现 `xcodebuild failed with code 65`，优先检查当前 shell 的 WDA 签名环境变量、自定义 bundle、Team、证书信任和 Appium 日志。若 Appium 日志显示 WDA 已安装但 launch 因 `invalid code signature` / `not explicitly trusted` 失败，普通 session 会卸载 WDA，需先用 `ios_stream_source_probe.py --trust-preinstall-wda` 安装并保留预编译 WDA Runner，完成手机端开发者证书信任后再运行普通会话；`iosInstallPause` 只暂停被测 App 安装，不解决 WDA 信任。

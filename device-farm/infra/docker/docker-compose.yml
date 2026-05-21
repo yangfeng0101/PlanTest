@@ -286,6 +286,7 @@ services:
       - MIDSCENE_CACHE=${MIDSCENE_CACHE:-true}
       - MIDSCENE_ADB_REMOTE_HOST=host.docker.internal
       - MIDSCENE_ADB_REMOTE_PORT=5037
+      - IOS_AGENT_URL=${IOS_AGENT_URL:-}
       - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
       - ANDROID_ADB_SERVER_PORT=5037
     extra_hosts:

@@ -329,11 +329,6 @@ class DeviceFarmApp:
     def _run_ai_operation(self, operation: str, payload: dict, timeout: float):
         import httpx
 
-        if self.context.get("platform") == "ios":
-            error = "Midscene AI operations are not supported for iOS v1."
-            log_message(self.context, error, "ERROR")
-            raise RuntimeError(error)
-
         runner_url = settings.MIDSCENE_RUNNER_URL.rstrip("/")
         if not runner_url:
             error = "Midscene AI runner is not configured. Set MIDSCENE_RUNNER_URL for test-worker."
@@ -350,6 +345,7 @@ class DeviceFarmApp:
         request_body = {
             "task_id": self.context["task_id"],
             "device_id": device_id,
+            "platform": self.context.get("platform") or "android",
             "operation": operation,
             "payload": payload,
             "timeout_ms": int(timeout_seconds * 1000),
