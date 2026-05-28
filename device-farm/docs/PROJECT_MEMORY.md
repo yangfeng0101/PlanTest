@@ -12,6 +12,7 @@
 - 前端路由/静态资源 smoke 可运行 `cd device-farm/frontend && npm run smoke:routes`，该命令会构建生产包、启动 Vite preview、检查关键 SPA 路由和 `dist/assets` 构建产物是否可访问。
 - 最近一次结构改动：投屏页 `frontend/src/pages/screen/index.tsx` 已拆出 `DeviceStagePanel.tsx`、`WorkspacePanel.tsx`、`ScreenStage.tsx`、`InspectorPanel.tsx`、`ScriptWorkspacePanel.tsx`、`ScriptModals.tsx`、`useScreenDevices.ts`、`useScreenSession.ts`、`useIosDebugActions.ts`、`useScreenScriptWorkspace.ts`、`useScreenUiHierarchy.ts`、`useScreenLayoutMetrics.ts`、`useScreenControls.ts`、`useScreenMode.ts`、`api.ts`、`scriptWorkspace.ts`、`types.ts`、`uiHierarchy.ts`；本次仅做 UI/API/hook/helper 分层，不改变 Android/iOS 投屏、触控、控件树和脚本调试链路。
 - 最近一次功能改动：投屏生命周期收敛到 device-svc 现有设备占用语义。Android/LiveKit 投屏和 iOS `mjpeg-direct` 预览启动前都会占用设备，启动失败、停止、断连或本地 session 结束时只释放 screen-svc 本次成功占用的设备；iOS MJPEG prepare 后如果 30 秒内没有真正接入 MJPEG GET，会自动释放占用；device-svc 扫描会保留已占用设备的 `busy` 状态，不再刷回 `online + occupied_by` 的半占用状态；iOS `mjpeg-direct` 投屏态的点按、滑动、长按、输入、清空和控件树获取会走 screen-svc 当前 session 代理，不再走 device-svc 静态调试接口；设备管理页投屏入口按 `online` 状态和 screen-svc session 状态禁用；脚本任务创建时不再立即占用设备，worker 真正执行前才用 `test-svc:<task_id>` 占用设备，普通任务遇到 `busy` 会保持 `pending` 并重试，投屏页调试任务会带 `screen_debug` 参数以共享当前投屏占用且结束时不释放投屏 lease；iOS Agent 增加 debug/stream session TTL 后台清理。iOS 连续实时触控仍未开放。
+- 脚本定时运行 v1 已支持：脚本管理页可创建“一次运行”和“每天固定时间运行”的定时计划；后端复用现有 `schedules` 表和普通任务队列，通过 test-svc DB 轮询到点创建真实 `tasks` 记录；定时任务与手动任务共享同一执行链路，设备 busy 时保持 `pending` 排队等待。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -65,6 +66,12 @@
   - 前端通过现有 `GET /tasks?script_id=...` 拉取最近任务，无需新增后端表或 API。
   - 运行记录中的任务可继续打开原任务详情弹窗查看状态、日志、截图和耗时。
   - 脚本管理页运行脚本时可选择 `online` 或 `busy` 且支持 automation 的设备；如果设备正忙，任务会创建为 `pending` 排队，待 worker 发现设备释放后再占用并运行。
+- 脚本管理页支持定时运行：
+  - 操作列新增“定时运行”，可选择设备并创建一次性或每天固定时间计划。
+  - 右上角“定时计划”抽屉展示计划状态、最近任务状态、下次/上次运行时间、累计触发次数、最近任务入口，并支持启停和删除；一次性计划的“计划完成”仅表示计划已触发，真实脚本执行结果以“最近任务”状态和任务详情为准。
+  - 定时计划接口会按 `last_task_id` 汇总最近任务状态、失败原因和完成时间；“最近错误”优先展示计划触发错误，其次展示最近任务失败错误。
+  - 后端新增产品级 `/api/v1/schedules/script-runs` 接口；计划元数据写入 `schedules.kwargs`，不新增数据库表。
+  - test-svc 启动后台轮询器，默认每 10 秒扫描到期计划并创建普通任务；定时触发任务会在 `parameters` 中写入 `scheduled_run=true`、`schedule_id` 和 `schedule_trigger_at`；任务记录与计划推进在同一事务内提交后再入队，降低到点触发崩溃导致重复创建任务的风险。
 - Python 脚本 SDK 接入 Midscene AI 操作能力：
   - SDK 版本升级为 `1.2.0`。
   - 新增 `app.ai()`、`app.ai_act()`、`app.ai_locate()`、`app.ai_tap()`、`app.ai_input()`、`app.ai_clear()`、`app.ai_key()`、`app.ai_scroll()`、`app.ai_long_press()`、`app.ai_double_tap()`、`app.ai_wait()`、`app.ai_assert()`。

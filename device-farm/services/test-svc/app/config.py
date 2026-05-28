@@ -89,6 +89,7 @@ class Settings(BaseSettings):
         "CELERY_BEAT_SCHEDULE_FILENAME",
         "/tmp/device-farm/celerybeat-schedule"
     )
+    SCRIPT_SCHEDULE_POLL_INTERVAL_SECONDS: int = int(os.getenv("SCRIPT_SCHEDULE_POLL_INTERVAL_SECONDS", "10"))
 
     # JWT Authentication
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")

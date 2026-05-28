@@ -1,15 +1,18 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Alert, Card, Row, Col, Button, Table, Space, Modal, Form, Input, Select, Tag, message, Popconfirm, List, Typography, Image, Tooltip, Descriptions, Collapse } from 'antd'
+import { Alert, Card, Row, Col, Button, Table, Space, Modal, Form, Input, Select, Tag, message, Popconfirm, List, Typography, Image, Tooltip, Descriptions, Collapse, Drawer, DatePicker, TimePicker, Switch } from 'antd'
 import PlusOutlined from '@ant-design/icons/PlusOutlined'
 import EditOutlined from '@ant-design/icons/EditOutlined'
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined'
 import PlayCircleOutlined from '@ant-design/icons/PlayCircleOutlined'
 import CodeOutlined from '@ant-design/icons/CodeOutlined'
 import HistoryOutlined from '@ant-design/icons/HistoryOutlined'
+import CalendarOutlined from '@ant-design/icons/CalendarOutlined'
+import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined'
+import dayjs, { Dayjs } from 'dayjs'
 import CodeEditor from '@/components/CodeEditor'
 import { useScriptStore } from '@/stores/scriptStore'
-import { deviceApi, scriptApi, taskApi } from '@/services/api'
-import type { Device, Script, Task, TaskLogEntry } from '@/types'
+import { deviceApi, scheduleApi, scriptApi, taskApi } from '@/services/api'
+import type { Device, Script, ScriptRunSchedule, Task, TaskLogEntry } from '@/types'
 import { formatDeviceOs } from '@/utils/device'
 
 const { Option } = Select
@@ -18,6 +21,15 @@ const { Text } = Typography
 
 type RunFormValues = {
   device_id: string
+}
+
+type ScheduleFormValues = {
+  name: string
+  device_id: string
+  schedule_mode: 'once' | 'daily'
+  run_at?: Dayjs
+  time_of_day?: Dayjs
+  enabled: boolean
 }
 
 const getTaskPlatform = (device: Device): Task['device_platform'] => {
@@ -148,7 +160,14 @@ const scriptTemplates = [
   { key: 'login', label: '登录流程模板', content: loginTemplate },
 ]
 
-const formatDateTime = (value?: string) => value ? new Date(value).toLocaleString() : '-'
+const parseBackendDate = (value?: string) => {
+  if (!value) return null
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+  const date = new Date(hasTimezone ? value : `${value}Z`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const formatDateTime = (value?: string) => parseBackendDate(value)?.toLocaleString() || '-'
 
 const formatDuration = (task?: Task | null) => {
   if (!task) return '-'
@@ -156,7 +175,10 @@ const formatDuration = (task?: Task | null) => {
     return `${task.result.duration.toFixed(2)}s`
   }
   if (task.started_at && task.finished_at) {
-    const duration = (new Date(task.finished_at).getTime() - new Date(task.started_at).getTime()) / 1000
+    const startedAt = parseBackendDate(task.started_at)
+    const finishedAt = parseBackendDate(task.finished_at)
+    if (!startedAt || !finishedAt) return '-'
+    const duration = (finishedAt.getTime() - startedAt.getTime()) / 1000
     return `${Math.max(duration, 0).toFixed(2)}s`
   }
   return '-'
@@ -177,6 +199,16 @@ const formatDiagnosticValue = (value: unknown) => {
   if (value === null || value === undefined || value === '') return '-'
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
+}
+
+const getScheduleErrorText = (schedule: ScriptRunSchedule) => schedule.last_error || schedule.last_task_error || ''
+
+const truncateText = (value: string, maxLength: number) =>
+  value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
+
+const summarizeScheduleError = (schedule: ScriptRunSchedule) => {
+  const error = getScheduleErrorText(schedule)
+  return error ? truncateText(error.split('\n')[0], 160) : '-'
 }
 
 const publicCapabilities = (capabilities?: Record<string, unknown>) => {
@@ -218,9 +250,17 @@ export default function ScriptsPage() {
   const [code, setCode] = useState('')
   const [form] = Form.useForm()
   const [runForm] = Form.useForm<RunFormValues>()
+  const [scheduleForm] = Form.useForm<ScheduleFormValues>()
   const [keyword, setKeyword] = useState('')
   const [isRunModalOpen, setIsRunModalOpen] = useState(false)
   const [runningScript, setRunningScript] = useState<Script | null>(null)
+  const [schedulingScript, setSchedulingScript] = useState<Script | null>(null)
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+  const [isScheduleDrawerOpen, setIsScheduleDrawerOpen] = useState(false)
+  const [schedules, setSchedules] = useState<ScriptRunSchedule[]>([])
+  const [schedulesLoading, setSchedulesLoading] = useState(false)
+  const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
+  const [scheduleActionLoading, setScheduleActionLoading] = useState<Record<string, boolean>>({})
   const [devices, setDevices] = useState<Device[]>([])
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [taskSubmitting, setTaskSubmitting] = useState(false)
@@ -235,6 +275,7 @@ export default function ScriptsPage() {
   const [apiHelpOpen, setApiHelpOpen] = useState(false)
   const historyRequestRef = useRef(0)
   const scriptType = Form.useWatch('script_type', form) || 'python'
+  const scheduleMode = Form.useWatch('schedule_mode', scheduleForm) || 'once'
   const activeTaskIds = useMemo(
     () => Object.values(activeTasks)
       .flat()
@@ -428,6 +469,88 @@ export default function ScriptsPage() {
     await fetchDevices()
   }
 
+  const getClientTimezone = () => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+    } catch {
+      return 'Asia/Shanghai'
+    }
+  }
+
+  const fetchSchedules = async () => {
+    setSchedulesLoading(true)
+    try {
+      const response = await scheduleApi.getScriptRuns({ page: 1, page_size: 100 })
+      setSchedules(response.data.items || [])
+    } catch (error) {
+      console.error('Failed to fetch script schedules:', error)
+      message.error('定时计划获取失败')
+    } finally {
+      setSchedulesLoading(false)
+    }
+  }
+
+  const handleOpenSchedules = async () => {
+    setIsScheduleDrawerOpen(true)
+    await fetchSchedules()
+  }
+
+  const handleSchedule = async (script: Script) => {
+    setSchedulingScript(script)
+    scheduleForm.resetFields()
+    scheduleForm.setFieldsValue({
+      name: `${script.name} 定时运行`,
+      schedule_mode: 'once',
+      run_at: dayjs().add(10, 'minute'),
+      time_of_day: dayjs().add(1, 'hour'),
+      enabled: true,
+    })
+    setIsScheduleModalOpen(true)
+    await fetchDevices()
+  }
+
+  const handleCreateSchedule = async () => {
+    if (!schedulingScript) return
+
+    try {
+      const valid = await validateScriptContent(schedulingScript.content)
+      if (!valid) return
+
+      const values = await scheduleForm.validateFields()
+      const selectedRunDevice = devices.find((device) => device.id === values.device_id)
+      if (!selectedRunDevice) {
+        message.error('请选择设备')
+        return
+      }
+
+      setScheduleSubmitting(true)
+      await scheduleApi.createScriptRun({
+        name: values.name,
+        script_id: schedulingScript.id,
+        device_id: values.device_id,
+        schedule_mode: values.schedule_mode,
+        run_at: values.schedule_mode === 'once' ? values.run_at?.toISOString() : undefined,
+        time_of_day: values.schedule_mode === 'daily' ? values.time_of_day?.format('HH:mm') : undefined,
+        timezone: getClientTimezone(),
+        parameters: {},
+        enabled: values.enabled,
+      })
+
+      message.success('定时计划已创建')
+      setIsScheduleModalOpen(false)
+      setSchedulingScript(null)
+      if (isScheduleDrawerOpen) {
+        await fetchSchedules()
+      }
+    } catch (error) {
+      console.error('Failed to create script schedule:', error)
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.error(detail || '定时计划创建失败')
+    } finally {
+      setScheduleSubmitting(false)
+    }
+  }
+
   const handleCreateTask = async () => {
     if (!runningScript) return
 
@@ -554,6 +677,63 @@ export default function ScriptsPage() {
     }
   }
 
+  const handleToggleSchedule = async (schedule: ScriptRunSchedule, enabled: boolean) => {
+    setScheduleActionLoading((previous) => ({ ...previous, [schedule.id]: true }))
+    try {
+      await scheduleApi.enableScriptRun(schedule.id, enabled)
+      message.success(enabled ? '定时计划已启用' : '定时计划已停用')
+      await fetchSchedules()
+    } catch (error) {
+      console.error('Failed to toggle script schedule:', error)
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.error(detail || '定时计划更新失败')
+    } finally {
+      setScheduleActionLoading((previous) => {
+        const next = { ...previous }
+        delete next[schedule.id]
+        return next
+      })
+    }
+  }
+
+  const handleDeleteSchedule = async (schedule: ScriptRunSchedule) => {
+    setScheduleActionLoading((previous) => ({ ...previous, [schedule.id]: true }))
+    try {
+      await scheduleApi.deleteScriptRun(schedule.id)
+      message.success('定时计划已删除')
+      await fetchSchedules()
+    } catch (error) {
+      console.error('Failed to delete script schedule:', error)
+      message.error('定时计划删除失败')
+    } finally {
+      setScheduleActionLoading((previous) => {
+        const next = { ...previous }
+        delete next[schedule.id]
+        return next
+      })
+    }
+  }
+
+  const handleViewScheduledTask = async (schedule: ScriptRunSchedule) => {
+    if (!schedule.last_task_id) return
+    const script = scripts.find((item) => item.id === schedule.script_id) || null
+    try {
+      const response = await taskApi.getDetail(schedule.last_task_id)
+      if (script) {
+        await handleViewTask(script, response.data)
+      } else {
+        setRunningScript(null)
+        setCurrentTask(response.data)
+        setIsRunModalOpen(true)
+        const logsResponse = await taskApi.getLogs(response.data.id)
+        setTaskLogs(logsResponse.data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch scheduled task:', error)
+      message.error('最近任务获取失败')
+    }
+  }
+
   const languageColors: Record<string, string> = {
     python: 'blue',
   }
@@ -611,6 +791,9 @@ export default function ScriptsPage() {
             <Button type="text" size="small" icon={<PlayCircleOutlined />} onClick={() => handleRun(record)} />
           </Tooltip>
         )}
+        <Tooltip title="定时运行">
+          <Button type="text" size="small" icon={<ClockCircleOutlined />} onClick={() => handleSchedule(record)} />
+        </Tooltip>
         <Tooltip title="运行记录">
           <Button type="text" size="small" icon={<HistoryOutlined />} onClick={() => handleViewHistory(record)} />
         </Tooltip>
@@ -680,7 +863,7 @@ export default function ScriptsPage() {
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 180,
-      render: (value: string) => value ? new Date(value).toLocaleString() : '-',
+      render: (value: string) => formatDateTime(value),
     },
     {
       title: '操作',
@@ -745,6 +928,124 @@ export default function ScriptsPage() {
     },
   ]
 
+  const scheduleColumns = [
+    {
+      title: '计划名称',
+      dataIndex: 'name',
+      key: 'name',
+      width: 220,
+      ellipsis: true,
+    },
+    {
+      title: '脚本',
+      dataIndex: 'script_id',
+      key: 'script_id',
+      width: 180,
+      ellipsis: true,
+      render: (scriptId: string) => scripts.find((script) => script.id === scriptId)?.name || scriptId,
+    },
+    {
+      title: '设备',
+      dataIndex: 'device_id',
+      key: 'device_id',
+      width: 160,
+      ellipsis: true,
+    },
+    {
+      title: '类型',
+      dataIndex: 'schedule_mode',
+      key: 'schedule_mode',
+      width: 90,
+      render: (mode: ScriptRunSchedule['schedule_mode']) => mode === 'once' ? '一次' : '每天',
+    },
+    {
+      title: '计划状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 110,
+      render: (value: ScriptRunSchedule['status']) => {
+        const color = value === 'enabled' ? 'success' : value === 'expired' ? 'default' : 'warning'
+        const text = value === 'enabled' ? '启用' : value === 'expired' ? '计划完成' : '停用'
+        return <Tag color={color}>{text}</Tag>
+      },
+    },
+    {
+      title: '最近任务',
+      dataIndex: 'last_task_status',
+      key: 'last_task_status',
+      width: 110,
+      render: (value?: Task['status']) => value ? <Tag color={statusColors[value]}>{statusText[value]}</Tag> : '-',
+    },
+    {
+      title: '下次运行',
+      dataIndex: 'next_run_at',
+      key: 'next_run_at',
+      width: 180,
+      render: (value?: string) => formatDateTime(value),
+    },
+    {
+      title: '上次运行',
+      dataIndex: 'last_run_at',
+      key: 'last_run_at',
+      width: 180,
+      render: (value?: string) => formatDateTime(value),
+    },
+    {
+      title: '次数',
+      dataIndex: 'total_run_count',
+      key: 'total_run_count',
+      width: 70,
+    },
+    {
+      title: '最近错误',
+      key: 'last_error',
+      width: 180,
+      ellipsis: true,
+      render: (_: unknown, schedule: ScriptRunSchedule) => {
+        const error = getScheduleErrorText(schedule)
+        if (!error) return '-'
+        const tooltip = truncateText(error, 4000)
+        return (
+          <Tooltip title={tooltip}>
+            <Text ellipsis style={{ maxWidth: 160 }}>
+              {summarizeScheduleError(schedule)}
+            </Text>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 210,
+      fixed: 'right' as const,
+      render: (_: unknown, schedule: ScriptRunSchedule) => (
+        <Space size={4}>
+          <Switch
+            size="small"
+            checked={schedule.status === 'enabled'}
+            disabled={schedule.status === 'expired'}
+            loading={scheduleActionLoading[schedule.id]}
+            onChange={(checked) => handleToggleSchedule(schedule, checked)}
+          />
+          <Button type="link" size="small" disabled={!schedule.last_task_id} onClick={() => handleViewScheduledTask(schedule)}>
+            最近任务
+          </Button>
+          <Popconfirm
+            title="确定要删除这个定时计划吗?"
+            onConfirm={() => handleDeleteSchedule(schedule)}
+            okText="确定"
+            cancelText="取消"
+          >
+            <Button type="link" size="small" danger loading={scheduleActionLoading[schedule.id]}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ]
+
   const filteredScripts = scripts.filter((script) =>
     script.name.toLowerCase().includes(keyword.toLowerCase()) ||
     (script.description || '').toLowerCase().includes(keyword.toLowerCase())
@@ -768,6 +1069,9 @@ export default function ScriptsPage() {
               style={{ width: 250 }}
               onSearch={setKeyword}
             />
+            <Button icon={<CalendarOutlined />} onClick={handleOpenSchedules}>
+              定时计划
+            </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
               新建脚本
             </Button>
@@ -903,6 +1207,103 @@ export default function ScriptsPage() {
           tableLayout="fixed"
           locale={{ emptyText: '暂无运行记录' }}
         />
+      </Modal>
+
+      <Drawer
+        title="定时计划"
+        open={isScheduleDrawerOpen}
+        onClose={() => setIsScheduleDrawerOpen(false)}
+        width={1120}
+        extra={<Button onClick={fetchSchedules} loading={schedulesLoading}>刷新</Button>}
+      >
+        <Table
+          columns={scheduleColumns}
+          dataSource={schedules}
+          rowKey="id"
+          loading={schedulesLoading}
+          pagination={{ pageSize: 10 }}
+          tableLayout="fixed"
+          scroll={{ x: 1680 }}
+          locale={{ emptyText: '暂无定时计划' }}
+        />
+      </Drawer>
+
+      <Modal
+        title={`定时运行：${schedulingScript?.name || ''}`}
+        open={isScheduleModalOpen}
+        onCancel={() => setIsScheduleModalOpen(false)}
+        onOk={handleCreateSchedule}
+        okText="创建计划"
+        cancelText="关闭"
+        confirmLoading={scheduleSubmitting}
+        width={620}
+      >
+        <Form form={scheduleForm} layout="vertical">
+          <Form.Item
+            name="name"
+            label="计划名称"
+            rules={[{ required: true, message: '请输入计划名称' }]}
+          >
+            <Input placeholder="请输入计划名称" />
+          </Form.Item>
+          <Form.Item
+            name="device_id"
+            label="设备"
+            rules={[{ required: true, message: '请选择设备' }]}
+          >
+            <Select
+              loading={devicesLoading}
+              placeholder="请选择自动化设备"
+              notFoundContent={devicesLoading ? '加载中' : '暂无可运行自动化设备'}
+            >
+              {runnableDevices.map((device) => (
+                <Option key={device.id} value={device.id}>
+                  {device.name || device.id} ({formatDeviceOs(device)} / {device.id}{device.status === 'busy' ? ' / 排队' : ''})
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="schedule_mode"
+            label="运行方式"
+            rules={[{ required: true, message: '请选择运行方式' }]}
+          >
+            <Select>
+              <Option value="once">指定时间运行一次</Option>
+              <Option value="daily">每天固定时间运行</Option>
+            </Select>
+          </Form.Item>
+          {scheduleMode === 'once' ? (
+            <Form.Item
+              name="run_at"
+              label="运行时间"
+              rules={[{ required: true, message: '请选择运行时间' }]}
+            >
+              <DatePicker
+                showTime
+                style={{ width: '100%' }}
+                disabledDate={(current) => Boolean(current && current < dayjs().startOf('day'))}
+              />
+            </Form.Item>
+          ) : (
+            <Form.Item
+              name="time_of_day"
+              label="每天运行时间"
+              rules={[{ required: true, message: '请选择每天运行时间' }]}
+            >
+              <TimePicker format="HH:mm" style={{ width: '100%' }} />
+            </Form.Item>
+          )}
+          <Form.Item name="enabled" label="创建后启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            message={`计划按当前浏览器时区创建：${getClientTimezone()}`}
+            description="到点后会创建普通脚本任务；如果设备正在投屏或执行任务，新任务会进入排队。"
+          />
+        </Form>
       </Modal>
 
       <Modal

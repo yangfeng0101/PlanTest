@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Device, Script, Task, TaskLogEntry, Report, PaginatedResponse, DeviceMetrics, MetricsAggregation, DeviceThresholdConfig, MetricAlert } from '@/types'
+import type { Device, Script, ScriptRunSchedule, Task, TaskLogEntry, Report, PaginatedResponse, DeviceMetrics, MetricsAggregation, DeviceThresholdConfig, MetricAlert } from '@/types'
 
 interface BackendListResponse<T> {
   items: T[]
@@ -155,6 +155,42 @@ export const taskApi = {
   // 取消任务
   cancel: (id: string) =>
     api.delete(`/tasks/${id}`),
+}
+
+export const scheduleApi = {
+  getScriptRuns: (params?: { page?: number; page_size?: number; script_id?: string; status?: string; search?: string }) =>
+    api.get<BackendListResponse<ScriptRunSchedule>>('/schedules/script-runs', { params }),
+
+  createScriptRun: (data: {
+    name: string
+    script_id: string
+    device_id: string
+    schedule_mode: 'once' | 'daily'
+    run_at?: string
+    time_of_day?: string
+    timezone: string
+    parameters?: Record<string, unknown>
+    enabled?: boolean
+  }) =>
+    api.post<ScriptRunSchedule>('/schedules/script-runs', data),
+
+  updateScriptRun: (id: string, data: Partial<{
+    name: string
+    script_id: string
+    device_id: string
+    schedule_mode: 'once' | 'daily'
+    run_at: string
+    time_of_day: string
+    timezone: string
+    parameters: Record<string, unknown>
+  }>) =>
+    api.put<ScriptRunSchedule>(`/schedules/script-runs/${id}`, data),
+
+  enableScriptRun: (id: string, enabled: boolean) =>
+    api.post<ScriptRunSchedule>(`/schedules/script-runs/${id}/enable`, { enabled }),
+
+  deleteScriptRun: (id: string) =>
+    api.delete(`/schedules/script-runs/${id}`),
 }
 
 // 报告 API

@@ -189,6 +189,75 @@ def _task_db_to_pydantic(task_db: TaskDB) -> Task:
     )
 
 
+async def create_task_record(
+    task: TaskCreate,
+    db: AsyncSession,
+    *,
+    enqueue: bool = True,
+) -> TaskDB:
+    """Create and enqueue a normal Device Farm task."""
+    if not task.device_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="device_id is required for real device execution",
+        )
+
+    script_result = await db.execute(select(ScriptDB).where(ScriptDB.id == task.script_id))
+    script_db = script_result.scalar_one_or_none()
+    if not script_db:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Script {task.script_id} not found",
+        )
+    if getattr(script_db.script_type, "value", script_db.script_type) != "python":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only Python scripts are supported",
+        )
+
+    device = await _validate_task_device(task.device_id, task.device_platform.value)
+    device_capabilities = merge_task_diagnostics(
+        task.device_capabilities,
+        device=device,
+        platform=task.device_platform.value,
+        device_id=task.device_id,
+    )
+
+    task_db = TaskDB(
+        script_id=task.script_id,
+        device_id=task.device_id,
+        device_platform=task.device_platform.value,
+        device_capabilities=device_capabilities,
+        parameters=task.parameters,
+        status=TaskStatusDB.PENDING,
+    )
+
+    db.add(task_db)
+    await db.flush()
+    await db.refresh(task_db)
+
+    if not enqueue:
+        return task_db
+
+    # Commit before queueing so workers cannot consume a task that is not visible yet.
+    await db.commit()
+
+    try:
+        execute_test_task.apply_async(args=[task_db.id], task_id=task_db.id)
+    except Exception as exc:
+        logger.exception("Failed to enqueue task %s", task_db.id)
+        task_db.status = TaskStatusDB.FAILED
+        task_db.finished_at = datetime.utcnow()
+        task_db.error = f"Failed to enqueue task: {exc}"
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to enqueue task",
+        )
+
+    return task_db
+
+
 # WebSocket connection manager for logs
 class ConnectionManager(BaseConnectionManager):
     """WebSocket connection manager for task logs with per-task subscription"""
@@ -321,63 +390,8 @@ async def create_task(
     user_id: str = Depends(verify_api_key),
 ):
     """Create a new test task"""
-    if not task.device_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="device_id is required for real device execution",
-        )
-
-    script_result = await db.execute(select(ScriptDB).where(ScriptDB.id == task.script_id))
-    script_db = script_result.scalar_one_or_none()
-    if not script_db:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Script {task.script_id} not found",
-        )
-    if getattr(script_db.script_type, "value", script_db.script_type) != "python":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only Python scripts are supported",
-        )
-
-    device = await _validate_task_device(task.device_id, task.device_platform.value)
-    device_capabilities = merge_task_diagnostics(
-        task.device_capabilities,
-        device=device,
-        platform=task.device_platform.value,
-        device_id=task.device_id,
-    )
-
-    # Create database model
-    task_db = TaskDB(
-        script_id=task.script_id,
-        device_id=task.device_id,
-        device_platform=task.device_platform.value,
-        device_capabilities=device_capabilities,
-        parameters=task.parameters,
-        status=TaskStatusDB.PENDING,
-    )
-
-    db.add(task_db)
-    await db.flush()
-    await db.refresh(task_db)
-
-    # Commit before queueing so workers cannot consume a task that is not visible yet.
-    await db.commit()
-
-    try:
-        execute_test_task.apply_async(args=[task_db.id], task_id=task_db.id)
-    except Exception as exc:
-        logger.exception("Failed to enqueue task %s", task_db.id)
-        task_db.status = TaskStatusDB.FAILED
-        task_db.finished_at = datetime.utcnow()
-        task_db.error = f"Failed to enqueue task: {exc}"
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to enqueue task",
-        )
-
+    _ = user_id
+    task_db = await create_task_record(task, db)
     return _task_db_to_pydantic(task_db)
 
 

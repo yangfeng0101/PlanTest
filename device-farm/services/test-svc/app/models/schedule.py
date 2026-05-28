@@ -194,3 +194,74 @@ class ScheduleListResponse(BaseModel):
 class ScheduleEnableRequest(BaseModel):
     """Request to enable/disable a schedule"""
     enabled: bool = Field(..., description="True to enable, False to disable")
+
+
+class ScriptRunScheduleMode(str, Enum):
+    """Product-level script run schedule modes."""
+    ONCE = "once"
+    DAILY = "daily"
+
+
+class ScriptRunScheduleCreate(BaseModel):
+    """Create a script run schedule."""
+    name: str = Field(..., min_length=1, max_length=255)
+    script_id: str = Field(..., min_length=1)
+    device_id: str = Field(..., min_length=1)
+    schedule_mode: ScriptRunScheduleMode
+    run_at: Optional[datetime] = None
+    time_of_day: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=100)
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+
+    @validator("run_at", always=True)
+    def validate_run_at(cls, v, values):
+        if values.get("schedule_mode") == ScriptRunScheduleMode.ONCE and v is None:
+            raise ValueError("run_at is required when schedule_mode is once")
+        return v
+
+    @validator("time_of_day", always=True)
+    def validate_time_of_day(cls, v, values):
+        if values.get("schedule_mode") == ScriptRunScheduleMode.DAILY and not v:
+            raise ValueError("time_of_day is required when schedule_mode is daily")
+        return v
+
+
+class ScriptRunScheduleUpdate(BaseModel):
+    """Update a script run schedule."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    script_id: Optional[str] = Field(None, min_length=1)
+    device_id: Optional[str] = Field(None, min_length=1)
+    schedule_mode: Optional[ScriptRunScheduleMode] = None
+    run_at: Optional[datetime] = None
+    time_of_day: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    timezone: Optional[str] = Field(None, min_length=1, max_length=100)
+    parameters: Optional[Dict[str, Any]] = None
+
+
+class ScriptRunSchedule(ScriptRunScheduleCreate):
+    """Script run schedule response."""
+    id: str
+    schedule_mode: ScriptRunScheduleMode
+    status: ScheduleStatus
+    device_platform: Optional[str] = None
+    next_run_at: Optional[datetime] = None
+    last_run_at: Optional[datetime] = None
+    total_run_count: int = 0
+    executed: bool = False
+    last_task_id: Optional[str] = None
+    last_task_status: Optional[str] = None
+    last_task_error: Optional[str] = None
+    last_task_finished_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ScriptRunScheduleListResponse(BaseModel):
+    """Paginated script run schedule list response."""
+    items: List[ScriptRunSchedule]
+    total: int
+    page: int = 1
+    page_size: int = 20
+    total_pages: int = 1

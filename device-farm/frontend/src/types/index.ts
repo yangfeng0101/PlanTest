@@ -165,6 +165,32 @@ export interface TaskLogEntry {
   line_number?: number
 }
 
+export interface ScriptRunSchedule {
+  id: string
+  name: string
+  script_id: string
+  device_id: string
+  device_platform?: 'android' | 'ios'
+  schedule_mode: 'once' | 'daily'
+  run_at?: string
+  time_of_day?: string
+  timezone: string
+  parameters: Record<string, unknown>
+  enabled: boolean
+  status: 'enabled' | 'disabled' | 'expired'
+  next_run_at?: string
+  last_run_at?: string
+  total_run_count: number
+  executed: boolean
+  last_task_id?: string
+  last_task_status?: Task['status']
+  last_task_error?: string
+  last_task_finished_at?: string
+  last_error?: string
+  created_at: string
+  updated_at: string
+}
+
 // 报告类型
 export interface Report {
   id: string

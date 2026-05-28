@@ -72,6 +72,8 @@ async def startup_event():
     # Start WebSocket heartbeat and cleanup tasks
     from app.api.tasks import manager
     await manager.start_heartbeat()
+    from app.services.script_schedule_runner import start_script_schedule_runner
+    await start_script_schedule_runner()
 
 
 @app.on_event("shutdown")
@@ -80,6 +82,8 @@ async def shutdown_event():
     # Stop WebSocket heartbeat and cleanup tasks
     from app.api.tasks import manager
     await manager.stop_heartbeat()
+    from app.services.script_schedule_runner import stop_script_schedule_runner
+    await stop_script_schedule_runner()
 
     # Close database connection
     await close_db()
