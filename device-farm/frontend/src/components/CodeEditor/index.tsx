@@ -102,7 +102,8 @@ export default function CodeEditor({
         const linePrefix = model.getLineContent(position.lineNumber).slice(0, position.column - 1)
         const isAppMember = /(?:^|\W)app\.\w*$/.test(linePrefix)
         const isAppiumByMember = /(?:^|\W)AppiumBy\.\w*$/.test(linePrefix)
-        const range = createRange(model, position, isAppMember || isAppiumByMember)
+        const isRequestsMember = /(?:^|\W)requests\.\w*$/.test(linePrefix)
+        const range = createRange(model, position, isAppMember || isAppiumByMember || isRequestsMember)
 
         if (isAppMember) {
           const appSuggestions: languages.CompletionItem[] = [
@@ -445,6 +446,61 @@ export default function CodeEditor({
           return { suggestions: locatorSuggestions }
         }
 
+        if (isRequestsMember) {
+          const requestsSuggestions: languages.CompletionItem[] = [
+            {
+              label: 'get',
+              kind: completionKind.Method,
+              insertText: 'get("${1:url}", headers=${2:None}, params=${3:None}, timeout=${4:10})',
+              insertTextRules: snippetRule,
+              documentation: '发送 GET 请求',
+              range,
+            },
+            {
+              label: 'post',
+              kind: completionKind.Method,
+              insertText: 'post("${1:url}", json=${2:None}, headers=${3:None}, timeout=${4:10})',
+              insertTextRules: snippetRule,
+              documentation: '发送 POST 请求（JSON body）',
+              range,
+            },
+            {
+              label: 'put',
+              kind: completionKind.Method,
+              insertText: 'put("${1:url}", json=${2:None}, headers=${3:None}, timeout=${4:10})',
+              insertTextRules: snippetRule,
+              documentation: '发送 PUT 请求',
+              range,
+            },
+            {
+              label: 'patch',
+              kind: completionKind.Method,
+              insertText: 'patch("${1:url}", json=${2:None}, headers=${3:None}, timeout=${4:10})',
+              insertTextRules: snippetRule,
+              documentation: '发送 PATCH 请求',
+              range,
+            },
+            {
+              label: 'delete',
+              kind: completionKind.Method,
+              insertText: 'delete("${1:url}", headers=${2:None}, timeout=${3:10})',
+              insertTextRules: snippetRule,
+              documentation: '发送 DELETE 请求',
+              range,
+            },
+            {
+              label: 'request',
+              kind: completionKind.Method,
+              insertText: 'request("${1:GET}", "${2:url}", json=${3:None}, headers=${4:None})',
+              insertTextRules: snippetRule,
+              documentation: '通用 HTTP 请求方法',
+              range,
+            },
+          ]
+
+          return { suggestions: requestsSuggestions }
+        }
+
         const globalRange = createRange(model, position)
         const suggestions: languages.CompletionItem[] = [
           {
@@ -452,6 +508,69 @@ export default function CodeEditor({
             kind: completionKind.Variable,
             insertText: 'app',
             documentation: '平台推荐 SDK，输入 app. 可查看可用方法',
+            range: globalRange,
+          },
+          {
+            label: 'requests',
+            kind: completionKind.Module,
+            insertText: 'requests',
+            documentation: 'HTTP 请求库，输入 requests. 可查看方法',
+            range: globalRange,
+          },
+          {
+            label: 'json',
+            kind: completionKind.Module,
+            insertText: 'json',
+            documentation: 'JSON 编码/解码',
+            range: globalRange,
+          },
+          {
+            label: 'time',
+            kind: completionKind.Module,
+            insertText: 'time',
+            documentation: '时间处理',
+            range: globalRange,
+          },
+          {
+            label: 'datetime',
+            kind: completionKind.Module,
+            insertText: 'datetime',
+            documentation: '日期时间处理',
+            range: globalRange,
+          },
+          {
+            label: 're',
+            kind: completionKind.Module,
+            insertText: 're',
+            documentation: '正则表达式',
+            range: globalRange,
+          },
+          {
+            label: 'math',
+            kind: completionKind.Module,
+            insertText: 'math',
+            documentation: '数学函数',
+            range: globalRange,
+          },
+          {
+            label: 'random',
+            kind: completionKind.Module,
+            insertText: 'random',
+            documentation: '随机数生成',
+            range: globalRange,
+          },
+          {
+            label: 'uuid',
+            kind: completionKind.Module,
+            insertText: 'uuid',
+            documentation: 'UUID 生成',
+            range: globalRange,
+          },
+          {
+            label: 'decimal',
+            kind: completionKind.Module,
+            insertText: 'decimal',
+            documentation: '十进制浮点数运算',
             range: globalRange,
           },
           {

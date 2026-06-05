@@ -12,7 +12,19 @@
 - 前端路由/静态资源 smoke 可运行 `cd device-farm/frontend && npm run smoke:routes`，该命令会构建生产包、启动 Vite preview、检查关键 SPA 路由和 `dist/assets` 构建产物是否可访问。
 - 最近一次结构改动：投屏页 `frontend/src/pages/screen/index.tsx` 已拆出 `DeviceStagePanel.tsx`、`WorkspacePanel.tsx`、`ScreenStage.tsx`、`InspectorPanel.tsx`、`ScriptWorkspacePanel.tsx`、`ScriptModals.tsx`、`useScreenDevices.ts`、`useScreenSession.ts`、`useIosDebugActions.ts`、`useScreenScriptWorkspace.ts`、`useScreenUiHierarchy.ts`、`useScreenLayoutMetrics.ts`、`useScreenControls.ts`、`useScreenMode.ts`、`api.ts`、`scriptWorkspace.ts`、`types.ts`、`uiHierarchy.ts`；本次仅做 UI/API/hook/helper 分层，不改变 Android/iOS 投屏、触控、控件树和脚本调试链路。
 - 最近一次功能改动：投屏生命周期收敛到 device-svc 现有设备占用语义。Android/LiveKit 投屏和 iOS `mjpeg-direct` 预览启动前都会占用设备，启动失败、停止、断连或本地 session 结束时只释放 screen-svc 本次成功占用的设备；iOS MJPEG prepare 后如果 30 秒内没有真正接入 MJPEG GET，会自动释放占用；device-svc 扫描会保留已占用设备的 `busy` 状态，不再刷回 `online + occupied_by` 的半占用状态；iOS `mjpeg-direct` 投屏态的点按、滑动、长按、输入、清空和控件树获取会走 screen-svc 当前 session 代理，不再走 device-svc 静态调试接口；设备管理页投屏入口按 `online` 状态和 screen-svc session 状态禁用；脚本任务创建时不再立即占用设备，worker 真正执行前才用 `test-svc:<task_id>` 占用设备，普通任务遇到 `busy` 会保持 `pending` 并重试，投屏页调试任务会带 `screen_debug` 参数以共享当前投屏占用且结束时不释放投屏 lease；iOS Agent 增加 debug/stream session TTL 后台清理。iOS 连续实时触控仍未开放。
-- 脚本定时运行 v1 已支持：脚本管理页可创建“一次运行”和“每天固定时间运行”的定时计划；后端复用现有 `schedules` 表和普通任务队列，通过 test-svc DB 轮询到点创建真实 `tasks` 记录；定时任务与手动任务共享同一执行链路，设备 busy 时保持 `pending` 排队等待。
+- 脚本定时运行 v2 在 `feat: add script run scheduling` 之上补齐飞书通知与细节：
+  - `app.services.schedule_notification_service` 在定时触发任务进入成功/失败/取消/前置失败/罕见重入/任务刚被取消等终态后调用飞书机器人 Webhook 发送文本通知。
+  - 计划元数据新增 `notification_enabled` / `feishu_webhook_url` / `notification_last_status` / `notification_last_error` / `notification_last_at` / `notification_last_task_id`，写入 `schedules.kwargs`；Webhook URL 仅以 `feishu_webhook_configured: bool` 暴露给前端,不在响应中明文回显。
+  - 通知发送基于 `(task_id, status=success)` 幂等,失败只写入计划元数据、不影响任务终态;Webhook 发送前会 `db.refresh` 重新读元数据避免与 `cancel_task` API 路径并发竞争。
+  - 后端校验:Webhook URL 必须 `https://`;`notification_enabled=true` 时必须同时提供 Webhook;创建一次性计划时 `run_at` 必须未来时间;启用一次性过期计划会拒绝;创建 iOS 计划时同样要求 `IOS_APPIUM_HOST`。
+  - 执行器多路径触发通知,统一走 `tasks.py cancel_task` 或 `executor.py notify_scheduled_task_finished`,包装函数吞掉所有异常以免影响任务执行。
+  - 前端脚本管理页“定时运行”弹窗新增开关切换飞书通知,打开后才显示 Webhook 输入(用 `Input.Password` 避免旁观者偷看);`定时计划`抽屉新增“飞书通知”列展示通知状态/最近错误/时间。
+  - 前端 `GET /tasks?schedule_id=...` 通过 `parameters->>'schedule_id'` JSON 过滤,定时计划抽屉的“最近任务”从打开单条任务详情改为按 `schedule_id` 列任务历史。
+  - 脚本 SDK `ALLOWED_IMPORTS` 允许 `requests`;`CodeEditor` 补全新增 `requests.get/post/put/patch/delete/request` 方法和 `requests/json/time/datetime/re/math/random/uuid/decimal` 模块。
+  - 新增配置 `FEISHU_NOTIFICATION_TIMEOUT_SECONDS`(默认 5 秒);`requirements.txt` 已有 `requests==2.31.0`。
+  - 新增单测 `tests/test_schedule_notifications.py` 和 e2e 测 `tests/test_schedule_notifications_e2e.py`,覆盖 11 条路径:消息构造、Webhook 成功/失败/幂等、未配置 URL 标记失败、空异常兜底、并发刷新、`cancel_task` 触发点。
+  - 本地调试脚本 `device-farm/scripts/message_send_test.py` 不入提交,通过新增的 `device-farm/scripts/.gitignore` 局部忽略,文件本身保留在工作区。
+  - `ScriptRunSchedule` 响应模型拆出继承,改为独立 `BaseModel` 以避免 `feishu_webhook_url` 通过响应泄漏;`ScriptRunScheduleUpdate` 借助 `model_fields_set` / `__fields_set__` 区分"未传"和"显式置空",更新 Webhook 时不会被旧值覆盖。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -70,6 +82,7 @@
   - 操作列新增“定时运行”，可选择设备并创建一次性或每天固定时间计划。
   - 右上角“定时计划”抽屉展示计划状态、最近任务状态、下次/上次运行时间、累计触发次数、最近任务入口，并支持启停和删除；一次性计划的“计划完成”仅表示计划已触发，真实脚本执行结果以“最近任务”状态和任务详情为准。
   - 定时计划接口会按 `last_task_id` 汇总最近任务状态、失败原因和完成时间；“最近错误”优先展示计划触发错误，其次展示最近任务失败错误。
+  - 定时计划支持任务完成后飞书通知：创建计划时可填写飞书机器人 Webhook；后端在定时触发任务进入终态后发送文本通知并记录最近通知状态/错误，通知失败不影响任务成功或失败结果，Webhook 只保存在 `schedules.kwargs` 元数据中且不回显。
   - 后端新增产品级 `/api/v1/schedules/script-runs` 接口；计划元数据写入 `schedules.kwargs`，不新增数据库表。
   - test-svc 启动后台轮询器，默认每 10 秒扫描到期计划并创建普通任务；定时触发任务会在 `parameters` 中写入 `scheduled_run=true`、`schedule_id` 和 `schedule_trigger_at`；任务记录与计划推进在同一事务内提交后再入队，降低到点触发崩溃导致重复创建任务的风险。
 - Python 脚本 SDK 接入 Midscene AI 操作能力：
@@ -136,6 +149,7 @@
 - iOS WDA/MJPEG probe session 结束会删除自己的 Appium session，可能导致 WDA 退出；如果 probe 与 iOS Agent 使用不同 WDA bundle，后续 iOS Agent 重启 WDA 可能出现 `xcodebuild failed with code 65`，优先检查当前 shell 的 WDA 签名环境变量、自定义 bundle、Team、证书信任和 Appium 日志。若 Appium 日志显示 WDA 已安装但 launch 因 `invalid code signature` / `not explicitly trusted` 失败，普通 session 会卸载 WDA，需先用 `ios_stream_source_probe.py --trust-preinstall-wda` 安装并保留预编译 WDA Runner，完成手机端开发者证书信任后再运行普通会话；`iosInstallPause` 只暂停被测 App 安装，不解决 WDA 信任。
 - 前端生产构建仍可能提示 chunk 体积 warning，但当前主要来自稳定的大 vendor chunk（Ant Design、ECharts、LiveKit），页面级业务代码已拆分；后续如需继续压低可按需拆 AntD 按需加载、图表延迟加载或更细 manualChunks。
 - WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。
+- 定时计划任务在罕见重入路径(任务刚 `CANCELLED` / 占设备前失败 / 任务刚拿到就消失)中也会触发飞书通知,消息中"完成时间"会回退到 `datetime.utcnow()`;语义上仍然是"该任务已结束,通知一次",但文案不会区分这种特殊结束方式。
 
 ## 下次接手建议
 

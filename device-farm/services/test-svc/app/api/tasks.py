@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Set
 import httpx
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, literal_column
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db, get_db_session
@@ -338,6 +338,7 @@ async def list_tasks(
     status: Optional[TaskStatus] = None,
     script_id: Optional[str] = None,
     device_id: Optional[str] = None,
+    schedule_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
@@ -353,6 +354,8 @@ async def list_tasks(
         conditions.append(TaskDB.script_id == script_id)
     if device_id:
         conditions.append(TaskDB.device_id == device_id)
+    if schedule_id:
+        conditions.append(literal_column("parameters->>'schedule_id'") == schedule_id)
 
     if conditions:
         query = query.where(and_(*conditions))
@@ -447,6 +450,9 @@ async def cancel_task(
             await _release_task_device_best_effort(task_db.device_id, task_id)
             async with get_db_session() as release_log_db:
                 await save_task_log(release_log_db, task_id, "INFO", "Device released")
+        from app.services.schedule_notification_service import notify_scheduled_task_finished
+
+        await notify_scheduled_task_finished(task_id)
 
     return None
 

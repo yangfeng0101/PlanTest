@@ -108,11 +108,17 @@ def _script_run_kwargs(
             "timezone": data.timezone,
             "repeat": data.schedule_mode.value,
             "time_of_day": data.time_of_day,
+            "notification_enabled": bool(data.notification_enabled),
+            "feishu_webhook_url": data.feishu_webhook_url.strip() if data.feishu_webhook_url else None,
         }
     )
     metadata.pop("last_error", None)
     metadata.pop("last_task_id", None)
     metadata.pop("last_trigger_at", None)
+    metadata.pop("notification_last_status", None)
+    metadata.pop("notification_last_error", None)
+    metadata.pop("notification_last_at", None)
+    metadata.pop("notification_last_task_id", None)
     return metadata
 
 
@@ -223,6 +229,12 @@ def _db_to_script_run(schedule_db, last_task=None) -> ScriptRunSchedule:
         last_error=metadata.get("last_error") or (
             last_task_error if last_task_status in {"failed", "cancelled"} else None
         ),
+        notification_enabled=bool(metadata.get("notification_enabled")),
+        feishu_webhook_configured=bool(metadata.get("feishu_webhook_url")),
+        notification_last_status=metadata.get("notification_last_status"),
+        notification_last_error=metadata.get("notification_last_error"),
+        notification_last_at=metadata.get("notification_last_at"),
+        notification_last_task_id=metadata.get("notification_last_task_id"),
         created_at=schedule_db.created_at,
         updated_at=schedule_db.updated_at,
     )
@@ -535,6 +547,12 @@ def _merge_script_run_update(schedule_db, schedule_update: ScriptRunScheduleUpda
     current_mode = metadata.get("repeat") or (
         ScriptRunScheduleMode.ONCE.value if schedule_db.schedule_type == ScheduleType.ONETIME else ScriptRunScheduleMode.DAILY.value
     )
+    updated_fields = getattr(schedule_update, "model_fields_set", None) or getattr(schedule_update, "__fields_set__", set())
+    feishu_webhook_url = (
+        schedule_update.feishu_webhook_url
+        if "feishu_webhook_url" in updated_fields
+        else metadata.get("feishu_webhook_url")
+    )
     return ScriptRunScheduleCreate(
         name=schedule_update.name if schedule_update.name is not None else schedule_db.name,
         script_id=schedule_update.script_id if schedule_update.script_id is not None else metadata.get("script_id", ""),
@@ -544,6 +562,12 @@ def _merge_script_run_update(schedule_db, schedule_update: ScriptRunScheduleUpda
         time_of_day=schedule_update.time_of_day if schedule_update.time_of_day is not None else metadata.get("time_of_day"),
         timezone=schedule_update.timezone if schedule_update.timezone is not None else metadata.get("timezone", "Asia/Shanghai"),
         parameters=schedule_update.parameters if schedule_update.parameters is not None else metadata.get("parameters", {}),
+        feishu_webhook_url=feishu_webhook_url,
+        notification_enabled=(
+            schedule_update.notification_enabled
+            if schedule_update.notification_enabled is not None
+            else bool(metadata.get("notification_enabled"))
+        ),
         enabled=(str(getattr(schedule_db.status, "value", schedule_db.status)).lower() == ScheduleStatus.ENABLED.value),
     )
 

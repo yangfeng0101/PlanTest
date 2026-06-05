@@ -212,7 +212,26 @@ class ScriptRunScheduleCreate(BaseModel):
     time_of_day: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=100)
     parameters: Dict[str, Any] = Field(default_factory=dict)
+    feishu_webhook_url: Optional[str] = Field(None, min_length=1, max_length=1000, exclude=True)
+    notification_enabled: bool = False
     enabled: bool = True
+
+    @validator("feishu_webhook_url")
+    def validate_feishu_webhook_url(cls, v):
+        if v is None:
+            return v
+        value = v.strip()
+        if not value:
+            return None
+        if not value.startswith("https://"):
+            raise ValueError("feishu_webhook_url must start with https://")
+        return value
+
+    @validator("notification_enabled")
+    def validate_notification_enabled(cls, v, values):
+        if v and not values.get("feishu_webhook_url"):
+            raise ValueError("feishu_webhook_url is required when notification is enabled")
+        return v
 
     @validator("run_at", always=True)
     def validate_run_at(cls, v, values):
@@ -227,8 +246,8 @@ class ScriptRunScheduleCreate(BaseModel):
         return v
 
 
-class ScriptRunScheduleUpdate(BaseModel):
-    """Update a script run schedule."""
+class _ScriptRunScheduleBase(BaseModel):
+    """Shared fields for script run schedule create/update/response."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     script_id: Optional[str] = Field(None, min_length=1)
     device_id: Optional[str] = Field(None, min_length=1)
@@ -237,12 +256,37 @@ class ScriptRunScheduleUpdate(BaseModel):
     time_of_day: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     timezone: Optional[str] = Field(None, min_length=1, max_length=100)
     parameters: Optional[Dict[str, Any]] = None
+    notification_enabled: Optional[bool] = None
+    feishu_webhook_url: Optional[str] = Field(None, min_length=1, max_length=1000, exclude=True)
 
 
-class ScriptRunSchedule(ScriptRunScheduleCreate):
+class ScriptRunScheduleUpdate(_ScriptRunScheduleBase):
+    """Update a script run schedule."""
+
+    @validator("feishu_webhook_url")
+    def validate_feishu_webhook_url(cls, v):
+        if v is None:
+            return v
+        value = v.strip()
+        if not value:
+            return None
+        if not value.startswith("https://"):
+            raise ValueError("feishu_webhook_url must start with https://")
+        return value
+
+
+class ScriptRunSchedule(BaseModel):
     """Script run schedule response."""
     id: str
+    name: str
+    script_id: str
+    device_id: str
     schedule_mode: ScriptRunScheduleMode
+    run_at: Optional[datetime] = None
+    time_of_day: Optional[str] = None
+    timezone: str = "Asia/Shanghai"
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
     status: ScheduleStatus
     device_platform: Optional[str] = None
     next_run_at: Optional[datetime] = None
@@ -254,6 +298,12 @@ class ScriptRunSchedule(ScriptRunScheduleCreate):
     last_task_error: Optional[str] = None
     last_task_finished_at: Optional[datetime] = None
     last_error: Optional[str] = None
+    notification_enabled: bool = False
+    feishu_webhook_configured: bool = False
+    notification_last_status: Optional[str] = None
+    notification_last_error: Optional[str] = None
+    notification_last_at: Optional[datetime] = None
+    notification_last_task_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

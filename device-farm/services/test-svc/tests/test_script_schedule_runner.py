@@ -112,12 +112,45 @@ class ScriptScheduleRunnerTest(unittest.IsolatedAsyncioTestCase):
                 "last_task_id": "old-task",
                 "last_error": "old-error",
                 "last_trigger_at": "old-trigger",
+                "notification_last_status": "failed",
+                "notification_last_error": "old notification error",
+                "notification_last_at": "2026-06-02T00:00:00",
+                "notification_last_task_id": "old-task",
             },
         )
 
         self.assertNotIn("last_task_id", metadata)
         self.assertNotIn("last_error", metadata)
         self.assertNotIn("last_trigger_at", metadata)
+        self.assertNotIn("notification_last_status", metadata)
+        self.assertNotIn("notification_last_error", metadata)
+        self.assertNotIn("notification_last_at", metadata)
+        self.assertNotIn("notification_last_task_id", metadata)
+
+    def test_script_run_notification_config_is_stored_but_not_exposed(self):
+        payload = ScriptRunScheduleCreate(
+            name="schedule",
+            script_id="script-2",
+            device_id="device-2",
+            schedule_mode=ScriptRunScheduleMode.ONCE,
+            run_at=datetime.utcnow() + timedelta(minutes=5),
+            parameters={},
+            notification_enabled=True,
+            feishu_webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/token",
+        )
+
+        metadata = _script_run_kwargs(payload, "android")
+        schedule = make_schedule(kwargs=metadata)
+        response = _db_to_script_run(schedule)
+
+        self.assertTrue(metadata["notification_enabled"])
+        self.assertEqual(
+            metadata["feishu_webhook_url"],
+            "https://open.feishu.cn/open-apis/bot/v2/hook/token",
+        )
+        self.assertTrue(response.notification_enabled)
+        self.assertTrue(response.feishu_webhook_configured)
+        self.assertFalse(hasattr(response, "feishu_webhook_url"))
 
     def test_script_run_response_includes_last_task_status_and_error(self):
         schedule = make_schedule(

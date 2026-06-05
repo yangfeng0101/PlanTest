@@ -187,6 +187,12 @@ export interface ScriptRunSchedule {
   last_task_error?: string
   last_task_finished_at?: string
   last_error?: string
+  notification_enabled: boolean
+  feishu_webhook_configured: boolean
+  notification_last_status?: 'success' | 'failed'
+  notification_last_error?: string
+  notification_last_at?: string
+  notification_last_task_id?: string
   created_at: string
   updated_at: string
 }

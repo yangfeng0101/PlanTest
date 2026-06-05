@@ -35,6 +35,7 @@ ALLOWED_IMPORTS = {
     "math": math,
     "random": random,
     "re": re,
+    "requests": __import__("requests"),
     "time": time,
     "uuid": uuid,
 }
@@ -393,6 +394,16 @@ def update_task_status(task_id: str, status: TaskStatus, **kwargs):
     return tasks_api.update_task_status(task_id, status, **kwargs)
 
 
+def notify_scheduled_task_finished(task_id: str):
+    """Send scheduled-run completion notifications without affecting execution."""
+    try:
+        from app.services.schedule_notification_service import notify_scheduled_task_finished as notify
+
+        run_async(notify(task_id))
+    except Exception as exc:
+        logger.warning("Failed to process scheduled task notification for %s: %s", task_id, exc, exc_info=True)
+
+
 def run_async(coro):
     """Run async helpers on the worker's stable async loop."""
     return tasks_api._run_async(coro)
@@ -461,9 +472,11 @@ def execute_test_task(self, task_id: str):
 
     if task.status == TaskStatus.CANCELLED:
         logger.info(f"Task {task_id} was cancelled before execution")
+        notify_scheduled_task_finished(task_id)
         return {"success": False, "error": "Task cancelled"}
 
     device_lease_acquired = False
+    notification_due = False
     try:
         device_lease_acquired = run_async(acquire_task_device(task))
     except DeviceBusyRetry as exc:
@@ -485,6 +498,7 @@ def execute_test_task(self, task_id: str):
             finished_at=datetime.utcnow(),
             error=error_msg,
         )
+        notify_scheduled_task_finished(task_id)
         run_async(send_log(task_id, "ERROR", f"Task failed before execution: {error_msg}"))
         return {"success": False, "error": error_msg}
 
@@ -497,6 +511,7 @@ def execute_test_task(self, task_id: str):
                 run_async(release_task_device(device_id_for_release, task_id))
             except Exception as release_error:
                 logger.warning(f"Failed to release device lease for missing task {task_id}: {release_error}")
+        notify_scheduled_task_finished(task_id)
         return {"success": False, "error": "Task not found"}
 
     if task.status == TaskStatus.CANCELLED:
@@ -506,6 +521,7 @@ def execute_test_task(self, task_id: str):
                 run_async(release_task_device(task.device_id, task_id))
             except Exception as release_error:
                 logger.warning(f"Failed to release device {task.device_id}: {release_error}")
+        notify_scheduled_task_finished(task_id)
         return {"success": False, "error": "Task cancelled"}
 
     # Update status to running
@@ -566,6 +582,7 @@ def execute_test_task(self, task_id: str):
                 error="; ".join(result.errors) if result.errors else None,
             )
             task_finished = True
+            notification_due = True
 
             return {
                 "success": result.success,
@@ -591,6 +608,7 @@ def execute_test_task(self, task_id: str):
             finished_at=datetime.utcnow(),
             error=error_msg
         )
+        notification_due = True
 
         run_async(send_log(task_id, "ERROR", f"Task failed: {error_msg}"))
         task_finished = True
@@ -608,6 +626,8 @@ def execute_test_task(self, task_id: str):
                     run_async(send_log(task_id, "INFO", "Device released"))
             except Exception as release_error:
                 logger.warning(f"Failed to release device {task.device_id}: {release_error}")
+        if notification_due:
+            notify_scheduled_task_finished(task_id)
 
 
 def load_script(script_id: str):

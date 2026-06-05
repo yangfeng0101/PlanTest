@@ -131,7 +131,7 @@ export const scriptApi = {
 // 任务 API
 export const taskApi = {
   // 获取任务列表
-  getList: (params?: { status?: string; device_id?: string; script_id?: string; page?: number; page_size?: number }) =>
+  getList: (params?: { status?: string; device_id?: string; script_id?: string; schedule_id?: string; page?: number; page_size?: number }) =>
     api.get<BackendListResponse<Task>>('/tasks', { params }),
 
   // 创建任务
@@ -170,6 +170,8 @@ export const scheduleApi = {
     time_of_day?: string
     timezone: string
     parameters?: Record<string, unknown>
+    notification_enabled?: boolean
+    feishu_webhook_url?: string
     enabled?: boolean
   }) =>
     api.post<ScriptRunSchedule>('/schedules/script-runs', data),
@@ -183,6 +185,8 @@ export const scheduleApi = {
     time_of_day: string
     timezone: string
     parameters: Record<string, unknown>
+    notification_enabled: boolean
+    feishu_webhook_url: string
   }>) =>
     api.put<ScriptRunSchedule>(`/schedules/script-runs/${id}`, data),
 

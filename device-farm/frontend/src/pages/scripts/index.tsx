@@ -29,6 +29,8 @@ type ScheduleFormValues = {
   schedule_mode: 'once' | 'daily'
   run_at?: Dayjs
   time_of_day?: Dayjs
+  notification_enabled?: boolean
+  feishu_webhook_url?: string
   enabled: boolean
 }
 
@@ -272,10 +274,12 @@ export default function ScriptsPage() {
   const [historyScript, setHistoryScript] = useState<Script | null>(null)
   const [historyTasks, setHistoryTasks] = useState<Task[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyTitle, setHistoryTitle] = useState('运行记录')
   const [apiHelpOpen, setApiHelpOpen] = useState(false)
   const historyRequestRef = useRef(0)
   const scriptType = Form.useWatch('script_type', form) || 'python'
   const scheduleMode = Form.useWatch('schedule_mode', scheduleForm) || 'once'
+  const scheduleNotificationEnabled = Form.useWatch('notification_enabled', scheduleForm)
   const activeTaskIds = useMemo(
     () => Object.values(activeTasks)
       .flat()
@@ -503,6 +507,8 @@ export default function ScriptsPage() {
       schedule_mode: 'once',
       run_at: dayjs().add(10, 'minute'),
       time_of_day: dayjs().add(1, 'hour'),
+      notification_enabled: false,
+      feishu_webhook_url: undefined,
       enabled: true,
     })
     setIsScheduleModalOpen(true)
@@ -533,6 +539,8 @@ export default function ScriptsPage() {
         time_of_day: values.schedule_mode === 'daily' ? values.time_of_day?.format('HH:mm') : undefined,
         timezone: getClientTimezone(),
         parameters: {},
+        notification_enabled: Boolean(values.notification_enabled),
+        feishu_webhook_url: values.notification_enabled ? values.feishu_webhook_url?.trim() : undefined,
         enabled: values.enabled,
       })
 
@@ -627,6 +635,7 @@ export default function ScriptsPage() {
     const requestId = historyRequestRef.current + 1
     historyRequestRef.current = requestId
     setHistoryScript(script)
+    setHistoryTitle(`运行记录：${script.name}`)
     setHistoryTasks([])
     setIsHistoryModalOpen(true)
     setHistoryLoading(true)
@@ -714,23 +723,22 @@ export default function ScriptsPage() {
     }
   }
 
-  const handleViewScheduledTask = async (schedule: ScriptRunSchedule) => {
-    if (!schedule.last_task_id) return
-    const script = scripts.find((item) => item.id === schedule.script_id) || null
+  const fetchScheduleTasks = async (schedule: ScriptRunSchedule) => {
+    if (!schedule.id) return
+    const script = scripts.find((s) => s.id === schedule.script_id) || null
+    setHistoryScript(script)
+    setHistoryTitle(`运行记录：${schedule.name}`)
+    setHistoryTasks([])
+    setIsHistoryModalOpen(true)
+    setHistoryLoading(true)
     try {
-      const response = await taskApi.getDetail(schedule.last_task_id)
-      if (script) {
-        await handleViewTask(script, response.data)
-      } else {
-        setRunningScript(null)
-        setCurrentTask(response.data)
-        setIsRunModalOpen(true)
-        const logsResponse = await taskApi.getLogs(response.data.id)
-        setTaskLogs(logsResponse.data)
-      }
+      const response = await taskApi.getList({ schedule_id: schedule.id, page_size: 50 })
+      setHistoryTasks(response.data.items)
     } catch (error) {
-      console.error('Failed to fetch scheduled task:', error)
-      message.error('最近任务获取失败')
+      console.error('Failed to fetch schedule tasks:', error)
+      message.error('获取计划关联任务失败')
+    } finally {
+      setHistoryLoading(false)
     }
   }
 
@@ -920,7 +928,12 @@ export default function ScriptsPage() {
         <Button
           type="link"
           size="small"
-          onClick={() => historyScript && handleViewTask(historyScript, task)}
+          onClick={() => {
+              if (historyScript) {
+                setIsHistoryModalOpen(false)
+                handleViewTask(historyScript, task)
+              }
+            }}
         >
           详情
         </Button>
@@ -977,6 +990,24 @@ export default function ScriptsPage() {
       render: (value?: Task['status']) => value ? <Tag color={statusColors[value]}>{statusText[value]}</Tag> : '-',
     },
     {
+      title: '飞书通知',
+      key: 'notification',
+      width: 120,
+      render: (_: unknown, schedule: ScriptRunSchedule) => {
+        if (!schedule.notification_enabled) return '-'
+        const color = schedule.notification_last_status === 'failed' ? 'error' : 'success'
+        const text = schedule.notification_last_status === 'failed' ? '发送失败' : '已启用'
+        const detail = schedule.notification_last_error
+          ? `通知发送失败${schedule.notification_last_at ? '（' + schedule.notification_last_at + '）' : ''}`
+          : (schedule.feishu_webhook_configured ? '任务完成后发送飞书通知' : '未配置 Webhook')
+        return (
+          <Tooltip title={detail}>
+            <Tag color={color}>{text}</Tag>
+          </Tooltip>
+        )
+      },
+    },
+    {
       title: '下次运行',
       dataIndex: 'next_run_at',
       key: 'next_run_at',
@@ -1028,7 +1059,7 @@ export default function ScriptsPage() {
             loading={scheduleActionLoading[schedule.id]}
             onChange={(checked) => handleToggleSchedule(schedule, checked)}
           />
-          <Button type="link" size="small" disabled={!schedule.last_task_id} onClick={() => handleViewScheduledTask(schedule)}>
+          <Button type="link" size="small" onClick={() => fetchScheduleTasks(schedule)}>
             最近任务
           </Button>
           <Popconfirm
@@ -1191,11 +1222,12 @@ export default function ScriptsPage() {
       </Modal>
 
       <Modal
-        title={historyScript ? `运行记录：${historyScript.name}` : '运行记录'}
+        title={historyTitle}
         open={isHistoryModalOpen}
         onCancel={() => setIsHistoryModalOpen(false)}
         footer={<Button onClick={() => setIsHistoryModalOpen(false)}>关闭</Button>}
         width={920}
+        zIndex={1100}
       >
         <Table
           size="small"
@@ -1223,7 +1255,7 @@ export default function ScriptsPage() {
           loading={schedulesLoading}
           pagination={{ pageSize: 10 }}
           tableLayout="fixed"
-          scroll={{ x: 1680 }}
+          scroll={{ x: 1800 }}
           locale={{ emptyText: '暂无定时计划' }}
         />
       </Drawer>
@@ -1292,6 +1324,29 @@ export default function ScriptsPage() {
               rules={[{ required: true, message: '请选择每天运行时间' }]}
             >
               <TimePicker format="HH:mm" style={{ width: '100%' }} />
+            </Form.Item>
+          )}
+          <Form.Item name="notification_enabled" label="任务完成后飞书通知" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          {scheduleNotificationEnabled && (
+            <Form.Item
+              name="feishu_webhook_url"
+              label="飞书机器人 Webhook"
+              rules={[
+                { required: true, message: '请输入飞书机器人 Webhook' },
+                { type: 'url', message: '请输入有效的 HTTPS URL' },
+                {
+                  validator: (_, value) => {
+                    if (!value || String(value).startsWith('https://')) {
+                      return Promise.resolve()
+                    }
+                    return Promise.reject(new Error('Webhook 必须使用 HTTPS'))
+                  },
+                },
+              ]}
+            >
+              <Input.Password placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." />
             </Form.Item>
           )}
           <Form.Item name="enabled" label="创建后启用" valuePropName="checked">

@@ -90,6 +90,7 @@ class Settings(BaseSettings):
         "/tmp/device-farm/celerybeat-schedule"
     )
     SCRIPT_SCHEDULE_POLL_INTERVAL_SECONDS: int = int(os.getenv("SCRIPT_SCHEDULE_POLL_INTERVAL_SECONDS", "10"))
+    FEISHU_NOTIFICATION_TIMEOUT_SECONDS: int = int(os.getenv("FEISHU_NOTIFICATION_TIMEOUT_SECONDS", "5"))
 
     # JWT Authentication
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
