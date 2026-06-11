@@ -20,6 +20,7 @@ from app.models.models import (
 from app.models.database import ScriptDB, ScriptStatus as ScriptStatusDB, ScriptType as ScriptTypeDB
 from app.config import settings
 from app.auth import verify_api_key
+from app.tasks.script_sandbox import ALLOWED_SCRIPT_IMPORTS
 
 router = APIRouter()
 
@@ -34,7 +35,6 @@ class ScriptValidationResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
-ALLOWED_SCRIPT_IMPORTS = {"datetime", "decimal", "json", "math", "random", "re", "time", "uuid"}
 LEGACY_GLOBAL_CALLS = {
     "log": "建议使用 app.log()",
     "wait": "建议使用 app.wait()",

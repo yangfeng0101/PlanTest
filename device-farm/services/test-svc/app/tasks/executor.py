@@ -25,20 +25,9 @@ logger = get_task_logger(__name__)
 
 # Import tasks API for database operations
 from app.api import tasks as tasks_api
+from app.tasks.script_sandbox import ALLOWED_IMPORTS
 
 SDK_VERSION = "1.3.0"
-
-ALLOWED_IMPORTS = {
-    "datetime": __import__("datetime"),
-    "decimal": __import__("decimal"),
-    "json": json,
-    "math": math,
-    "random": random,
-    "re": re,
-    "requests": __import__("requests"),
-    "time": time,
-    "uuid": uuid,
-}
 
 
 def safe_import(name, globals=None, locals=None, fromlist=(), level=0):

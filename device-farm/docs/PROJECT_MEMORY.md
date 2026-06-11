@@ -25,6 +25,10 @@
   - 新增单测 `tests/test_schedule_notifications.py` 和 e2e 测 `tests/test_schedule_notifications_e2e.py`,覆盖 11 条路径:消息构造、Webhook 成功/失败/幂等、未配置 URL 标记失败、空异常兜底、并发刷新、`cancel_task` 触发点。
   - 本地调试脚本 `device-farm/scripts/message_send_test.py` 不入提交,通过新增的 `device-farm/scripts/.gitignore` 局部忽略,文件本身保留在工作区。
   - `ScriptRunSchedule` 响应模型拆出继承,改为独立 `BaseModel` 以避免 `feishu_webhook_url` 通过响应泄漏;`ScriptRunScheduleUpdate` 借助 `model_fields_set` / `__fields_set__` 区分"未传"和"显式置空",更新 Webhook 时不会被旧值覆盖。
+- 脚本沙箱白名单漂移修复:
+  - 新建 `app/tasks/script_sandbox.py`,集中定义 `ALLOWED_SCRIPT_IMPORTS`(静态校验白名单)和 `ALLOWED_IMPORTS`(运行时沙箱白名单),保证 `requests` 等模块在两端一致可用。
+  - 删掉 `app/api/scripts.py` 和 `app/tasks/executor.py` 的重复定义,统一从 `script_sandbox` import。
+  - 新增 `assert_consistent()`(测试驱动)守住漂移;新增 `tests/test_script_sandbox.py` 覆盖 4 条路径:两份白名单必须一致、`import requests` 必须通过静态校验、未知模块必须被拒绝、`safe_import` 必须读同一份白名单。
 - 最近一次文档/示例补充：新增 iOS Agent 本机配置文档、`scripts/setup-ios-agent.sh` 辅助脚本、`scripts/examples/ios_settings_smoke.py` 设置页 smoke 示例和 `scripts/ios_smoke_task_flow.py` 一键任务链路 smoke。
 - 最近验证通过：
   - `git diff --check`
@@ -150,6 +154,7 @@
 - 前端生产构建仍可能提示 chunk 体积 warning，但当前主要来自稳定的大 vendor chunk（Ant Design、ECharts、LiveKit），页面级业务代码已拆分；后续如需继续压低可按需拆 AntD 按需加载、图表延迟加载或更细 manualChunks。
 - WiFi 切换后需要更新本地 ignored 配置中的 `LIVEKIT_PUBLIC_HOST`，否则手机端可能无法连接 LiveKit。
 - 定时计划任务在罕见重入路径(任务刚 `CANCELLED` / 占设备前失败 / 任务刚拿到就消失)中也会触发飞书通知,消息中"完成时间"会回退到 `datetime.utcnow()`;语义上仍然是"该任务已结束,通知一次",但文案不会区分这种特殊结束方式。
+- 脚本可导入模块由 `app/tasks/script_sandbox.py` 统一管理;新增允许模块必须同时更新 `ALLOWED_SCRIPT_IMPORTS` 和 `ALLOWED_IMPORTS`,否则 `tests/test_script_sandbox.py` 会失败。
 
 ## 下次接手建议
 
